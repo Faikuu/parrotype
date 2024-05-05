@@ -1,7 +1,8 @@
-# NestJS + Vite stack skeleton
-
-Barebones fullstack application skeleton and example using NestJS, Vite and MySQL
-
+# ParroType - Open Source keyboard skills tester
+<div style="display: flex; flex-direction: row;">
+<img src="https://i.imgur.com/sXUt8ji.png" alt="screenshot1" width="500"/>
+<img src="https://i.imgur.com/lAusztU.png" alt="screenshot2" width="500"/>
+</div>
 
 ## Usage/Examples
 Installing
