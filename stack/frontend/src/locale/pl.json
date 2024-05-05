@@ -1,0 +1,38 @@
+{
+    "translation": {
+        "common": {
+            "yes": "Tak",
+            "no": "Nie"
+        },
+        "register": {
+            "title": "Zarejestruj się",
+            "username": "Nazwa użytkownika",
+            "password": "Hasło",
+            "email": "Adres email",
+            "signUp" : "Zarejestruj się"
+        },
+        "login": {
+            "title": "Zaloguj się",
+            "email": "Adres email",
+            "password": "Hasło",
+            "login": "Zaloguj się"
+        },
+        "typingtest": {
+            "wpm": "Słów na minutę",
+            "timeleft": "Pozostały czas",
+            "savescore": "Czy chcesz zapisać swój wynik?",
+            "timelimit": "Limit czasu",
+            "language": "Język",
+            "languages": {
+                "pl": "Polski",
+                "en": "English"
+            }
+        },
+        "myaccount": {
+            "title": "Moje konto",
+            "logout": "Wyloguj się",
+            "avgWpm": "Średnia słów na minutę",
+            "maxWpm": "Maksimum słów na minutę"
+        }
+    }
+}

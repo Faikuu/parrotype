@@ -1,0 +1,19 @@
+{
+  "name": "base",
+  "private": true,
+  "workspaces": [
+    "./stack/*"
+  ],
+  "scripts": {
+    "initialize": "npm install && npm --prefix ./stack/backend install && npm --prefix ./stack/frontend install && npm run move:env",
+    "move:env": "cp .env.sample .env && cp ./stack/backend/.env.sample ./stack/backend/.env && cp ./stack/frontend/.env.sample ./stack/frontend/.env",
+    "start:dev": "npx concurrently \"docker compose up\" \"npm --prefix ./stack/frontend run start:dev\" \"npm --prefix ./stack/backend run start:dev\"",
+    "start:database": "docker compose up",
+    "start:backend:prod": "npm --prefix ./stack/backend run start:prod",
+    "start": "npx concurrently \"docker compose up\" \"npm --prefix ./stack/frontend start\" \"npm --prefix ./stack/backend run start\"",
+    "install:packages": "npm install && npm --prefix ./stack/backend install && npm --prefix ./stack/frontend install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

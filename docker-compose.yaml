@@ -1,0 +1,28 @@
+version: '3.1'
+
+services:
+  mysqldb: 
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: faiku
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_ROOT_USER: root
+    ports: 
+      - 3306:3306
+    volumes:
+      - ./.docker/mysql:/var/lib/mysql
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+  redis:
+    image: bitnami/redis:latest
+    # image: arm64v8/redis:latest
+    restart: unless-stopped
+    ports:
+      - 6380:6379
+    volumes:
+      - ./.docker/redis:/bitnami/redis/data
+    environment:
+      REDIS_PASSWORD: 123456

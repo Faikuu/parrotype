@@ -1,0 +1,40 @@
+
+
+{
+    "translation": {
+        "common": {
+            "yes": "Yes",
+            "no": "No"
+        },
+        "register": {
+            "title": "Register",
+            "username": "Username",
+            "password": "Password",
+            "email": "Email",
+            "signUp" : "Sign Up"
+        },
+        "login": {
+            "title": "Login",
+            "email": "Email address",
+            "password": "Password",
+            "login": "Log In"
+        },
+        "typingtest": {
+            "wpm": "Words Per Minute",
+            "timeleft": "Time left",
+            "savescore": "Do you want to save your score?",
+            "timelimit": "Time Limit",
+            "language": "Language",
+            "languages": {
+                "pl": "Polski",
+                "en": "English"
+            }
+        },
+        "myaccount": {
+            "title": "My Account",
+            "logout": "Logout",
+            "avgWpm": "Average WPM",
+            "maxWpm": "Maximum WPM"
+        }
+    }
+  }
