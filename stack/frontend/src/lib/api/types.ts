@@ -70,12 +70,6 @@ export type LeaderboardEntry = {
   createdAt: string;
 };
 
-export type DailyBoard = {
-  date: string; // YYYY-MM-DD, UTC
-  language: Language;
-  entries: LeaderboardEntry[];
-};
-
 export type RecentResult = {
   mode: string;
   mode2: string;

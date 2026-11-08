@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router';
 import { TextField } from '@/components/TextField';
 import { ME_QUERY_KEY } from '@/features/auth/useAuth';
 import { ApiError, authApi } from '@/lib/api';
+import { useKeyStats } from '@/store/keyStats';
+import { useLocalBests } from '@/store/localBests';
 
 interface Props {
   /** The signed-in user's name; the user has to type it to confirm. */
@@ -23,6 +25,9 @@ export function DeleteAccountForm({ name, onLeaving }: Props) {
   const mutation = useMutation({
     mutationFn: (input: { password: string }) => authApi.deleteAccount(input),
     onSuccess: () => {
+      // Personal results live in this browser too: clear them. Visual settings are not personal results and stay.
+      useLocalBests.getState().clear();
+      useKeyStats.getState().clear();
       qc.clear();
       qc.setQueryData(ME_QUERY_KEY, null);
       navigate('/', { replace: true });

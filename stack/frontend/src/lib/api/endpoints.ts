@@ -1,7 +1,6 @@
 import type { Language, QuoteLength } from '@/lib/engine/types';
 import { api } from './client';
 import type {
-  DailyBoard,
   LeaderboardEntry,
   LeaderboardQuery,
   PublicProfile,
@@ -40,11 +39,6 @@ export const resultsApi = {
 export const leaderboardApi = {
   get: (query: LeaderboardQuery, signal?: AbortSignal) =>
     api<LeaderboardEntry[]>(`/leaderboard?${new URLSearchParams(query).toString()}`, { signal }),
-};
-
-export const dailyApi = {
-  today: (language: Language, signal?: AbortSignal) =>
-    api<DailyBoard>(`/daily?${new URLSearchParams({ language }).toString()}`, { signal }),
 };
 
 export const usersApi = {

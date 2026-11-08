@@ -67,6 +67,7 @@ export interface KeyStatsState {
   byLanguage: KeyStatsByLanguage;
   /** Merges one finished test's key stats into the running totals for `language`. */
   record: (latest: KeyStatsMap, language: Language) => void;
+  /** Forgets all key stats and removes the stored entry. */
   clear: () => void;
 }
 
@@ -81,7 +82,15 @@ export const useKeyStats = create<KeyStatsState>()(
         const merged = mergeKeyStats(get().byLanguage[language] ?? {}, folded, DECAY);
         set({ byLanguage: { ...get().byLanguage, [language]: merged } });
       },
-      clear: () => set({ byLanguage: {} }),
+      clear: () => {
+        set({ byLanguage: {} });
+        try {
+          // The store writes itself after each change, so the stored entry is removed after the reset.
+          useKeyStats.persist.clearStorage();
+        } catch {
+          // storage unavailable: nothing stored to remove
+        }
+      },
     }),
     {
       name: 'parrotype:keystats',

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router';
@@ -16,9 +16,30 @@ import {
   apiMode2,
   defaultOption,
   parseFilters,
+  utcDate,
   type BoardFilters,
   type BoardMode,
 } from './filters';
+
+const NOW_CHECK_MS = 60_000;
+
+/**
+ * The current time, for working out which UTC day "today" is. It is checked every minute and when the
+ * window regains focus, and only changes (so the page re-renders) when the UTC day changes.
+ */
+function useNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const check = () => setNow((prev) => (utcDate(Date.now()) === utcDate(prev) ? prev : Date.now()));
+    const id = setInterval(check, NOW_CHECK_MS);
+    window.addEventListener('focus', check);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('focus', check);
+    };
+  }, []);
+  return now;
+}
 
 export default function LeaderboardPage() {
   const { t, i18n } = useTranslation();
@@ -26,8 +47,8 @@ export default function LeaderboardPage() {
   const [params, setParams] = useSearchParams();
   const filters = parseFilters(params);
   const { user } = useAuth();
-  // The UTC day the page was opened on; daily pills are dates relative to it.
-  const [now] = useState(() => Date.now());
+  // Daily pills are dates relative to the current UTC day, so they follow midnight UTC.
+  const now = useNow();
   const board = apiMode2(filters, now);
 
   const query = useQuery({

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import '@/i18n';
@@ -119,6 +119,27 @@ describe('LeaderboardPage', () => {
       await screen.findByRole('button', { name: 'Yesterday', pressed: true });
       const urls = fetchMock.mock.calls.map((c) => String(c[0]));
       expect(urls.some((u) => u.includes('mode2=2026-11-07'))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('moves the daily pill to the new UTC day when the clock passes midnight', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-11-08T23:59:30Z'));
+      const fetchMock = mockFetch((url) => (url.includes('/auth/me') ? json({}, 401) : json(ROWS)));
+      renderPage('/leaderboard?mode=daily');
+      await screen.findByRole('table');
+      const boardUrls = () => fetchMock.mock.calls.map((c) => String(c[0])).filter((u) => u.includes('/leaderboard'));
+      expect(boardUrls().some((u) => u.includes('mode2=2026-11-08'))).toBe(true);
+
+      // Past midnight UTC, the window regains focus: today is now the 9th.
+      act(() => {
+        vi.setSystemTime(new Date('2026-11-09T00:00:30Z'));
+        window.dispatchEvent(new Event('focus'));
+      });
+      await waitFor(() => expect(boardUrls().some((u) => u.includes('mode2=2026-11-09'))).toBe(true));
     } finally {
       vi.useRealTimers();
     }

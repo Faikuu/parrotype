@@ -17,11 +17,17 @@ import { ApiError, quotesApi, resultsApi } from '@/lib/api';
 import type { Quote, ResultInput, Summary } from '@/lib/api/types';
 import { createInitialState, engineReducer, needsMoreWords } from '@/lib/engine/engine';
 import { computeResult } from '@/lib/engine/stats';
-import type { EngineAction, Mode, QuoteLength, TestConfig, TestResult } from '@/lib/engine/types';
+import type { EngineAction, EngineState, Mode, QuoteLength, TestConfig, TestResult } from '@/lib/engine/types';
 import { utcDateString } from '@/lib/text/daily';
 import { generateWords, quoteToWords, wordsForConfig } from '@/lib/text/generator';
 import { useKeyStats, weakLetters } from '@/store/keyStats';
-import { bestKey, averageOf, isPersonalBest as beatsBest, useLocalBests } from '@/store/localBests';
+import {
+  bestKey,
+  averageOf,
+  isPersonalBest as beatsBest,
+  serverBestComparable,
+  useLocalBests,
+} from '@/store/localBests';
 import { selectTestConfig, useSettings, type PaceCaret } from '@/store/settings';
 import { useUi } from '@/store/ui';
 import { pickBuiltinQuote } from './builtinQuotes';
@@ -129,8 +135,12 @@ export function paceTarget(p: PaceInput): number | null {
   }
 }
 
-/** The account's best wpm for the same mode, mode2 and language, from the summary in the query cache. */
+/**
+ * The account's best wpm for the same mode, mode2 and language, from the summary in the query cache.
+ * Only returned when the server's best means the same test (see serverBestComparable).
+ */
 function serverBestWpm(qc: QueryClient, cfg: TestConfig, date: string): number | undefined {
+  if (!serverBestComparable(cfg)) return undefined;
   const mode2 = mode2Of(cfg, date);
   const summary = qc.getQueryData<Summary>(['summary']);
   return summary?.bests.find((b) => b.mode === cfg.mode && b.mode2 === mode2 && b.language === cfg.language)?.wpm;
@@ -143,6 +153,8 @@ function skipReason(r: TestResult): SkipReason | null {
 }
 
 function toInput(cfg: TestConfig, r: TestResult, date: string): ResultInput {
+  // Daily text is always punctuated and has no numbers, whatever the user's flags say.
+  const daily = cfg.mode === 'daily';
   return {
     mode: cfg.mode,
     mode2: mode2Of(cfg, date),
@@ -153,8 +165,8 @@ function toInput(cfg: TestConfig, r: TestResult, date: string): ResultInput {
     consistency: r.consistency,
     durationMs: Math.round(r.durationMs),
     charStats: r.charStats,
-    punctuation: cfg.punctuation,
-    numbers: cfg.numbers,
+    punctuation: daily ? true : cfg.punctuation,
+    numbers: daily ? false : cfg.numbers,
   };
 }
 
@@ -285,16 +297,28 @@ export function useTypingTest(): TypingTest {
 
   useEffect(() => () => useUi.getState().setTyping(false), []);
 
-  // Personal best is worked out here, before the run is written to the local bests (see the effect below).
+  // The personal best is decided once per finished run, against the bests as they were before this run is
+  // written to them (the effect below does that). It is kept with the state it was decided for, so later
+  // changes (the signed-in user, the cached summary, the local best just written) cannot flip it.
+  const [pbSnapshot, setPbSnapshot] = useState<{ state: EngineState; isPersonalBest: boolean } | null>(null);
+  useLayoutEffect(() => {
+    if (status !== 'finished' || pbSnapshot?.state === state) return;
+    const r = computeResult(state);
+    let isPb = false;
+    if (!skipReason(r)) {
+      const key = bestKey(state.config, mode2Of(state.config, runDate));
+      const local = useLocalBests.getState().bests[key]?.wpm;
+      const server = user ? serverBestWpm(qc, state.config, runDate) : undefined;
+      isPb = beatsBest(r.wpm, local, server);
+    }
+    setPbSnapshot({ state, isPersonalBest: isPb });
+  }, [status, state, runDate, qc, user, pbSnapshot]);
+
   const result = useMemo<FinishedResult | null>(() => {
     if (status !== 'finished') return null;
     const r = computeResult(state);
-    if (skipReason(r)) return { ...r, isPersonalBest: false };
-    const key = bestKey(state.config, mode2Of(state.config, runDate));
-    const local = useLocalBests.getState().bests[key]?.wpm;
-    const server = user ? serverBestWpm(qc, state.config, runDate) : undefined;
-    return { ...r, isPersonalBest: beatsBest(r.wpm, local, server) };
-  }, [status, state, runDate, qc, user]);
+    return { ...r, isPersonalBest: pbSnapshot?.state === state && pbSnapshot.isPersonalBest };
+  }, [status, state, pbSnapshot]);
 
   // Once per finished run: fold its key stats into the local totals, and its wpm into the local bests.
   const recordedRun = useRef(-1);

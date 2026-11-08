@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ME_QUERY_KEY } from '@/features/auth/useAuth';
 import { dailyWords } from '@/lib/text/daily';
 import { useKeyStats } from '@/store/keyStats';
-import { useLocalBests } from '@/store/localBests';
+import { bestKey, useLocalBests } from '@/store/localBests';
 import { DEFAULT_SETTINGS, useSettings } from '@/store/settings';
 import { useUi } from '@/store/ui';
 import { mode2Of, paceTarget, useTypingTest } from './useTypingTest';
@@ -145,5 +146,84 @@ describe('useTypingTest daily and weak', () => {
     expect(result.current.result?.isPersonalBest).toBe(false);
     expect(useKeyStats.getState().byLanguage.en?.o).toEqual({ hits: 1, misses: 0 });
     expect(Object.keys(useLocalBests.getState().bests)).toHaveLength(1);
+  });
+});
+
+/** Answers the session check with USER and accepts result posts, recording them in `posts`. */
+function stubApi(posts: unknown[] = []) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith('/auth/me')) return jsonResponse(200, { user: USER });
+      if (String(url).endsWith('/results') && init?.method === 'POST') {
+        posts.push(JSON.parse(String(init.body)));
+        return jsonResponse(201, {});
+      }
+      return jsonResponse(404, { message: 'Not Found' });
+    }),
+  );
+  return posts;
+}
+
+describe('personal best and flags', () => {
+  it('keeps the personal best flag after the run, when the user or the summary changes', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    stubApi();
+    useSettings.setState({ mode: 'custom', customText: 'ok' });
+    const key = bestKey(baseConfig({ mode: 'custom' }), 'custom');
+    useLocalBests.setState({ bests: { [key]: { wpm: 1, accuracy: 90, at: 1 } }, recentWpm: [] });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(ME_QUERY_KEY, USER);
+    const { result } = renderHook(() => useTypingTest(), { wrapper: wrapper(qc) });
+
+    act(() => result.current.typeText('o'));
+    act(() => vi.setSystemTime(new Date('2026-01-01T00:00:03Z')));
+    act(() => result.current.typeText('k'));
+
+    expect(result.current.state.status).toBe('finished');
+    expect(result.current.result?.isPersonalBest).toBe(true);
+    // The run is now the local best, so a recomputed flag would say no.
+    expect(useLocalBests.getState().bests[key]?.wpm).toBeGreaterThan(1);
+
+    act(() => {
+      qc.setQueryData(ME_QUERY_KEY, { ...USER, name: 'someone-else' });
+      qc.setQueryData(['summary'], { bests: [{ mode: 'custom', mode2: 'custom', language: 'en', wpm: 500 }] });
+    });
+    expect(result.current.result?.isPersonalBest).toBe(true);
+  });
+
+  it('saves daily runs under the punctuated, no-numbers key whatever the flags say', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-08T12:00:00Z'));
+    const posts = stubApi();
+    useSettings.setState({ mode: 'daily', language: 'en', punctuation: false, numbers: true });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useTypingTest(), { wrapper: wrapper(qc) });
+
+    // Finish a few seconds in, so the run is long enough to save.
+    const text = result.current.state.words.join(' ');
+    act(() => result.current.typeText(text.slice(0, -1)));
+    act(() => vi.setSystemTime(new Date('2026-11-08T12:00:05Z')));
+    act(() => result.current.typeText(text.slice(-1)));
+
+    expect(result.current.state.status).toBe('finished');
+    const daily = { mode: 'daily' as const, language: 'en' as const, punctuation: true, numbers: false };
+    expect(Object.keys(useLocalBests.getState().bests)).toEqual([bestKey(daily, '2026-11-08')]);
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]).toMatchObject({ mode: 'daily', mode2: '2026-11-08', punctuation: true, numbers: false });
+  });
+
+  it('uses the server best for the pace caret only when the flags cannot change the text', () => {
+    stubApi();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(ME_QUERY_KEY, USER);
+    qc.setQueryData(['summary'], { bests: [{ mode: 'time', mode2: '30', language: 'en', wpm: 100 }] });
+    useSettings.setState({ mode: 'time', time: 30, language: 'en', punctuation: true, numbers: false, paceCaret: 'pb' });
+    const { result } = renderHook(() => useTypingTest(), { wrapper: wrapper(qc) });
+
+    expect(result.current.pace).toBeNull();
+    act(() => useSettings.setState({ punctuation: false }));
+    expect(result.current.pace).toBe(100);
   });
 });
