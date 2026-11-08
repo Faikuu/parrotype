@@ -1,6 +1,6 @@
 @import 'tailwindcss';
 
-/* Theme tokens: values are set per theme in src/themes (applied to <html> as CSS vars).
+/* Theme tokens: values are set per theme in src/themes/themes.ts (applied to <html> as CSS vars).
    Defaults below are the Kea theme so first paint is correct. */
 :root {
   --bg: #1d2119;
@@ -25,14 +25,18 @@
   --color-caret: var(--caret);
   --color-error: var(--error);
   --color-error-extra: var(--error-extra);
-  --font-ui: var(--font-ui);
-  --font-test: var(--font-test);
+  --font-sans: var(--font-ui);
 }
 
 html,
 body,
 #root {
   min-height: 100%;
+}
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sub) var(--surface);
 }
 
 body {
@@ -45,6 +49,21 @@ body {
   transition: background-color 150ms linear, color 150ms linear;
 }
 
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--sub);
+  border-radius: 999px;
+  border: 2px solid var(--surface);
+}
+
 :focus-visible {
   outline: 2px solid var(--main);
   outline-offset: 2px;
@@ -53,4 +72,35 @@ body {
 ::selection {
   background: var(--main);
   color: var(--bg);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Command line open animation: 120ms scale .98 -> 1 with a fade. */
+.cl-panel {
+  animation: cl-in 120ms ease-out;
+}
+
+@keyframes cl-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

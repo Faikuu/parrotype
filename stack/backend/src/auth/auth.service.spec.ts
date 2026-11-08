@@ -4,6 +4,12 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from './auth.service';
 
+// Wrap compare so a test can assert it ran, without changing its behaviour.
+jest.mock('bcrypt', () => {
+  const actual = jest.requireActual<typeof import('bcrypt')>('bcrypt');
+  return { ...actual, compare: jest.fn(actual.compare) };
+});
+
 type UserRow = { id: number; name: string; email: string; passwordHash: string; createdAt: Date };
 
 function setup() {
@@ -109,7 +115,8 @@ describe('AuthService', () => {
     });
 
     it('still runs a bcrypt compare when the email is unknown', async () => {
-      const compare = jest.spyOn(bcrypt, 'compare');
+      const compare = bcrypt.compare as unknown as jest.Mock;
+      compare.mockClear();
       const { service, prisma } = setup();
       prisma.user.findUnique.mockResolvedValue(null);
 
@@ -117,7 +124,7 @@ describe('AuthService', () => {
         service.login({ email: 'ghost@example.com', password: 'whatever12' }),
       ).rejects.toBeInstanceOf(UnauthorizedException);
       expect(compare).toHaveBeenCalledTimes(1);
-      compare.mockRestore();
+      expect(compare).toHaveBeenCalledWith('whatever12', expect.stringMatching(/^\$2b\$12\$/));
     });
   });
 });

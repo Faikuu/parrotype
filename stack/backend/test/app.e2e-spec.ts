@@ -1,16 +1,14 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import * as request from 'supertest';
+import request from 'supertest';
 import type { App } from 'supertest/types';
+import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/app.setup';
+import { PrismaService } from '../src/prisma/prisma.service';
 import { applyE2eEnv } from './e2e.env';
 
+// Config is read lazily (getEnv), so setting it here, before the app is built, is enough.
 applyE2eEnv();
-
-// Imported after the env is set, so getEnv() sees the e2e values.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { AppModule } = require('../src/app.module') as typeof import('../src/app.module');
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { configureApp } = require('../src/app.setup') as typeof import('../src/app.setup');
 
 const cookieFrom = (res: request.Response): string => {
   const header = res.headers['set-cookie'];
@@ -109,9 +107,18 @@ describe('ParroType API (e2e)', () => {
 
   it('serves a random quote and rejects zen on the leaderboard', async () => {
     const server = app.getHttpServer();
+    // The e2e database starts empty, so add one short English quote.
+    const text = 'Imitation is suicide.';
+    await app.get(PrismaService).quote.create({
+      data: { language: 'en', text, source: 'Ralph Waldo Emerson, Self-Reliance (1841)', length: text.length },
+    });
+
     const quote = await request(server).get('/api/quotes/random?language=en&length=short').expect(200);
-    expect(quote.body).toMatchObject({ language: 'en' });
+    expect(quote.body).toMatchObject({ language: 'en', text });
     expect(quote.body.length).toBeLessThan(100);
+
+    // No Polish quotes were seeded, so this bucket is empty.
+    await request(server).get('/api/quotes/random?language=pl&length=long').expect(404);
 
     await request(server).get('/api/leaderboard?mode=zen&mode2=x&language=en').expect(400);
   });

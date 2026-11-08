@@ -10,7 +10,8 @@ export default function globalSetup(): void {
   }
   const backend = join(__dirname, '..');
   // Create the test schema from the committed migrations.
-  execFileSync(join(backend, 'node_modules', '.bin', 'prisma'), ['migrate', 'deploy'], {
+  const prismaCli = require.resolve('prisma/build/index.js');
+  execFileSync(process.execPath, [prismaCli, 'migrate', 'deploy'], {
     cwd: backend,
     env: process.env,
     stdio: 'pipe',

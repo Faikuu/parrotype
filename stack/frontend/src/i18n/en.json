@@ -130,7 +130,6 @@
     "quickRestart": "Quick restart key",
     "uiLanguage": "Interface language",
     "resetSettings": "Reset settings",
-    "resetConfirm": "Reset all settings to their defaults?",
     "resetYes": "Yes, reset",
     "go": "Go to",
     "goTest": "Test",

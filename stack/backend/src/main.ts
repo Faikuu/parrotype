@@ -1,6 +1,8 @@
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { ExpressAdapter } from '@nestjs/platform-express';
+import express from 'express';
 import { AppModule } from './app.module';
 import { configureApp } from './app.setup';
 import { getEnv } from './config/env';
@@ -8,8 +10,12 @@ import { getEnv } from './config/env';
 async function bootstrap(): Promise<void> {
   // Fail fast on bad configuration, before Nest starts.
   const env = getEnv();
-  // bodyParser: false, because configureApp installs express.json with a 50kb limit.
-  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  // The adapter is passed explicitly: Nest's default lookup of platform-express can fail
+  // when npm hoists @nestjs/core above this package. bodyParser is off because
+  // configureApp installs express.json with a 50kb limit.
+  const app = await NestFactory.create(AppModule, new ExpressAdapter(express()), {
+    bodyParser: false,
+  });
   configureApp(app);
   app.enableShutdownHooks();
   await app.listen(env.PORT);

@@ -27,33 +27,33 @@ export function isPangram(text: string, language: Language): boolean {
   return missingLetters(text, language).length === 0;
 }
 
-function weightedIndex(weights: readonly number[], rng: Rng): number {
-  const total = weights.reduce((sum, w) => sum + w, 0);
-  let r = rng() * total;
-  for (let i = 0; i < weights.length; i++) {
-    r -= weights[i] as number;
-    if (r < 0) return i;
-  }
-  return weights.length - 1;
-}
-
 interface WordInfo {
   word: string;
   length: number;
-  /** Indices into the alphabet of the distinct letters in the word. */
-  letters: number[];
+  /** Bitmask over the alphabet indices of the distinct letters in the word. */
+  mask: number;
+}
+
+function popcount(x: number): number {
+  let v = x >>> 0;
+  let count = 0;
+  while (v !== 0) {
+    v &= v - 1;
+    count++;
+  }
+  return count;
 }
 
 function analyse(language: Language): WordInfo[] {
   const alphabet = ALPHABETS[language];
   const infos: WordInfo[] = [];
   for (const word of WORDLISTS[language]) {
-    const letters = new Set<number>();
+    let mask = 0;
     for (const ch of word.normalize('NFC').toLowerCase()) {
       const index = alphabet.indexOf(ch);
-      if (index >= 0) letters.add(index);
+      if (index >= 0) mask = (mask | (1 << index)) >>> 0;
     }
-    if (letters.size > 0) infos.push({ word, length: word.length, letters: [...letters] });
+    if (mask !== 0) infos.push({ word, length: word.length, mask });
   }
   return infos;
 }
@@ -74,43 +74,53 @@ function wordInfos(language: Language): WordInfo[] {
  * shortest is kept, its words are shuffled, and it is verified before returning.
  */
 export function generatePangramWords(language: Language, rng: Rng = Math.random, opts: PangramOptions = {}): string[] {
-  const alphabet = ALPHABETS[language];
-  const alphabetSize = [...alphabet].length;
+  const alphabetSize = [...ALPHABETS[language]].length;
+  const full = (2 ** alphabetSize - 1) >>> 0;
   const infos = wordInfos(language);
 
-  const covered = new Set<number>();
-  for (const info of infos) info.letters.forEach((l) => covered.add(l));
-  if (covered.size < alphabetSize) {
+  let coverable = 0;
+  for (const info of infos) coverable = (coverable | info.mask) >>> 0;
+  if (coverable !== full) {
     throw new Error(`Word list for "${language}" cannot cover the alphabet`);
   }
 
   const attempts = Math.max(1, opts.attempts ?? 60);
   const results: { words: string[]; chars: number }[] = [];
+  const weights: number[] = new Array<number>(infos.length).fill(0);
+  const fresh: number[] = new Array<number>(infos.length).fill(0);
 
   for (let t = 0; t < attempts; t++) {
-    const got = new Set<number>();
-    const used = new Set<string>();
+    let got = 0;
+    const used: boolean[] = new Array<boolean>(infos.length).fill(false);
     const chosen: WordInfo[] = [];
 
-    while (got.size < alphabetSize) {
-      const candidates: WordInfo[] = [];
-      const weights: number[] = [];
-      for (const info of infos) {
-        if (used.has(info.word)) continue;
-        let fresh = 0;
-        for (const l of info.letters) if (!got.has(l)) fresh++;
-        if (fresh === 0) continue;
-        candidates.push(info);
-        weights.push((fresh * fresh) / info.length);
+    while (got !== full) {
+      let total = 0;
+      for (let k = 0; k < infos.length; k++) {
+        const info = infos[k] as WordInfo;
+        const n = used[k] ? 0 : popcount(info.mask & ~got);
+        fresh[k] = n;
+        weights[k] = n === 0 ? 0 : (n * n) / info.length;
+        total += weights[k] as number;
       }
-      if (candidates.length === 0) break;
-      const next = candidates[weightedIndex(weights, rng)] as WordInfo;
+      if (total === 0) break;
+      // Weighted pick over candidates with weight > 0.
+      let r = rng() * total;
+      let pickedIndex = -1;
+      for (let k = 0; k < infos.length; k++) {
+        const w = weights[k] as number;
+        if (w === 0) continue;
+        pickedIndex = k;
+        r -= w;
+        if (r < 0) break;
+      }
+      const next = infos[pickedIndex] as WordInfo;
+      used[pickedIndex] = true;
       chosen.push(next);
-      used.add(next.word);
-      next.letters.forEach((l) => got.add(l));
+      got = (got | next.mask) >>> 0;
     }
 
-    if (got.size === alphabetSize) {
+    if (got === full) {
       const chars = chosen.reduce((sum, c) => sum + c.length, 0) + chosen.length - 1;
       results.push({ words: chosen.map((c) => c.word), chars });
     }

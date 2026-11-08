@@ -3,7 +3,7 @@ import { fuzzyFilter, fuzzyMatch } from './fuzzy';
 
 describe('fuzzyMatch', () => {
   it('matches a subsequence and returns the matched indices', () => {
-    const m = fuzzyMatch('tt', 'Theme');
+    const m = fuzzyMatch('te', 'Theme');
     expect(m).not.toBeNull();
     expect(m!.indices).toEqual([0, 2]);
   });
@@ -30,8 +30,8 @@ describe('fuzzyMatch', () => {
   });
 
   it('prefers word starts', () => {
-    const wordStart = fuzzyMatch('ft', 'font type')!;
-    const midWord = fuzzyMatch('ft', 'soft')!;
+    const wordStart = fuzzyMatch('dl', 'data-loader')!;
+    const midWord = fuzzyMatch('dl', 'pedxl')!;
     expect(wordStart.score).toBeGreaterThan(midWord.score);
   });
 });

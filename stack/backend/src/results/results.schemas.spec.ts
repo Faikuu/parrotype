@@ -27,8 +27,11 @@ describe('resultInputSchema', () => {
   });
 
   it('rejects wpm that does not match charStats and duration', () => {
-    const r = resultInputSchema.safeParse({ ...valid, wpm: 300, rawWpm: 320 });
+    // 400 correct chars in a minute is about 80 wpm, so claiming 10 is more than wpm*1.5+10 off.
+    const r = resultInputSchema.safeParse({ ...valid, wpm: 10, rawWpm: 12 });
     expect(r.success).toBe(false);
+    // Within tolerance (80 vs 75 is fine) is accepted.
+    expect(resultInputSchema.safeParse({ ...valid, wpm: 75, rawWpm: 80 }).success).toBe(true);
   });
 
   it('rejects out-of-range values and unknown modes', () => {

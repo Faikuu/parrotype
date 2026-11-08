@@ -20,9 +20,9 @@ import {
   ZoomIn,
   type LucideIcon,
 } from 'lucide-react';
-import type { Language, Mode, PangramCount, QuoteLength, TimeOption, WordsOption } from '@/lib/engine/types';
+import type { Language, Mode, PangramCount, QuoteLength, TestConfig, TimeOption, WordsOption } from '@/lib/engine/types';
 import { FONT_IDS, FONTS, THEMES, type ThemeId } from '@/themes/themes';
-import type { CaretStyle, FontSize, LiveStats, QuickRestart, Settings, SettingsData, StopOnError, UiLanguage } from '@/store/settings';
+import type { CaretStyle, FontSize, LiveStats, QuickRestart, Settings, SettingsData, UiLanguage } from '@/store/settings';
 
 export interface Command {
   id: string;
@@ -62,13 +62,12 @@ interface Option<V> {
   label: string;
 }
 
-function toggle(ctx: CommandContext, id: string, key: BooleanKey, label: string, icon?: LucideIcon): Command {
+function toggle(ctx: CommandContext, id: string, key: BooleanKey, label: string, group: string): Command {
   const on = ctx.settings[key];
   return {
     id,
     label,
-    group: ctx.t('commands:groups.test'),
-    icon,
+    group,
     hint: ctx.t(on ? 'common:on' : 'common:off'),
     keepOpen: true,
     run: () => ctx.settings.set(key, !on),
@@ -119,7 +118,7 @@ const LANGUAGES: Language[] = ['en', 'pl'];
 const FONT_SIZES: FontSize[] = [1, 1.25, 1.5, 2, 2.5, 3];
 const CARET_STYLES: CaretStyle[] = ['line', 'block', 'underline', 'off'];
 const LIVE_STATS: LiveStats[] = ['wpm', 'acc', 'both', 'off'];
-const STOP_ON_ERROR: StopOnError[] = ['off', 'letter', 'word'];
+const STOP_ON_ERROR: TestConfig['stopOnError'][] = ['off', 'letter', 'word'];
 const QUICK_RESTART: QuickRestart[] = ['tab', 'esc', 'off'];
 const UI_LANGUAGES: UiLanguage[] = ['en', 'pl'];
 
@@ -179,8 +178,8 @@ export function buildCommands(ctx: CommandContext): Command[] {
       icon: Sparkles,
       options: PANGRAMS.map((n) => ({ value: n, label: t('settings:pangrams', { count: n }) })),
     }),
-    toggle(ctx, 'punctuation', 'punctuation', t('commands:punctuation')),
-    toggle(ctx, 'numbers', 'numbers', t('commands:numbers')),
+    toggle(ctx, 'punctuation', 'punctuation', t('commands:punctuation'), g.test),
+    toggle(ctx, 'numbers', 'numbers', t('commands:numbers'), g.test),
     choice(ctx, {
       id: 'language',
       key: 'language',
@@ -260,7 +259,7 @@ export function buildCommands(ctx: CommandContext): Command[] {
       group: g.appearance,
       options: CARET_STYLES.map((c) => ({ value: c, label: t(`settings:caretStyles.${c}`) })),
     }),
-    toggle(ctx, 'smoothCaret', 'smoothCaret', t('commands:smoothCaret')),
+    toggle(ctx, 'smoothCaret', 'smoothCaret', t('commands:smoothCaret'), g.appearance),
     choice(ctx, {
       id: 'liveStats',
       key: 'liveStats',
@@ -268,8 +267,8 @@ export function buildCommands(ctx: CommandContext): Command[] {
       group: g.appearance,
       options: LIVE_STATS.map((l) => ({ value: l, label: t(`settings:liveStatsOptions.${l}`) })),
     }),
-    toggle(ctx, 'blindMode', 'blindMode', t('commands:blindMode')),
-    toggle(ctx, 'focusMode', 'focusMode', t('commands:focusMode')),
+    toggle(ctx, 'blindMode', 'blindMode', t('commands:blindMode'), g.appearance),
+    toggle(ctx, 'focusMode', 'focusMode', t('commands:focusMode'), g.appearance),
 
     choice(ctx, {
       id: 'stopOnError',
@@ -358,4 +357,3 @@ export function resolveLevel(root: Command[], ids: readonly string[]): { list: C
   return { list, trail };
 }
 
-export { FONT_IDS };
