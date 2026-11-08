@@ -1,8 +1,10 @@
 import type { Language, QuoteLength } from '@/lib/engine/types';
 import { api } from './client';
 import type {
+  DailyBoard,
   LeaderboardEntry,
   LeaderboardQuery,
+  PublicProfile,
   PublicUser,
   Quote,
   Result,
@@ -17,6 +19,10 @@ export const authApi = {
     api<{ user: PublicUser }>('/auth/login', { method: 'POST', body: input }),
   logout: () => api<{ ok: true }>('/auth/logout', { method: 'POST' }),
   me: (signal?: AbortSignal) => api<{ user: PublicUser }>('/auth/me', { signal }),
+  changePassword: (input: { currentPassword: string; newPassword: string }) =>
+    api<{ ok: true }>('/auth/password', { method: 'PATCH', body: input }),
+  deleteAccount: (input: { password: string }) =>
+    api<{ ok: true }>('/auth/account', { method: 'DELETE', body: input }),
 };
 
 export const quotesApi = {
@@ -34,4 +40,14 @@ export const resultsApi = {
 export const leaderboardApi = {
   get: (query: LeaderboardQuery, signal?: AbortSignal) =>
     api<LeaderboardEntry[]>(`/leaderboard?${new URLSearchParams(query).toString()}`, { signal }),
+};
+
+export const dailyApi = {
+  today: (language: Language, signal?: AbortSignal) =>
+    api<DailyBoard>(`/daily?${new URLSearchParams({ language }).toString()}`, { signal }),
+};
+
+export const usersApi = {
+  profile: (name: string, signal?: AbortSignal) =>
+    api<PublicProfile>(`/users/${encodeURIComponent(name)}`, { signal }),
 };

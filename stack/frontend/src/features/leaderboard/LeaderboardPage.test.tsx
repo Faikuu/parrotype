@@ -63,19 +63,75 @@ describe('LeaderboardPage', () => {
   it('reads filters from the URL and falls back for unknown values', () => {
     expect(parseFilters(new URLSearchParams('mode=words&mode2=50&language=pl'))).toEqual({
       mode: 'words',
-      mode2: 50,
+      mode2: '50',
       language: 'pl',
     });
     expect(parseFilters(new URLSearchParams('mode=words&mode2=60'))).toEqual({
       mode: 'words',
-      mode2: 25,
+      mode2: '25',
       language: 'en',
     });
-    expect(parseFilters(new URLSearchParams('mode=zen&mode2=abc&language=de'))).toEqual({
+    expect(parseFilters(new URLSearchParams('mode=zen&mode2=abc&language=fr'))).toEqual({
       mode: 'time',
-      mode2: 60,
+      mode2: '60',
       language: 'en',
     });
+    expect(parseFilters(new URLSearchParams('mode=daily&mode2=yesterday&language=de'))).toEqual({
+      mode: 'daily',
+      mode2: 'yesterday',
+      language: 'de',
+    });
+    expect(parseFilters(new URLSearchParams('mode=daily&mode2=2026-11-01&language=es'))).toEqual({
+      mode: 'daily',
+      mode2: 'today',
+      language: 'es',
+    });
+  });
+
+  it('sends today\'s UTC date as mode2 for the daily board', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      // 23:30 UTC: the local date may already differ in some zones, the UTC date must not.
+      vi.setSystemTime(new Date('2026-11-08T23:30:00Z'));
+      const fetchMock = mockFetch((url) => (url.includes('/auth/me') ? json({}, 401) : json(ROWS)));
+      renderPage('/leaderboard?mode=daily');
+      await screen.findByRole('table');
+
+      const calls = fetchMock.mock.calls.map((c) => String(c[0]));
+      const board = calls.find((u) => u.includes('/leaderboard'));
+      expect(board).toContain('mode=daily');
+      expect(board).toContain('mode2=2026-11-08');
+      expect(board).toContain('language=en');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('switches the daily pill to yesterday in UTC and keeps it in the URL', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-11-08T00:10:00Z'));
+      const fetchMock = mockFetch((url) => (url.includes('/auth/me') ? json({}, 401) : json(ROWS)));
+      renderPage('/leaderboard?mode=daily');
+      await screen.findByRole('table');
+
+      await userEvent.click(screen.getByRole('button', { name: 'Yesterday' }));
+      await screen.findByRole('button', { name: 'Yesterday', pressed: true });
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]));
+      expect(urls.some((u) => u.includes('mode2=2026-11-07'))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('offers four languages and links names to their profile', async () => {
+    mockFetch((url) => (url.includes('/auth/me') ? json({}, 401) : json(ROWS)));
+    renderPage('/leaderboard');
+    await screen.findByRole('table');
+    for (const name of ['English', 'Polski', 'Deutsch', 'Español']) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
+    expect(screen.getByRole('link', { name: 'kea' })).toHaveAttribute('href', '/u/kea');
   });
 
   it('requests the new filter when a pill is pressed', async () => {

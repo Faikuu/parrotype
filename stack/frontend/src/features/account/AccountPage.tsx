@@ -6,26 +6,27 @@ import { Button } from '@/components/Button';
 import { useAuth } from '@/features/auth/useAuth';
 import { resultsApi } from '@/lib/api';
 import type { Result } from '@/lib/api/types';
+import { BestsTable } from './BestsTable';
+import { ChangePasswordForm } from './ChangePassword';
+import { DeleteAccountForm } from './DeleteAccount';
 import {
-  buildBestRows,
   formatDate,
   formatDateTime,
   formatNumber,
   relativeTime,
   splitDuration,
-  type BestRow,
 } from './format';
+import { languageLabel, modeLabel, optionLabel, type Tr } from './labels';
 import { ProgressChart } from './ProgressChart';
 
 const RECENT_LIMIT = 100;
-type Tr = (k: string, o?: Record<string, unknown>) => string;
-const QUOTE_LENGTHS = ['short', 'medium', 'long', 'any'];
 
 export default function AccountPage() {
   const { t, i18n } = useTranslation();
   const lang = i18n.resolvedLanguage ?? 'en';
   const navigate = useNavigate();
   const { user, isLoading, logout } = useAuth();
+  // Set while logging out or deleting the account: the user is null then, but we are not bouncing to login.
   const [leaving, setLeaving] = useState(false);
 
   const summary = useQuery({
@@ -40,7 +41,6 @@ export default function AccountPage() {
   });
 
   if (isLoading) return <p className="py-16 text-sub">{t('common:loading')}</p>;
-  // While logging out the user is null too, so don't bounce to the login page then.
   if (!user && !leaving) return <Navigate to="/login?next=/account" replace />;
   if (!user) return null;
 
@@ -65,6 +65,12 @@ export default function AccountPage() {
           <p className="text-sub">
             {t('account:joined', { date: formatDate(user.createdAt, lang) })}
           </p>
+          <Link
+            to={`/u/${encodeURIComponent(user.name)}`}
+            className="mt-2 inline-block text-main underline underline-offset-4"
+          >
+            {t('account:viewProfile')}
+          </Link>
         </div>
         <Button variant="ghost" onClick={onLogout} disabled={leaving}>
           {t('account:logout')}
@@ -95,7 +101,7 @@ export default function AccountPage() {
           {t('account:bests.heading')}
         </h2>
         {summary.data ? (
-          <BestsTable rows={buildBestRows(summary.data.bests)} lang={lang} />
+          <BestsTable bests={summary.data.bests} lang={lang} />
         ) : summary.isPending ? (
           <p className="text-sub">{t('common:loading')}</p>
         ) : null}
@@ -125,6 +131,16 @@ export default function AccountPage() {
           <RecentTable results={list.slice(0, 50)} lang={lang} />
         </section>
       ) : null}
+
+      <section aria-labelledby="account-settings" className="mt-16 border-t border-surface pt-10">
+        <h2 id="account-settings" className="text-[1.1rem] font-semibold text-text">
+          {t('account:settings.heading')}
+        </h2>
+        <div className="mt-8 grid gap-12 md:grid-cols-2">
+          <ChangePasswordForm />
+          <DeleteAccountForm name={user.name} onLeaving={setLeaving} />
+        </div>
+      </section>
     </div>
   );
 }
@@ -169,63 +185,6 @@ function StatsRow(props: {
   );
 }
 
-function optionLabel(mode: string, mode2: string | null, t: Tr): string {
-  if (!mode2) return '';
-  if (mode === 'time') return t('settings:seconds', { count: Number(mode2) });
-  if (mode === 'words') return t('settings:wordCount', { count: Number(mode2) });
-  if (mode === 'quote') return QUOTE_LENGTHS.includes(mode2) ? t(`settings:quoteLengths.${mode2}`) : mode2;
-  if (mode === 'pangram' && Number.isFinite(Number(mode2))) {
-    return t('settings:pangrams', { count: Number(mode2) });
-  }
-  return '';
-}
-
-function modeLabel(mode: string, t: Tr): string {
-  return ['time', 'words', 'quote', 'zen', 'pangram', 'custom'].includes(mode)
-    ? t(`settings:modes.${mode}`)
-    : mode;
-}
-
-function BestsTable({ rows, lang }: { rows: BestRow[]; lang: string }) {
-  const { t } = useTranslation();
-  const tr: Tr = (k, o) => String(t(k, o));
-  const dash = '–';
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[460px] border-collapse text-left">
-        <thead>
-          <tr className="text-[0.9rem] text-sub">
-            <th scope="col" className="py-2 pr-4 font-normal">{t('account:bests.mode')}</th>
-            <th scope="col" className="py-2 pr-4 font-normal">{t('account:bests.option')}</th>
-            <th scope="col" className="py-2 pr-4 font-normal">{t('account:bests.language')}</th>
-            <th scope="col" className="py-2 pr-4 text-right font-normal">{t('account:colWpm')}</th>
-            <th scope="col" className="py-2 pr-4 text-right font-normal">{t('account:colAcc')}</th>
-            <th scope="col" className="py-2 font-normal">{t('account:bests.date')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => {
-            const first = i === 0 || rows[i - 1]?.mode !== row.mode;
-            const b = row.best;
-            return (
-              <tr key={`${row.mode}-${row.mode2}-${b?.language ?? 'none'}-${i}`} className="border-t border-surface">
-                <td className="py-2 pr-4 text-text">{first ? modeLabel(row.mode, tr) : ''}</td>
-                <td className="py-2 pr-4 text-sub">{optionLabel(row.mode, row.mode2, tr) || dash}</td>
-                <td className="py-2 pr-4 text-sub">{b ? tr(`settings:languages.${b.language}`) : dash}</td>
-                <td className="tabular py-2 pr-4 text-right text-text">{b ? formatNumber(b.wpm, lang) : dash}</td>
-                <td className="tabular py-2 pr-4 text-right text-text">
-                  {b ? `${formatNumber(b.accuracy, lang, 1)}%` : dash}
-                </td>
-                <td className="py-2 text-sub">{b ? formatDate(b.createdAt, lang) : dash}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 function RecentTable({ results, lang }: { results: Result[]; lang: string }) {
   const { t } = useTranslation();
   const tr: Tr = (k, o) => String(t(k, o));
@@ -249,8 +208,8 @@ function RecentTable({ results, lang }: { results: Result[]; lang: string }) {
           {results.map((r) => {
             const label = [
               modeLabel(r.mode, tr),
-              optionLabel(r.mode, r.mode2, tr),
-              r.language ? tr(`settings:languages.${r.language}`) : '',
+              optionLabel(r.mode, r.mode2, tr, lang),
+              r.language ? languageLabel(r.language) : '',
             ]
               .filter(Boolean)
               .join(', ');

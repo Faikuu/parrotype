@@ -10,6 +10,7 @@ import { useApplySettings } from '@/store/useApplySettings';
 // These pull in chart.js later, so keep them out of the first bundle.
 const AccountPage = lazy(() => import('@/features/account/AccountPage'));
 const LeaderboardPage = lazy(() => import('@/features/leaderboard/LeaderboardPage'));
+const ProfilePage = lazy(() => import('@/features/profile/ProfilePage'));
 
 export default function App() {
   useApplySettings();
@@ -34,6 +35,14 @@ export default function App() {
             element={
               <Suspense fallback={null}>
                 <LeaderboardPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="u/:name"
+            element={
+              <Suspense fallback={null}>
+                <ProfilePage />
               </Suspense>
             }
           />

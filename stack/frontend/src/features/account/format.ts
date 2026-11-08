@@ -49,24 +49,36 @@ export function movingAverage(values: number[], window = 10): (number | null)[] 
   });
 }
 
-export const BEST_LANGUAGE_ORDER = ['en', 'pl'];
+export const BEST_LANGUAGE_ORDER: readonly string[] = ['en', 'pl', 'de', 'es'];
 
 export interface BestRow {
   mode: string;
-  /** The sub-option (time 15, words 25, quote "short"...). Null when the mode has no sub-options. */
+  /** The sub-option (time 15, words 25, quote "short", daily date...). Null when the mode has none. */
   mode2: string | null;
   /** Null when there is no result for this row yet (dash row). */
   best: BestEntry | null;
 }
 
+interface BestGroup {
+  mode: string;
+  /** Fixed sub-options, or null when the rows come from the results themselves. */
+  mode2s: readonly string[] | null;
+  /** Rows for results that exist, newest date first (daily). Otherwise by language, then wpm. */
+  byDate?: boolean;
+  /** Show a dash row when there are no results (unranked weak keys stays hidden until used). */
+  showEmpty?: boolean;
+}
+
 /** Fixed sub-options for the modes that have them; other modes list whatever results exist. */
-export const BEST_GROUPS: { mode: string; mode2s: readonly string[] | null }[] = [
+export const BEST_GROUPS: BestGroup[] = [
   { mode: 'time', mode2s: ['15', '30', '60', '120'] },
   { mode: 'words', mode2s: ['10', '25', '50', '100'] },
   { mode: 'quote', mode2s: null },
   { mode: 'pangram', mode2s: null },
+  { mode: 'daily', mode2s: null, byDate: true },
   { mode: 'zen', mode2s: null },
   { mode: 'custom', mode2s: null },
+  { mode: 'weak', mode2s: null, showEmpty: false },
 ];
 
 function languageRank(lang: string): number {
@@ -83,7 +95,10 @@ export function buildBestRows(bests: Bests): BestRow[] {
   for (const group of BEST_GROUPS) {
     const inMode = bests
       .filter((b) => b.mode === group.mode)
-      .sort((a, b) => languageRank(a.language) - languageRank(b.language) || b.wpm - a.wpm);
+      .sort((a, b) => {
+        if (group.byDate && a.mode2 !== b.mode2) return a.mode2 < b.mode2 ? 1 : -1;
+        return languageRank(a.language) - languageRank(b.language) || b.wpm - a.wpm;
+      });
     if (group.mode2s) {
       for (const sub of group.mode2s) {
         const matches = inMode.filter((b) => b.mode2 === sub);
@@ -91,7 +106,9 @@ export function buildBestRows(bests: Bests): BestRow[] {
         for (const best of matches) rows.push({ mode: group.mode, mode2: sub, best });
       }
     } else {
-      if (inMode.length === 0) rows.push({ mode: group.mode, mode2: null, best: null });
+      if (inMode.length === 0 && group.showEmpty !== false) {
+        rows.push({ mode: group.mode, mode2: null, best: null });
+      }
       for (const best of inMode) rows.push({ mode: group.mode, mode2: best.mode2, best });
     }
   }

@@ -1,4 +1,4 @@
-// i18n namespaces owned by the auth, account and leaderboard pages.
+// i18n namespaces owned by the auth, account, leaderboard and profile pages.
 // Merged into i18next by src/i18n/index.ts. Add keys to both languages.
 export const pagesLocale = {
   en: {
@@ -30,6 +30,28 @@ export const pagesLocale = {
     account: {
       joined: 'joined {{date}}',
       logout: 'Log out',
+      viewProfile: 'View public profile',
+      modes: { daily: 'Daily', weak: 'Weak keys' },
+      settings: {
+        heading: 'Settings',
+        password: {
+          heading: 'Change password',
+          current: 'Current password',
+          new: 'New password',
+          confirm: 'Repeat new password',
+          submit: 'Change password',
+          submitting: 'Changing…',
+          success: 'Password changed. Other devices have been signed out.',
+          mismatch: "Passwords don't match.",
+        },
+        delete: {
+          heading: 'Delete account',
+          body: "This deletes your account and all your results. It can't be undone.",
+          confirmLabel: 'Type {{name}} to confirm',
+          submit: 'Delete account',
+          submitting: 'Deleting…',
+        },
+      },
       colAcc: 'acc',
       colWpm: 'wpm',
       stats: {
@@ -72,10 +94,18 @@ export const pagesLocale = {
     },
     leaderboard: {
       title: 'Leaderboard',
-      filters: { mode: 'Mode', option: 'Length', language: 'Language' },
+      filters: { mode: 'Mode', option: 'Length', day: 'Day', language: 'Language' },
+      daily: { today: 'Today', yesterday: 'Yesterday' },
       cols: { rank: 'Rank', name: 'Name', date: 'Date' },
       empty: 'No results for this mode yet. Be the first.',
       loadError: "Couldn't load the leaderboard.",
+    },
+    profile: {
+      documentTitle: '{{name}} on ParroType',
+      joined: 'joined {{date}}',
+      notFound: { body: 'No user with that name.', link: 'Go to the leaderboard' },
+      recent: { heading: 'Recent results', empty: 'No results yet.' },
+      loadError: "Couldn't load this profile.",
     },
   },
   pl: {
@@ -107,6 +137,28 @@ export const pagesLocale = {
     account: {
       joined: 'dołączono {{date}}',
       logout: 'Wyloguj się',
+      viewProfile: 'Zobacz profil publiczny',
+      modes: { daily: 'Dzienne', weak: 'Słabe klawisze' },
+      settings: {
+        heading: 'Ustawienia',
+        password: {
+          heading: 'Zmień hasło',
+          current: 'Obecne hasło',
+          new: 'Nowe hasło',
+          confirm: 'Powtórz nowe hasło',
+          submit: 'Zmień hasło',
+          submitting: 'Zmienianie…',
+          success: 'Hasło zmienione. Inne urządzenia zostały wylogowane.',
+          mismatch: 'Hasła nie są takie same.',
+        },
+        delete: {
+          heading: 'Usuń konto',
+          body: 'To usunie Twoje konto i wszystkie wyniki. Tej operacji nie można cofnąć.',
+          confirmLabel: 'Wpisz {{name}}, aby potwierdzić',
+          submit: 'Usuń konto',
+          submitting: 'Usuwanie…',
+        },
+      },
       colAcc: 'dokł.',
       colWpm: 'wpm',
       stats: {
@@ -149,10 +201,18 @@ export const pagesLocale = {
     },
     leaderboard: {
       title: 'Ranking',
-      filters: { mode: 'Tryb', option: 'Długość', language: 'Język' },
+      filters: { mode: 'Tryb', option: 'Długość', day: 'Dzień', language: 'Język' },
+      daily: { today: 'Dziś', yesterday: 'Wczoraj' },
       cols: { rank: 'Miejsce', name: 'Nazwa', date: 'Data' },
       empty: 'Brak wyników w tym trybie. Bądź pierwszy.',
       loadError: 'Nie udało się wczytać rankingu.',
+    },
+    profile: {
+      documentTitle: '{{name}} na ParroType',
+      joined: 'dołączono {{date}}',
+      notFound: { body: 'Nie ma użytkownika o tej nazwie.', link: 'Przejdź do rankingu' },
+      recent: { heading: 'Ostatnie wyniki', empty: 'Brak wyników.' },
+      loadError: 'Nie udało się wczytać profilu.',
     },
   },
 };

@@ -1,4 +1,8 @@
-import type { Language, Mode, QuoteLength } from '@/lib/engine/types';
+// Mirrors the backend types (docs/SPEC.md and docs/SPEC-2.1.md). Kept local to the API layer,
+// so the wire format does not depend on the engine's in-progress unions.
+export type Language = 'en' | 'pl' | 'de' | 'es';
+export type Mode = 'time' | 'words' | 'quote' | 'zen' | 'pangram' | 'custom' | 'daily' | 'weak';
+export type QuoteLength = 'short' | 'medium' | 'long' | 'any';
 
 export type PublicUser = { id: number; name: string; email: string; createdAt: string };
 
@@ -40,19 +44,21 @@ export interface Result {
   createdAt: string;
 }
 
+export type BestEntry = {
+  mode: string;
+  mode2: string;
+  language: string;
+  wpm: number;
+  accuracy: number;
+  createdAt: string;
+};
+
 export type Summary = {
   totalTests: number;
   totalTimeMs: number;
   averageWpm: number;
   averageAccuracy: number; // over the last 10
-  bests: Array<{
-    mode: string;
-    mode2: string;
-    language: string;
-    wpm: number;
-    accuracy: number;
-    createdAt: string;
-  }>; // best per (mode, mode2, language)
+  bests: BestEntry[]; // best per (mode, mode2, language)
 };
 
 export type LeaderboardEntry = {
@@ -62,6 +68,30 @@ export type LeaderboardEntry = {
   rawWpm: number;
   accuracy: number;
   createdAt: string;
+};
+
+export type DailyBoard = {
+  date: string; // YYYY-MM-DD, UTC
+  language: Language;
+  entries: LeaderboardEntry[];
+};
+
+export type RecentResult = {
+  mode: string;
+  mode2: string;
+  language: string;
+  wpm: number;
+  accuracy: number;
+  createdAt: string;
+};
+
+export type PublicProfile = {
+  name: string;
+  createdAt: string;
+  totalTests: number;
+  totalTimeMs: number;
+  bests: BestEntry[]; // ranked modes only, best per (mode, mode2, language)
+  recent: RecentResult[]; // last 10
 };
 
 export type LeaderboardQuery = { mode: string; mode2: string; language: Language };

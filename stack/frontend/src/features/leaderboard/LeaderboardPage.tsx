@@ -1,14 +1,24 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { Button } from '@/components/Button';
 import { cn } from '@/components/cn';
 import { formatDate } from '@/features/account/format';
+import { BOARD_LANGUAGES, LANGUAGE_NAMES, type BoardLanguage } from '@/features/account/labels';
 import { useAuth } from '@/features/auth/useAuth';
 import { leaderboardApi } from '@/lib/api';
 import type { LeaderboardEntry } from '@/lib/api/types';
-import { TIME_OPTIONS, WORDS_OPTIONS, parseFilters, type BoardFilters } from './filters';
+import {
+  DAY_OPTIONS,
+  TIME_OPTIONS,
+  WORDS_OPTIONS,
+  apiMode2,
+  defaultOption,
+  parseFilters,
+  type BoardFilters,
+  type BoardMode,
+} from './filters';
 
 export default function LeaderboardPage() {
   const { t, i18n } = useTranslation();
@@ -16,36 +26,47 @@ export default function LeaderboardPage() {
   const [params, setParams] = useSearchParams();
   const filters = parseFilters(params);
   const { user } = useAuth();
+  // The UTC day the page was opened on; daily pills are dates relative to it.
+  const [now] = useState(() => Date.now());
+  const board = apiMode2(filters, now);
 
   const query = useQuery({
-    queryKey: ['leaderboard', filters.mode, filters.mode2, filters.language],
+    queryKey: ['leaderboard', filters.mode, board, filters.language],
     queryFn: ({ signal }) =>
-      leaderboardApi.get(
-        { mode: filters.mode, mode2: String(filters.mode2), language: filters.language },
-        signal,
-      ),
+      leaderboardApi.get({ mode: filters.mode, mode2: board, language: filters.language }, signal),
     placeholderData: keepPreviousData,
   });
 
   function update(next: BoardFilters) {
     setParams(
-      { mode: next.mode, mode2: String(next.mode2), language: next.language },
+      { mode: next.mode, mode2: next.mode2, language: next.language },
       { replace: true },
     );
   }
 
-  const modeOptions = [
-    { value: 'time' as const, label: t('settings:modes.time') },
-    { value: 'words' as const, label: t('settings:modes.words') },
+  const modeOptions: { value: BoardMode; label: string }[] = [
+    { value: 'time', label: t('settings:modes.time') },
+    { value: 'words', label: t('settings:modes.words') },
+    { value: 'daily', label: t('account:modes.daily') },
   ];
-  const subOptions =
-    filters.mode === 'words'
-      ? WORDS_OPTIONS.map((n) => ({ value: n, label: t('settings:wordCount', { count: n }) }))
-      : TIME_OPTIONS.map((n) => ({ value: n, label: t('settings:seconds', { count: n }) }));
-  const languageOptions = [
-    { value: 'en' as const, label: t('settings:languages.en') },
-    { value: 'pl' as const, label: t('settings:languages.pl') },
-  ];
+
+  let optionGroup: { label: string; pills: { value: string; label: string }[] };
+  if (filters.mode === 'daily') {
+    optionGroup = {
+      label: t('leaderboard:filters.day'),
+      pills: DAY_OPTIONS.map((d) => ({ value: d, label: t(`leaderboard:daily.${d}`) })),
+    };
+  } else if (filters.mode === 'words') {
+    optionGroup = {
+      label: t('leaderboard:filters.option'),
+      pills: WORDS_OPTIONS.map((n) => ({ value: String(n), label: t('settings:wordCount', { count: n }) })),
+    };
+  } else {
+    optionGroup = {
+      label: t('leaderboard:filters.option'),
+      pills: TIME_OPTIONS.map((n) => ({ value: String(n), label: t('settings:seconds', { count: n }) })),
+    };
+  }
 
   return (
     <div className="pb-16">
@@ -57,16 +78,14 @@ export default function LeaderboardPage() {
             <Pill
               key={o.value}
               active={filters.mode === o.value}
-              onClick={() =>
-                update({ ...filters, mode: o.value, mode2: o.value === 'words' ? 25 : 60 })
-              }
+              onClick={() => update({ ...filters, mode: o.value, mode2: defaultOption(o.value) })}
             >
               {o.label}
             </Pill>
           ))}
         </PillGroup>
-        <PillGroup label={t('leaderboard:filters.option')}>
-          {subOptions.map((o) => (
+        <PillGroup label={optionGroup.label}>
+          {optionGroup.pills.map((o) => (
             <Pill
               key={o.value}
               active={filters.mode2 === o.value}
@@ -77,13 +96,13 @@ export default function LeaderboardPage() {
           ))}
         </PillGroup>
         <PillGroup label={t('leaderboard:filters.language')}>
-          {languageOptions.map((o) => (
+          {BOARD_LANGUAGES.map((code: BoardLanguage) => (
             <Pill
-              key={o.value}
-              active={filters.language === o.value}
-              onClick={() => update({ ...filters, language: o.value })}
+              key={code}
+              active={filters.language === code}
+              onClick={() => update({ ...filters, language: code })}
             >
-              {o.label}
+              {LANGUAGE_NAMES[code]}
             </Pill>
           ))}
         </PillGroup>
@@ -186,7 +205,17 @@ function Table({
                 >
                   {e.rank}
                 </td>
-                <td className={cell}>{e.name}</td>
+                <td className={cell}>
+                  <Link
+                    to={`/u/${encodeURIComponent(e.name)}`}
+                    className={cn(
+                      'underline-offset-4 hover:underline',
+                      mine ? 'text-main' : 'text-text',
+                    )}
+                  >
+                    {e.name}
+                  </Link>
+                </td>
                 <td className={cn('tabular text-right', cell)}>{fmt(e.wpm)}</td>
                 <td className={cn('tabular text-right', mine ? 'text-main' : 'text-sub', 'py-2 pr-4')}>
                   {fmt(e.rawWpm)}
