@@ -1,0 +1,64 @@
+/* Typing test: text viewport, word states and caret. Colours come from the theme tokens on :root. */
+
+.test-viewport {
+  position: relative;
+  overflow: hidden;
+  height: calc(3 * 1.6em);
+  font-family: var(--font-test);
+  font-size: calc(1rem * var(--test-scale));
+  line-height: 1.6;
+  letter-spacing: 0.01em;
+  cursor: text;
+}
+
+.test-lines {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  column-gap: 0.5em;
+}
+
+.word-error {
+  text-decoration: underline wavy var(--error) 2px;
+  text-underline-offset: 6px;
+}
+
+.test-caret {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  border-radius: 2px;
+  background: var(--caret);
+  will-change: transform;
+}
+
+.test-caret[data-style='underline'] {
+  border-radius: 1px;
+}
+
+.test-caret[data-style='block'] {
+  background: color-mix(in srgb, var(--caret) 35%, transparent);
+}
+
+.caret-breathe {
+  animation: caret-breathe 1s ease-in-out infinite;
+}
+
+@keyframes caret-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .test-caret {
+    transition: none !important;
+    animation: none !important;
+  }
+}
