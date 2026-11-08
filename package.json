@@ -1,16 +1,20 @@
 {
-  "name": "base",
+  "name": "parrotype",
   "private": true,
   "workspaces": [
     "./stack/*"
   ],
   "scripts": {
-    "setup": "npm install && cp -n stack/backend/.env.sample stack/backend/.env && npm --workspace stack/backend run prisma:deploy && npm --workspace stack/backend run seed",
+    "setup": "npm install && node scripts/init-env.mjs && npm --workspace stack/backend run prisma:deploy && npm --workspace stack/backend run seed",
     "dev": "concurrently -n api,web -c yellow,green \"npm --workspace stack/backend run start:dev\" \"npm --workspace stack/frontend run dev\"",
     "build": "npm --workspace stack/backend run build && npm --workspace stack/frontend run build",
-    "test": "npm --workspace stack/backend test && npm --workspace stack/frontend test"
+    "test": "npm --workspace stack/backend test && npm --workspace stack/frontend test",
+    "lint": "npm --workspace stack/backend run lint && npm --workspace stack/frontend run lint"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
