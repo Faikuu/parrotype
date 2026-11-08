@@ -1,0 +1,62 @@
+# ParroType full stack: PostgreSQL, the API and the web app.
+#
+# Put these two values in a .env file next to this file (Compose reads it for the ${...} values below).
+# Do not commit that file, and do not write the values into this one:
+#   JWT_SECRET=<at least 32 random characters, e.g. openssl rand -base64 48>
+#   POSTGRES_PASSWORD=<database password; use letters and digits only, it goes into a URL>
+#
+# Start:  docker compose up -d --build
+# Open:   http://localhost:8080
+# Only the web container is published to the host. The API and the database stay on the Compose network.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: parrotype
+      POSTGRES_USER: parrotype
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the .env file next to docker-compose.yml}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U parrotype -d parrotype"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: stack/backend/Dockerfile
+      args:
+        DATABASE_PROVIDER: postgresql
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_PROVIDER: postgresql
+      DATABASE_URL: postgresql://parrotype:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the .env file next to docker-compose.yml}@db:5432/parrotype
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in the .env file next to docker-compose.yml}
+      CORS_ORIGINS: http://localhost:8080
+      # Cookies are Secure only when this is true. Keep false for plain http://localhost, where the browser would drop
+      # the session cookie. Set it to true once the site is served over HTTPS.
+      COOKIE_SECURE: "false"
+      NODE_ENV: production
+      PORT: "3000"
+      # One reverse proxy (the web container) sits in front of the API, so rate limits use the client address from X-Forwarded-For.
+      TRUST_PROXY: "1"
+
+  web:
+    build:
+      context: .
+      dockerfile: stack/frontend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+
+volumes:
+  pgdata:

@@ -1,0 +1,26 @@
+# Build context for the Dockerfiles (they are built from the repository root).
+# Docker reads only this file, so the per-service build contexts share it.
+
+# Dependencies and build output are installed inside the images.
+**/node_modules
+**/dist
+**/coverage
+
+# Git, editor and OS files
+.git
+**/.DS_Store
+.vscode
+.idea
+
+# Local secrets and databases never go into an image
+**/.env
+**/.env.*
+**/*.db
+**/*.db-journal
+**/*.db-shm
+**/*.db-wal
+**/*.log
+
+# Not needed in any image
+docs
+**/*.md
