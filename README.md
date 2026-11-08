@@ -12,7 +12,7 @@ A minimal typing test, named after the bird that repeats what it hears. You type
 
 - **Eight modes**: time (15/30/60/120 s), words (10/25/50/100), quote, zen (free typing, finish with Shift+Enter), pangram, custom text, **daily** and **weak keys**. Punctuation and numbers can be mixed into time and words tests.
 - **Dynamic pangrams.** Pangram mode builds a fresh sentence that uses every letter of the alphabet, each time. It runs a randomised greedy set cover over the word list, keeps the shortest candidates and checks every result. Works in all four languages, including Polish ą–ż and German ä ö ü ß.
-- **Daily challenge.** Everyone gets the same text for a given UTC date: a pangram followed by 40 words, generated from a seed. It has its own leaderboard.
+- **Daily challenge.** Everyone gets the same text for a given UTC date: a pangram followed by 40 words, generated from a seed. It has its own leaderboard, where your first attempt of the day is the one that counts.
 - **Weak keys practice.** ParroType tracks which letters you miss, per language and stored locally, and builds tests around them. The results screen shows a keyboard heatmap of your misses.
 - **Pace caret.** A faint second caret runs at your personal best, your recent average or a set speed.
 - **Tape mode** (one scrolling line), **typing sounds** (three synthesised profiles, no audio files), **copy result**, and a "New personal best" message that works without an account.

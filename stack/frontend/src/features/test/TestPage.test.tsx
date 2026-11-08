@@ -51,11 +51,12 @@ describe('TestPage', () => {
     const user = userEvent.setup();
     renderPage();
 
-    const word0 = Array.from(document.querySelectorAll<HTMLElement>('.word')).find(
-      (w) => (w.textContent ?? '').length >= 3,
-    );
-    expect(word0).toBeDefined();
+    // Custom text keeps the first word fixed; random words could start with a 1-2 letter word.
+    act(() => useSettings.setState({ mode: 'custom', customText: 'parrot echoes words' }));
+    const word0 = document.querySelector<HTMLElement>('.word');
+    expect(word0).not.toBeNull();
     const target = word0!.textContent ?? '';
+    expect(target).toBe('parrot');
 
     const input = screen.getByRole('textbox', { name: 'Typing input' });
     await user.click(input);
