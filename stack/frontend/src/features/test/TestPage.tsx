@@ -17,6 +17,8 @@ export default function TestPage() {
   const [focused, setFocused] = useState(false);
   const focusMode = useSettings((s) => s.focusMode);
   const typing = useUi((s) => s.isTyping);
+  // The palette and custom text dialog take focus, so the page reads as unfocused; the hint would cover the words.
+  const overlayOpen = useUi((s) => s.commandLineOpen || s.customTextOpen);
   const { focusInput } = test;
 
   // Start typing right away unless the user is already in another field.
@@ -67,7 +69,7 @@ export default function TestPage() {
 
             <div className="relative">
               <Words state={test.state} onActivate={focusInput} />
-              {!focused && !finished && (
+              {!focused && !finished && !overlayOpen && (
                 <button
                   type="button"
                   onClick={focusInput}

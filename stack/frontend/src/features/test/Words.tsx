@@ -108,14 +108,17 @@ export function Words({ state, onActivate }: WordsProps) {
     if (next !== shift) setShift(next);
   }, [current, state.words.length, shift, version, font, fontSize, blind]);
 
+  // Zen leaves the word under the caret out of `words` until it has text, but the caret needs its element.
+  const count = state.config.mode === 'zen' ? Math.max(state.words.length, current + 1) : state.words.length;
+
   return (
     <div ref={viewportRef} className="test-viewport" onClick={onActivate} aria-label={t('test:inputLabel')}>
       <div className="test-lines" style={{ transform: `translateY(${-shift * 1.6}em)` }}>
-        {state.words.map((target, i) => (
+        {Array.from({ length: count }, (_, i) => (
           <Word
             key={i}
             index={i}
-            target={target}
+            target={state.words[i] ?? ''}
             typed={state.typed[i] ?? ''}
             left={i < current}
             blind={blind}

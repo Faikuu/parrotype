@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/Button';
 import { Modal } from '@/components/Modal';
-import { useSettings } from '@/store/settings';
+import { CUSTOM_TEXT_MAX, useSettings } from '@/store/settings';
 import { useUi } from '@/store/ui';
 
 /** Sets the custom text, switches to custom mode and restarts. Mounted once in Layout. */
@@ -41,6 +41,7 @@ function CustomTextForm() {
           id="custom-text"
           data-autofocus
           rows={6}
+          maxLength={CUSTOM_TEXT_MAX}
           value={text}
           placeholder={t('commands:customTextPlaceholder')}
           aria-invalid={error ? true : undefined}
@@ -51,6 +52,9 @@ function CustomTextForm() {
           }}
           className="w-full resize-y rounded-[6px] bg-bg p-3 text-text outline-none placeholder:text-sub [font-family:var(--font-test)]"
         />
+        <p className="-mt-2 text-right text-[0.8rem] tabular-nums text-sub" aria-live="polite">
+          {text.length}/{CUSTOM_TEXT_MAX}
+        </p>
         {error ? (
           <p id="custom-text-error" className="text-[0.9rem] text-error">
             {error}

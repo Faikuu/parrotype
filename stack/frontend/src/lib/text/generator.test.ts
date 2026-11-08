@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateWords, quoteToWords, wordsForConfig, DEFAULT_CUSTOM_TEXT } from './generator';
+import { generateWords, quoteToWords, wordsForConfig, DEFAULT_CUSTOM_TEXT, MAX_CUSTOM_WORDS } from './generator';
 import { createRng } from './rng';
 import { isPangram } from './pangram';
 import type { TestConfig } from '../engine/types';
@@ -94,6 +94,13 @@ describe('wordsForConfig', () => {
 
   it('custom mode splits customText on whitespace', () => {
     expect(wordsForConfig({ ...base, mode: 'custom', customText: '  alpha\nbeta\t gamma ' })).toEqual(['alpha', 'beta', 'gamma']);
+  });
+
+  it('custom mode uses at most MAX_CUSTOM_WORDS words', () => {
+    const text = Array.from({ length: MAX_CUSTOM_WORDS + 500 }, (_, i) => `w${i}`).join(' ');
+    const words = wordsForConfig({ ...base, mode: 'custom', customText: text });
+    expect(words).toHaveLength(MAX_CUSTOM_WORDS);
+    expect(words[0]).toBe('w0');
   });
 
   it('custom mode falls back to the default sentence when empty', () => {

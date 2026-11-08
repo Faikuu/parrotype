@@ -30,6 +30,12 @@ describe('auth validation', () => {
     expect(validateNewPassword('x'.repeat(73))).toBe('passwordLong');
   });
 
+  it('limits new passwords to 72 bytes, not characters', () => {
+    // 'ż' is two bytes in UTF-8: 40 of them are 40 characters but 80 bytes.
+    expect(validateNewPassword('ż'.repeat(40))).toBe('passwordLong');
+    expect(validateNewPassword('ż'.repeat(36))).toBeUndefined();
+  });
+
   it('only requires a login password to be present', () => {
     expect(validateLoginPassword('')).toBe('passwordRequired');
     expect(validateLoginPassword('a')).toBeUndefined();

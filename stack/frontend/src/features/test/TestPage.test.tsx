@@ -76,4 +76,17 @@ describe('TestPage', () => {
     act(() => input.blur());
     expect(screen.getByText('Click or start typing to focus')).toBeInTheDocument();
   });
+
+  it('hides the focus hint while the command line or custom text dialog is open', () => {
+    renderPage();
+    const input = screen.getByRole('textbox', { name: 'Typing input' });
+    act(() => input.blur());
+    expect(screen.getByText('Click or start typing to focus')).toBeInTheDocument();
+
+    act(() => useUi.setState({ commandLineOpen: true }));
+    expect(screen.queryByText('Click or start typing to focus')).toBeNull();
+
+    act(() => useUi.setState({ commandLineOpen: false, customTextOpen: true }));
+    expect(screen.queryByText('Click or start typing to focus')).toBeNull();
+  });
 });

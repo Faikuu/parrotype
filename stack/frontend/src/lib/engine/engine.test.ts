@@ -309,6 +309,42 @@ describe('zen mode', () => {
     expect(s.words).toEqual(['h']);
   });
 
+  it('keeps words equal to the typed words, without a trailing empty word, after a space', () => {
+    const s = typeText(make([], zen), 'hi ', 0);
+    expect(s.typed).toEqual(['hi', '']);
+    expect(s.words).toEqual(['hi']);
+    expect(s.current).toBe(1);
+  });
+
+  it('backspace on an empty word goes back over the typed space', () => {
+    const s = typeText(make([], zen), 'hi ', 0);
+    const back = engineReducer(s, { type: 'backspace', at: 300 });
+    expect(back.current).toBe(0);
+    expect(back.typed).toEqual(['hi']);
+    expect(back.words).toEqual(['hi']);
+    // Typing again continues the same word.
+    const more = engineReducer(back, { type: 'char', char: 'x', at: 400 });
+    expect(more.typed).toEqual(['hix']);
+    expect(more.words).toEqual(['hix']);
+  });
+
+  it('word backspace on an empty word goes back over the space and clears the word', () => {
+    const s = typeText(make([], zen), 'hi there ', 0);
+    const back = engineReducer(s, { type: 'backspace', at: 900, word: true });
+    expect(back.current).toBe(1);
+    expect(back.typed).toEqual(['hi', '']);
+    expect(back.words).toEqual(['hi']);
+    const again = engineReducer(back, { type: 'backspace', at: 950, word: true });
+    expect(again.current).toBe(0);
+    expect(again.typed).toEqual(['']);
+    expect(again.words).toEqual(['']);
+  });
+
+  it('backspace does nothing on the first empty word', () => {
+    const s = make([], zen);
+    expect(engineReducer(s, { type: 'backspace', at: 5 })).toBe(s);
+  });
+
   it('shift+enter (newline) finishes', () => {
     const s = engineReducer(typeText(make([], zen), 'hi', 0), { type: 'newline', at: 500 });
     expect(s.status).toBe('finished');

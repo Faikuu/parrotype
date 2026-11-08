@@ -33,7 +33,7 @@ const MIN_SAVE_MS = 2000;
 /** Tests below this accuracy are not saved. */
 const MIN_SAVE_ACCURACY = 50;
 
-export type SkipReason = 'short' | 'accuracy' | 'custom';
+export type SkipReason = 'short' | 'accuracy';
 
 export type SaveState =
   | { status: 'idle' }
@@ -81,8 +81,7 @@ export function mode2Of(cfg: TestConfig): string {
   }
 }
 
-function skipReason(cfg: TestConfig, r: TestResult): SkipReason | null {
-  if (cfg.mode === 'custom') return 'custom';
+function skipReason(r: TestResult): SkipReason | null {
   if (r.durationMs < MIN_SAVE_MS) return 'short';
   if (r.accuracy < MIN_SAVE_ACCURACY) return 'accuracy';
   return null;
@@ -232,7 +231,7 @@ export function useTypingTest(): TypingTest {
     submittedRun.current = run;
 
     const cfg = state.config;
-    const reason = skipReason(cfg, result);
+    const reason = skipReason(result);
     if (reason) {
       setSaveState({ status: 'skipped', reason });
       return;

@@ -7,6 +7,8 @@ import { pick, type Rng } from './rng';
 const WORDLISTS: Record<Language, readonly string[]> = { en, pl };
 
 export const DEFAULT_CUSTOM_TEXT = 'the quick brown fox jumps over the lazy dog';
+/** Most words taken from a custom text, so a huge paste can't stall rendering. */
+export const MAX_CUSTOM_WORDS = 2000;
 
 const NUMBER_RATIO = 0.1;
 const QUOTE_RATIO = 0.02;
@@ -96,7 +98,10 @@ export function wordsForConfig(config: TestConfig, rng: Rng = Math.random): stri
         punctuation: config.punctuation,
       });
     case 'custom': {
-      const words = config.customText.split(/\s+/).filter((w) => w.length > 0);
+      const words = config.customText
+        .split(/\s+/)
+        .filter((w) => w.length > 0)
+        .slice(0, MAX_CUSTOM_WORDS);
       return words.length > 0 ? words : DEFAULT_CUSTOM_TEXT.split(' ');
     }
     case 'zen':

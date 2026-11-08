@@ -20,9 +20,12 @@ export function validateEmail(value: string): ErrorKey | undefined {
   return undefined;
 }
 
+const encoder = new TextEncoder();
+
 export function validateNewPassword(value: string): ErrorKey | undefined {
   if (value.length < PASSWORD_MIN) return 'passwordShort';
-  if (value.length > PASSWORD_MAX) return 'passwordLong';
+  // The server limit is in bytes (UTF-8), not characters.
+  if (encoder.encode(value).length > PASSWORD_MAX) return 'passwordLong';
   return undefined;
 }
 

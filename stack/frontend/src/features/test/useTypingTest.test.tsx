@@ -46,6 +46,22 @@ describe('useTypingTest', () => {
     expect(useUi.getState().isTyping).toBe(false);
   });
 
+  it('saves custom text tests like other modes (not skipped)', async () => {
+    // Date only: the test duration comes from Date.now, and waitFor still needs real timers.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    useSettings.setState({ mode: 'custom', customText: 'ok' });
+    const { result } = renderHook(() => useTypingTest(), { wrapper });
+
+    act(() => result.current.typeText('o'));
+    act(() => vi.setSystemTime(new Date('2026-01-01T00:00:03Z')));
+    act(() => result.current.typeText('k'));
+    expect(result.current.state.status).toBe('finished');
+
+    // Logged out in this test, so the run is not submitted, but it is not skipped either.
+    await waitFor(() => expect(result.current.saveState.status).toBe('anonymous'));
+  });
+
   it('falls back to a built-in quote when the quotes API fails', async () => {
     vi.stubGlobal(
       'fetch',

@@ -27,6 +27,15 @@ function replaceAt(list: string[], index: number, value: string): string[] {
   return copy;
 }
 
+/**
+ * Zen's target text is what was typed. The word the caret is on is empty until the user types into it,
+ * so it is left out (a single empty word is kept so the list is never empty).
+ */
+function zenWords(typed: string[]): string[] {
+  const last = typed.length - 1;
+  return last > 0 && typed[last] === '' ? typed.slice(0, last) : typed.slice();
+}
+
 /** True when `typed` already differs from `target` (wrong letter or over-typed). */
 function hasError(typed: string, target: string): boolean {
   for (let k = 0; k < typed.length; k++) {
@@ -40,7 +49,7 @@ export function createInitialState(config: TestConfig, words: string[]): EngineS
   return {
     status: 'idle',
     config,
-    words: isZen(config) ? [''] : [...words],
+    words: isZen(config) ? zenWords(['']) : [...words],
     typed: [''],
     current: 0,
     startedAt: null,
@@ -91,7 +100,7 @@ function onChar(state: EngineState, char: string, at: number): EngineState {
     status: 'running',
     startedAt: state.startedAt ?? at,
     typed,
-    words: zen ? typed.slice() : state.words,
+    words: zen ? zenWords(typed) : state.words,
     keystrokes: [...state.keystrokes, keystroke],
     errorsThisSecond: state.errorsThisSecond + (correct ? 0 : 1),
   };
@@ -114,7 +123,7 @@ function onSpace(state: EngineState, at: number): EngineState {
 
   if (isZen(config)) {
     const typed = [...state.typed, ''];
-    return { ...state, typed, words: typed.slice(), current: i + 1 };
+    return { ...state, typed, words: zenWords(typed), current: i + 1 };
   }
 
   const target = state.words[i] ?? '';
@@ -133,8 +142,9 @@ function onBackspace(state: EngineState, word: boolean): EngineState {
   let next: EngineState;
   if (typedWord.length > 0) {
     next = { ...state, typed: replaceAt(state.typed, i, word ? '' : typedWord.slice(0, -1)) };
-  } else if (i > 0 && !isWordCorrect(state, i - 1)) {
+  } else if (i > 0 && (isZen(state.config) || !isWordCorrect(state, i - 1))) {
     // Step back into the previous word. Its typed text is kept, unless word-backspace clears it.
+    // In zen every word is correct, but going back over a typed space is still allowed.
     const typed = state.typed.slice(0, i);
     if (word) typed[i - 1] = '';
     next = { ...state, typed, current: i - 1 };
@@ -142,7 +152,7 @@ function onBackspace(state: EngineState, word: boolean): EngineState {
     return state;
   }
 
-  return isZen(state.config) ? { ...next, words: next.typed.slice() } : next;
+  return isZen(state.config) ? { ...next, words: zenWords(next.typed) } : next;
 }
 
 function onTick(state: EngineState, at: number): EngineState {

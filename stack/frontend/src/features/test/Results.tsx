@@ -11,6 +11,10 @@ import type { SaveState } from './useTypingTest';
 
 ChartJS.register(CategoryScale, LinearScale, LineController, LineElement, PointElement, ScatterController, Tooltip);
 
+/** Round icon buttons: quiet until hovered, but still visible against the page background. */
+const ACTION_BUTTON =
+  'grid size-11 place-items-center rounded-full border border-surface bg-transparent text-sub transition-colors hover:bg-surface hover:text-text';
+
 interface Palette {
   main: string;
   sub: string;
@@ -242,7 +246,7 @@ export function Results({ config, result, saveState, onNext, onRepeat }: Results
           onClick={onNext}
           title={t('results:nextTitle')}
           aria-label={t('results:next')}
-          className="grid size-11 place-items-center rounded-full bg-surface text-sub transition-colors hover:text-text"
+          className={ACTION_BUTTON}
         >
           <ChevronRight size={20} aria-hidden="true" />
         </button>
@@ -251,7 +255,7 @@ export function Results({ config, result, saveState, onNext, onRepeat }: Results
           onClick={onRepeat}
           title={t('results:repeatTitle')}
           aria-label={t('results:repeat')}
-          className="grid size-11 place-items-center rounded-full bg-surface text-sub transition-colors hover:text-text"
+          className={ACTION_BUTTON}
         >
           <RotateCcw size={18} aria-hidden="true" />
         </button>
@@ -281,12 +285,7 @@ function SaveStatus({ saveState }: { saveState: SaveState }) {
         <span className="text-[0.9rem] text-error">{t('results:saveError', { message: saveState.message })}</span>
       );
     case 'skipped': {
-      const key =
-        saveState.reason === 'short'
-          ? 'results:skippedShort'
-          : saveState.reason === 'accuracy'
-            ? 'results:skippedAccuracy'
-            : 'results:skippedCustom';
+      const key = saveState.reason === 'short' ? 'results:skippedShort' : 'results:skippedAccuracy';
       return <span className="text-[0.9rem] text-sub">{t(key)}</span>;
     }
   }

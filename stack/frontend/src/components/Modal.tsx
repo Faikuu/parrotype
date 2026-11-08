@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
@@ -27,18 +27,23 @@ function ModalDialog({ onClose, title, children }: Omit<ModalProps, 'open'>) {
   const { t } = useTranslation();
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
+  // Read during render, before the opener unmounts and before this effect moves focus into the dialog.
+  // (Reading it inside the effect can see the opener already gone, e.g. the palette closing as this opens.)
+  const [returnFocusTo] = useState<HTMLElement | null>(() => {
+    const el = document.activeElement;
+    return el instanceof HTMLElement && el !== document.body ? el : null;
+  });
 
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
     const target =
       dialogRef.current?.querySelector<HTMLElement>('[data-autofocus]') ??
       focusables(dialogRef.current)[0] ??
       dialogRef.current;
     target?.focus();
     return () => {
-      if (previous && document.contains(previous)) previous.focus();
+      if (returnFocusTo?.isConnected) returnFocusTo.focus({ preventScroll: true });
     };
-  }, []);
+  }, [returnFocusTo]);
 
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     if (e.key === 'Escape') {

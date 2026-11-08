@@ -130,17 +130,15 @@ function Palette() {
     [],
   );
 
-  // Focus trap: keep focus in the palette and restore it on close.
+  // Focus trap: keep focus in the palette. Focus is restored on close by the ui store.
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
     const onFocusIn = (e: FocusEvent) => {
+      // Once closing has started, focus is handed back to the element that opened the palette.
+      if (!useUi.getState().commandLineOpen) return;
       if (!dialogRef.current?.contains(e.target as Node)) inputRef.current?.focus();
     };
     document.addEventListener('focusin', onFocusIn);
-    return () => {
-      document.removeEventListener('focusin', onFocusIn);
-      if (previous && document.contains(previous)) previous.focus();
-    };
+    return () => document.removeEventListener('focusin', onFocusIn);
   }, []);
 
   useEffect(() => {

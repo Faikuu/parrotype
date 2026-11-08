@@ -63,6 +63,9 @@ export const DEFAULT_SETTINGS: SettingsData = {
 
 const DATA_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof SettingsData)[];
 
+/** Longest custom text the modal accepts (characters, as the textarea counts them). */
+export const CUSTOM_TEXT_MAX = 10000;
+
 /** Allowed values for enum-like keys; anything else from storage falls back to the default. */
 const ALLOWED: Partial<Record<keyof SettingsData, readonly unknown[]>> = {
   mode: ['time', 'words', 'quote', 'zen', 'pangram', 'custom'],
@@ -91,7 +94,9 @@ function sanitize(input: unknown): SettingsData {
     if (value === undefined || typeof value !== typeof DEFAULT_SETTINGS[key]) continue;
     const allowed = ALLOWED[key];
     if (allowed && !allowed.includes(value)) continue;
-    (out as unknown as Record<string, unknown>)[key] = value;
+    // Stored custom text can be longer than the modal allows (older versions, hand-edited storage).
+    const clean = key === 'customText' ? (value as string).slice(0, CUSTOM_TEXT_MAX) : value;
+    (out as unknown as Record<string, unknown>)[key] = clean;
   }
   return out;
 }
