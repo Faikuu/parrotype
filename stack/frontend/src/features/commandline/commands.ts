@@ -1,0 +1,361 @@
+import {
+  ArrowRight,
+  CaseSensitive,
+  Crown,
+  Hash,
+  Keyboard,
+  Languages,
+  LogIn,
+  LogOut,
+  Palette,
+  Pencil,
+  Quote,
+  RotateCcw,
+  Shuffle,
+  Sparkles,
+  Timer,
+  Type,
+  User,
+  UserPlus,
+  ZoomIn,
+  type LucideIcon,
+} from 'lucide-react';
+import type { Language, Mode, PangramCount, QuoteLength, TimeOption, WordsOption } from '@/lib/engine/types';
+import { FONT_IDS, FONTS, THEMES, type ThemeId } from '@/themes/themes';
+import type { CaretStyle, FontSize, LiveStats, QuickRestart, Settings, SettingsData, StopOnError, UiLanguage } from '@/store/settings';
+
+export interface Command {
+  id: string;
+  label: string;
+  group?: string;
+  icon?: LucideIcon;
+  hint?: string;
+  keywords?: string[];
+  /** Shows a check mark (the current value). */
+  active?: boolean;
+  /** Leaf action. The palette closes after it unless keepOpen. */
+  run?: () => void;
+  keepOpen?: boolean;
+  /** Submenu. */
+  children?: () => Command[];
+  /** Called when the command becomes highlighted (theme preview). */
+  onPreview?: () => void;
+  /** Called when the highlight moves away or the palette closes. */
+  onPreviewEnd?: () => void;
+}
+
+export interface CommandContext {
+  t: (key: string, options?: Record<string, unknown>) => string;
+  settings: Settings;
+  isLoggedIn: boolean;
+  navigate: (to: string) => void;
+  logout: () => void;
+  restart: () => void;
+  openCustomText: () => void;
+  previewTheme: (id: ThemeId | null) => void;
+}
+
+type BooleanKey = 'punctuation' | 'numbers' | 'smoothCaret' | 'blindMode' | 'focusMode';
+
+interface Option<V> {
+  value: V;
+  label: string;
+}
+
+function toggle(ctx: CommandContext, id: string, key: BooleanKey, label: string, icon?: LucideIcon): Command {
+  const on = ctx.settings[key];
+  return {
+    id,
+    label,
+    group: ctx.t('commands:groups.test'),
+    icon,
+    hint: ctx.t(on ? 'common:on' : 'common:off'),
+    keepOpen: true,
+    run: () => ctx.settings.set(key, !on),
+  };
+}
+
+interface ChoiceSpec<K extends keyof SettingsData> {
+  id: string;
+  key: K;
+  label: string;
+  group: string;
+  icon?: LucideIcon;
+  keywords?: string[];
+  options: Option<SettingsData[K]>[];
+  /** Extra work after the value is set, e.g. opening the custom text modal. */
+  onPick?: (value: SettingsData[K]) => void;
+}
+
+function choice<K extends keyof SettingsData>(ctx: CommandContext, spec: ChoiceSpec<K>): Command {
+  const current = ctx.settings[spec.key];
+  const currentOption = spec.options.find((o) => o.value === current);
+  return {
+    id: spec.id,
+    label: spec.label,
+    group: spec.group,
+    icon: spec.icon,
+    keywords: spec.keywords,
+    hint: currentOption?.label,
+    children: () =>
+      spec.options.map((o) => ({
+        id: `${spec.id}.${String(o.value)}`,
+        label: o.label,
+        active: o.value === current,
+        run: () => {
+          ctx.settings.set(spec.key, o.value);
+          spec.onPick?.(o.value);
+        },
+      })),
+  };
+}
+
+const MODES: Mode[] = ['time', 'words', 'quote', 'zen', 'pangram', 'custom'];
+const TIMES: TimeOption[] = [15, 30, 60, 120];
+const WORDS: WordsOption[] = [10, 25, 50, 100];
+const QUOTE_LENGTHS: QuoteLength[] = ['short', 'medium', 'long', 'any'];
+const PANGRAMS: PangramCount[] = [1, 3, 5];
+const LANGUAGES: Language[] = ['en', 'pl'];
+const FONT_SIZES: FontSize[] = [1, 1.25, 1.5, 2, 2.5, 3];
+const CARET_STYLES: CaretStyle[] = ['line', 'block', 'underline', 'off'];
+const LIVE_STATS: LiveStats[] = ['wpm', 'acc', 'both', 'off'];
+const STOP_ON_ERROR: StopOnError[] = ['off', 'letter', 'word'];
+const QUICK_RESTART: QuickRestart[] = ['tab', 'esc', 'off'];
+const UI_LANGUAGES: UiLanguage[] = ['en', 'pl'];
+
+/** Builds the palette's command tree for the current state. Pure apart from calling the ctx functions. */
+export function buildCommands(ctx: CommandContext): Command[] {
+  const { t, settings: s } = ctx;
+  const g = {
+    test: t('commands:groups.test'),
+    appearance: t('commands:groups.appearance'),
+    behaviour: t('commands:groups.behaviour'),
+    navigate: t('commands:groups.navigate'),
+    account: t('commands:groups.account'),
+  };
+
+  const commands: Command[] = [
+    choice(ctx, {
+      id: 'mode',
+      key: 'mode',
+      label: t('commands:mode'),
+      group: g.test,
+      icon: Type,
+      keywords: ['test', 'type'],
+      options: MODES.map((m) => ({ value: m, label: t(`settings:modes.${m}`) })),
+      onPick: (m) => {
+        if (m === 'custom' && !ctx.settings.customText) ctx.openCustomText();
+      },
+    }),
+    choice(ctx, {
+      id: 'time',
+      key: 'time',
+      label: t('commands:time'),
+      group: g.test,
+      icon: Timer,
+      options: TIMES.map((n) => ({ value: n, label: t('settings:seconds', { count: n }) })),
+    }),
+    choice(ctx, {
+      id: 'words',
+      key: 'words',
+      label: t('commands:words'),
+      group: g.test,
+      icon: Hash,
+      options: WORDS.map((n) => ({ value: n, label: t('settings:wordCount', { count: n }) })),
+    }),
+    choice(ctx, {
+      id: 'quoteLength',
+      key: 'quoteLength',
+      label: t('commands:quoteLength'),
+      group: g.test,
+      icon: Quote,
+      options: QUOTE_LENGTHS.map((q) => ({ value: q, label: t(`settings:quoteLengths.${q}`) })),
+    }),
+    choice(ctx, {
+      id: 'pangramCount',
+      key: 'pangramCount',
+      label: t('commands:pangramCount'),
+      group: g.test,
+      icon: Sparkles,
+      options: PANGRAMS.map((n) => ({ value: n, label: t('settings:pangrams', { count: n }) })),
+    }),
+    toggle(ctx, 'punctuation', 'punctuation', t('commands:punctuation')),
+    toggle(ctx, 'numbers', 'numbers', t('commands:numbers')),
+    choice(ctx, {
+      id: 'language',
+      key: 'language',
+      label: t('commands:language'),
+      group: g.test,
+      icon: Languages,
+      options: LANGUAGES.map((l) => ({ value: l, label: t(`settings:languages.${l}`) })),
+    }),
+    {
+      id: 'restart',
+      label: t('commands:restart'),
+      group: g.test,
+      icon: RotateCcw,
+      keywords: ['reset', 'new'],
+      run: () => ctx.restart(),
+    },
+    {
+      id: 'customText',
+      label: t('commands:customText'),
+      group: g.test,
+      icon: Pencil,
+      keywords: ['paste', 'own'],
+      run: () => ctx.openCustomText(),
+    },
+
+    {
+      id: 'theme',
+      label: t('commands:theme'),
+      group: g.appearance,
+      icon: Palette,
+      keywords: ['color', 'colour', 'colors'],
+      hint: THEMES.find((th) => th.id === s.theme)?.name,
+      children: () =>
+        THEMES.map((th) => ({
+          id: `theme.${th.id}`,
+          label: th.name,
+          active: th.id === s.theme,
+          onPreview: () => ctx.previewTheme(th.id),
+          onPreviewEnd: () => ctx.previewTheme(null),
+          run: () => {
+            ctx.settings.set('theme', th.id);
+            ctx.previewTheme(null);
+          },
+        })),
+    },
+    {
+      id: 'randomTheme',
+      label: t('commands:randomTheme'),
+      group: g.appearance,
+      icon: Shuffle,
+      run: () => {
+        const others = THEMES.filter((th) => th.id !== s.theme);
+        const pick = others[Math.floor(Math.random() * others.length)];
+        if (pick) ctx.settings.set('theme', pick.id);
+      },
+    },
+    choice(ctx, {
+      id: 'font',
+      key: 'font',
+      label: t('commands:font'),
+      group: g.appearance,
+      icon: CaseSensitive,
+      options: FONT_IDS.map((f) => ({ value: f, label: FONTS[f].name })),
+    }),
+    choice(ctx, {
+      id: 'fontSize',
+      key: 'fontSize',
+      label: t('commands:fontSize'),
+      group: g.appearance,
+      icon: ZoomIn,
+      options: FONT_SIZES.map((n) => ({ value: n, label: `${n}×` })),
+    }),
+    choice(ctx, {
+      id: 'caretStyle',
+      key: 'caretStyle',
+      label: t('commands:caretStyle'),
+      group: g.appearance,
+      options: CARET_STYLES.map((c) => ({ value: c, label: t(`settings:caretStyles.${c}`) })),
+    }),
+    toggle(ctx, 'smoothCaret', 'smoothCaret', t('commands:smoothCaret')),
+    choice(ctx, {
+      id: 'liveStats',
+      key: 'liveStats',
+      label: t('commands:liveStats'),
+      group: g.appearance,
+      options: LIVE_STATS.map((l) => ({ value: l, label: t(`settings:liveStatsOptions.${l}`) })),
+    }),
+    toggle(ctx, 'blindMode', 'blindMode', t('commands:blindMode')),
+    toggle(ctx, 'focusMode', 'focusMode', t('commands:focusMode')),
+
+    choice(ctx, {
+      id: 'stopOnError',
+      key: 'stopOnError',
+      label: t('commands:stopOnError'),
+      group: g.behaviour,
+      options: STOP_ON_ERROR.map((v) => ({ value: v, label: t(`settings:stopOnErrorOptions.${v}`) })),
+    }),
+    choice(ctx, {
+      id: 'quickRestart',
+      key: 'quickRestart',
+      label: t('commands:quickRestart'),
+      group: g.behaviour,
+      keywords: ['restart', 'key'],
+      options: QUICK_RESTART.map((q) => ({ value: q, label: t(`settings:quickRestartOptions.${q}`) })),
+    }),
+    choice(ctx, {
+      id: 'uiLanguage',
+      key: 'uiLanguage',
+      label: t('commands:uiLanguage'),
+      group: g.behaviour,
+      icon: Languages,
+      options: UI_LANGUAGES.map((l) => ({ value: l, label: t(`settings:languages.${l}`) })),
+    }),
+    {
+      id: 'resetSettings',
+      label: t('commands:resetSettings'),
+      group: g.behaviour,
+      icon: RotateCcw,
+      children: () => [
+        {
+          id: 'resetSettings.yes',
+          label: t('commands:resetYes'),
+          icon: RotateCcw,
+          run: () => ctx.settings.reset(),
+        },
+      ],
+    },
+
+    {
+      id: 'go',
+      label: t('commands:go'),
+      group: g.navigate,
+      icon: ArrowRight,
+      children: () => {
+        const items: Command[] = [
+          { id: 'go.test', label: t('commands:goTest'), icon: Keyboard, run: () => ctx.navigate('/') },
+          { id: 'go.leaderboard', label: t('commands:goLeaderboard'), icon: Crown, run: () => ctx.navigate('/leaderboard') },
+        ];
+        if (ctx.isLoggedIn) {
+          items.push({ id: 'go.account', label: t('commands:goAccount'), icon: User, run: () => ctx.navigate('/account') });
+        } else {
+          items.push(
+            { id: 'go.login', label: t('commands:goLogin'), icon: LogIn, run: () => ctx.navigate('/login') },
+            { id: 'go.register', label: t('commands:goRegister'), icon: UserPlus, run: () => ctx.navigate('/register') },
+          );
+        }
+        return items;
+      },
+    },
+  ];
+
+  if (ctx.isLoggedIn) {
+    commands.push({
+      id: 'logout',
+      label: t('commands:logout'),
+      group: g.account,
+      icon: LogOut,
+      run: () => ctx.logout(),
+    });
+  }
+
+  return commands;
+}
+
+/** Walks the command tree along a list of ids. Returns the visible list and the parents passed. */
+export function resolveLevel(root: Command[], ids: readonly string[]): { list: Command[]; trail: Command[] } {
+  let list = root;
+  const trail: Command[] = [];
+  for (const id of ids) {
+    const cmd = list.find((c) => c.id === id);
+    if (!cmd?.children) break;
+    trail.push(cmd);
+    list = cmd.children();
+  }
+  return { list, trail };
+}
+
+export { FONT_IDS };

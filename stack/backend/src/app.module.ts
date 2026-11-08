@@ -1,39 +1,25 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { UserModule } from './modules/user/user.module';
-import { AuthModule } from './modules/auth/auth.module';
-import { ModuleModule } from './modules/model/model.module';
-import { PassportModule } from '@nestjs/passport';
-import { APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
-import { ZodValidationPipe } from 'nestjs-zod';
-import { CacheInterceptor, CacheModule } from '@nestjs/cache-manager';
-import { ConfigModule } from '@nestjs/config';
-import { StatisticsModule } from './statistics/statistics.module';
-
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AuthModule } from './auth/auth.module';
+import { HealthController } from './health/health.controller';
+import { LeaderboardModule } from './leaderboard/leaderboard.module';
+import { PrismaModule } from './prisma/prisma.module';
+import { QuotesModule } from './quotes/quotes.module';
+import { ResultsModule } from './results/results.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({isGlobal: true}),
-    PassportModule.register({ defaultStrategy: 'jwt' }),
-    CacheModule.register({
-      isGlobal: true,
+    ThrottlerModule.forRoot({
+      throttlers: [{ name: 'default', ttl: 60_000, limit: 100 }],
     }),
+    PrismaModule,
     AuthModule,
-    UserModule,
-    ModuleModule,
-    StatisticsModule,
+    ResultsModule,
+    QuotesModule,
+    LeaderboardModule,
   ],
-  controllers: [AppController],
-  providers: [AppService,
-    {
-      provide: APP_PIPE,
-      useClass: ZodValidationPipe,
-    },
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: CacheInterceptor,
-    },
-  ],
+  controllers: [HealthController],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
