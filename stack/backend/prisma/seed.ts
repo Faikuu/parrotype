@@ -74,7 +74,7 @@ export const QUOTES: SeedQuote[] = [
   { language: 'de', text: 'Zwei Seelen wohnen, ach! in meiner Brust, Die eine will sich von der andern trennen; Die eine hält, in derber Liebeslust, Sich an die Welt mit klammernden Organen; Die andre hebt gewaltsam sich vom Dust Zu den Gefilden hoher Ahnen.', source: 'Johann Wolfgang von Goethe, Faust I (1808)' },
   { language: 'de', text: 'Es war mitten im Winter, und die Schneeflocken fielen wie Federn vom Himmel herab, da saß eine Königin an einem Fenster, das einen Rahmen von schwarzem Ebenholz hatte, und nähte. Und wie sie so nähte und nach dem Schnee aufsah, stach sie sich mit der Nadel in den Finger, und es fielen drei Tropfen Blut in den Schnee.', source: 'Brothers Grimm, Schneewittchen (1812)' },
   // Spanish (public domain: pre-1929 works, or older, and traditional proverbs)
-  { language: 'es', text: 'Ladran, Sancho, señal que cabalgamos.', source: 'Miguel de Cervantes, Don Quijote de la Mancha, Parte II (1615)' },
+  { language: 'es', text: 'Cada uno es artífice de su ventura.', source: 'Miguel de Cervantes, Don Quijote de la Mancha, Parte II (1615)' },
   { language: 'es', text: 'Polvo serán, mas polvo enamorado.', source: 'Francisco de Quevedo, soneto (siglo XVII)' },
   { language: 'es', text: 'En boca cerrada no entran moscas.', source: 'Refrán' },
   { language: 'es', text: 'No hay mal que por bien no venga.', source: 'Refrán' },
