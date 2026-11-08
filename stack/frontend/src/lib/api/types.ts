@@ -26,7 +26,6 @@ export interface Quote {
 
 export interface Result {
   id: number;
-  userId: number;
   mode: string;
   mode2: string;
   language: string;
@@ -35,10 +34,7 @@ export interface Result {
   accuracy: number;
   consistency: number;
   durationMs: number;
-  correctChars: number;
-  incorrectChars: number;
-  extraChars: number;
-  missedChars: number;
+  charStats: { correct: number; incorrect: number; extra: number; missed: number };
   punctuation: boolean;
   numbers: boolean;
   createdAt: string;
