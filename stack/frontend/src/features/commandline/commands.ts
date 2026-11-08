@@ -2,6 +2,7 @@ import {
   ArrowRight,
   CaseSensitive,
   Crown,
+  Gauge,
   Hash,
   Keyboard,
   Languages,
@@ -17,12 +18,24 @@ import {
   Type,
   User,
   UserPlus,
+  Volume2,
   ZoomIn,
   type LucideIcon,
 } from 'lucide-react';
 import type { Language, Mode, PangramCount, QuoteLength, TestConfig, TimeOption, WordsOption } from '@/lib/engine/types';
+import { LANGUAGES as LANGUAGE_LIST } from '@/lib/text/languages';
 import { FONT_IDS, FONTS, THEMES, type ThemeId } from '@/themes/themes';
-import type { CaretStyle, FontSize, LiveStats, QuickRestart, Settings, SettingsData, UiLanguage } from '@/store/settings';
+import type {
+  CaretStyle,
+  FontSize,
+  LiveStats,
+  PaceCaret,
+  QuickRestart,
+  Settings,
+  SettingsData,
+  SoundProfile,
+  UiLanguage,
+} from '@/store/settings';
 
 export interface Command {
   id: string;
@@ -55,7 +68,7 @@ export interface CommandContext {
   previewTheme: (id: ThemeId | null) => void;
 }
 
-type BooleanKey = 'punctuation' | 'numbers' | 'smoothCaret' | 'blindMode' | 'focusMode';
+type BooleanKey = 'punctuation' | 'numbers' | 'smoothCaret' | 'blindMode' | 'focusMode' | 'tapeMode';
 
 interface Option<V> {
   value: V;
@@ -109,12 +122,17 @@ function choice<K extends keyof SettingsData>(ctx: CommandContext, spec: ChoiceS
   };
 }
 
-const MODES: Mode[] = ['time', 'words', 'quote', 'zen', 'pangram', 'custom'];
+const MODES: Mode[] = ['time', 'words', 'quote', 'zen', 'pangram', 'custom', 'daily', 'weak'];
 const TIMES: TimeOption[] = [15, 30, 60, 120];
 const WORDS: WordsOption[] = [10, 25, 50, 100];
 const QUOTE_LENGTHS: QuoteLength[] = ['short', 'medium', 'long', 'any'];
 const PANGRAMS: PangramCount[] = [1, 3, 5];
-const LANGUAGES: Language[] = ['en', 'pl'];
+const LANGUAGES: Language[] = [...LANGUAGE_LIST];
+const PACE_CARETS: Exclude<PaceCaret, 'custom'>[] = ['off', 'pb', 'average'];
+/** Speeds offered under Pace caret → Custom speed. */
+const PACE_SPEEDS = [40, 60, 80, 100, 120];
+const SOUNDS: SoundProfile[] = ['off', 'click', 'soft', 'typewriter'];
+const SOUND_VOLUMES = [0.25, 0.5, 0.75, 1];
 const FONT_SIZES: FontSize[] = [1, 1.25, 1.5, 2, 2.5, 3];
 const CARET_STYLES: CaretStyle[] = ['line', 'block', 'underline', 'off'];
 const LIVE_STATS: LiveStats[] = ['wpm', 'acc', 'both', 'off'];
@@ -269,6 +287,51 @@ export function buildCommands(ctx: CommandContext): Command[] {
     }),
     toggle(ctx, 'blindMode', 'blindMode', t('commands:blindMode'), g.appearance),
     toggle(ctx, 'focusMode', 'focusMode', t('commands:focusMode'), g.appearance),
+    toggle(ctx, 'tapeMode', 'tapeMode', t('commands:tapeMode'), g.appearance),
+    {
+      id: 'paceCaret',
+      label: t('commands:paceCaret'),
+      group: g.appearance,
+      icon: Gauge,
+      hint: s.paceCaret === 'custom' ? t('settings:paceWpmValue', { wpm: s.paceWpm }) : t(`settings:paceCaretOptions.${s.paceCaret}`),
+      children: () => [
+        ...PACE_CARETS.map((p) => ({
+          id: `paceCaret.${p}`,
+          label: t(`settings:paceCaretOptions.${p}`),
+          active: s.paceCaret === p,
+          run: () => ctx.settings.set('paceCaret', p),
+        })),
+        {
+          id: 'paceCaret.custom',
+          label: t('settings:paceCaretOptions.custom'),
+          active: s.paceCaret === 'custom',
+          children: () =>
+            PACE_SPEEDS.map((wpm) => ({
+              id: `paceCaret.custom.${wpm}`,
+              label: t('settings:paceWpmValue', { wpm }),
+              active: s.paceCaret === 'custom' && s.paceWpm === wpm,
+              run: () => {
+                ctx.settings.setMany({ paceCaret: 'custom', paceWpm: wpm });
+              },
+            })),
+        },
+      ],
+    },
+    choice(ctx, {
+      id: 'sound',
+      key: 'sound',
+      label: t('commands:sound'),
+      group: g.appearance,
+      icon: Volume2,
+      options: SOUNDS.map((v) => ({ value: v, label: t(`settings:soundOptions.${v}`) })),
+    }),
+    choice(ctx, {
+      id: 'soundVolume',
+      key: 'soundVolume',
+      label: t('commands:soundVolume'),
+      group: g.appearance,
+      options: SOUND_VOLUMES.map((v) => ({ value: v, label: `${Math.round(v * 100)}%` })),
+    }),
 
     choice(ctx, {
       id: 'stopOnError',

@@ -12,16 +12,20 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { useShallow } from 'zustand/react/shallow';
 import { useAuth } from '@/features/auth/useAuth';
+import type { QueryClient } from '@tanstack/react-query';
 import { ApiError, quotesApi, resultsApi } from '@/lib/api';
-import type { ResultInput } from '@/lib/api/types';
+import type { Quote, ResultInput, Summary } from '@/lib/api/types';
 import { createInitialState, engineReducer, needsMoreWords } from '@/lib/engine/engine';
 import { computeResult } from '@/lib/engine/stats';
-import type { Quote } from '@/lib/api/types';
-import type { QuoteLength, TestConfig, TestResult } from '@/lib/engine/types';
+import type { EngineAction, Mode, QuoteLength, TestConfig, TestResult } from '@/lib/engine/types';
+import { utcDateString } from '@/lib/text/daily';
 import { generateWords, quoteToWords, wordsForConfig } from '@/lib/text/generator';
-import { selectTestConfig, useSettings } from '@/store/settings';
+import { useKeyStats, weakLetters } from '@/store/keyStats';
+import { bestKey, averageOf, isPersonalBest as beatsBest, useLocalBests } from '@/store/localBests';
+import { selectTestConfig, useSettings, type PaceCaret } from '@/store/settings';
 import { useUi } from '@/store/ui';
 import { pickBuiltinQuote } from './builtinQuotes';
+import { playKeySound } from './sound';
 
 /** Tab then Enter within this window restarts the test. */
 const TAB_WINDOW_MS = 1000;
@@ -50,9 +54,16 @@ export interface QuoteInfo {
   fallback: boolean;
 }
 
+/** A finished test. `isPersonalBest` is false for tests that are too short or inaccurate to count. */
+export type FinishedResult = TestResult & { isPersonalBest: boolean };
+
 export interface TypingTest {
   state: ReturnType<typeof createInitialState>;
-  result: TestResult | null;
+  result: FinishedResult | null;
+  /** Target wpm for the pace caret, or null when there is no pace caret. */
+  pace: number | null;
+  /** UTC date the current words were generated for. */
+  runDate: string;
   saveState: SaveState;
   quote: QuoteInfo;
   inputRef: RefObject<HTMLInputElement | null>;
@@ -63,8 +74,12 @@ export interface TypingTest {
   focusInput: () => void;
 }
 
-/** mode2 for the saved result: time seconds, word count, quote length, pangram count, or the mode name. */
-export function mode2Of(cfg: TestConfig): string {
+/**
+ * mode2 for the saved result: time seconds, word count, quote length, pangram count, the date for
+ * daily, or the mode name. `date` is the UTC date the test's words were generated for, stored with the
+ * words, so a test that runs past midnight keeps its own day.
+ */
+export function mode2Of(cfg: TestConfig, date: string): string {
   switch (cfg.mode) {
     case 'time':
       return String(cfg.time);
@@ -78,7 +93,47 @@ export function mode2Of(cfg: TestConfig): string {
       return 'custom';
     case 'zen':
       return 'zen';
+    case 'daily':
+      return date;
+    case 'weak':
+      return 'weak';
   }
+}
+
+export interface PaceInput {
+  caret: PaceCaret;
+  customWpm: number;
+  mode: Mode;
+  localBest?: number;
+  serverBest?: number;
+  average: number | null;
+}
+
+/**
+ * The pace caret's speed. Your best (the higher of the local and account best for this config), your
+ * average, or a set speed. Null when there is nothing to pace against, or in zen and custom modes.
+ */
+export function paceTarget(p: PaceInput): number | null {
+  if (p.caret === 'off' || p.mode === 'zen' || p.mode === 'custom') return null;
+  switch (p.caret) {
+    case 'custom':
+      return p.customWpm;
+    case 'pb': {
+      const best = Math.max(p.localBest ?? -Infinity, p.serverBest ?? -Infinity);
+      return Number.isFinite(best) ? best : null;
+    }
+    case 'average':
+      return p.average;
+    default:
+      return null;
+  }
+}
+
+/** The account's best wpm for the same mode, mode2 and language, from the summary in the query cache. */
+function serverBestWpm(qc: QueryClient, cfg: TestConfig, date: string): number | undefined {
+  const mode2 = mode2Of(cfg, date);
+  const summary = qc.getQueryData<Summary>(['summary']);
+  return summary?.bests.find((b) => b.mode === cfg.mode && b.mode2 === mode2 && b.language === cfg.language)?.wpm;
 }
 
 function skipReason(r: TestResult): SkipReason | null {
@@ -87,10 +142,10 @@ function skipReason(r: TestResult): SkipReason | null {
   return null;
 }
 
-function toInput(cfg: TestConfig, r: TestResult): ResultInput {
+function toInput(cfg: TestConfig, r: TestResult, date: string): ResultInput {
   return {
     mode: cfg.mode,
-    mode2: mode2Of(cfg),
+    mode2: mode2Of(cfg, date),
     language: cfg.language,
     wpm: r.wpm,
     rawWpm: r.rawWpm,
@@ -146,6 +201,13 @@ export function useTypingTest(): TypingTest {
     stateRef.current = state;
   }, [state]);
 
+  // UTC date the current test's words were generated for (daily mode saves under it).
+  const [runDate, setRunDate] = useState(() => utcDateString());
+  const paceCaret = useSettings((s) => s.paceCaret);
+  const paceWpm = useSettings((s) => s.paceWpm);
+  const localBestMap = useLocalBests((s) => s.bests);
+  const recentWpm = useLocalBests((s) => s.recentWpm);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const runRef = useRef(0);
   const initialWordsRef = useRef<string[]>([]);
@@ -165,12 +227,16 @@ export function useTypingTest(): TypingTest {
     setSaveState({ status: 'idle' });
 
     if (cfg.mode !== 'quote') {
-      const words = wordsForConfig(cfg);
+      const now = Date.now();
+      const weakKeys = cfg.mode === 'weak' ? weakLetters(useKeyStats.getState().byLanguage[cfg.language], cfg.language) : [];
+      const words = wordsForConfig(cfg, Math.random, { weakKeys, now });
       initialWordsRef.current = words;
+      setRunDate(utcDateString(now));
       dispatch({ type: 'reset', words, config: cfg });
       setQuote({ loading: false, source: null, fallback: false });
       return;
     }
+    setRunDate(utcDateString());
 
     const ctrl = new AbortController();
     initialWordsRef.current = [];
@@ -219,7 +285,29 @@ export function useTypingTest(): TypingTest {
 
   useEffect(() => () => useUi.getState().setTyping(false), []);
 
-  const result = useMemo(() => (status === 'finished' ? computeResult(state) : null), [status, state]);
+  // Personal best is worked out here, before the run is written to the local bests (see the effect below).
+  const result = useMemo<FinishedResult | null>(() => {
+    if (status !== 'finished') return null;
+    const r = computeResult(state);
+    if (skipReason(r)) return { ...r, isPersonalBest: false };
+    const key = bestKey(state.config, mode2Of(state.config, runDate));
+    const local = useLocalBests.getState().bests[key]?.wpm;
+    const server = user ? serverBestWpm(qc, state.config, runDate) : undefined;
+    return { ...r, isPersonalBest: beatsBest(r.wpm, local, server) };
+  }, [status, state, runDate, qc, user]);
+
+  // Once per finished run: fold its key stats into the local totals, and its wpm into the local bests.
+  const recordedRun = useRef(-1);
+  useEffect(() => {
+    if (status !== 'finished' || !result) return;
+    const run = runRef.current;
+    if (recordedRun.current === run) return;
+    recordedRun.current = run;
+    useKeyStats.getState().record(result.keyStats, state.config.language);
+    if (!skipReason(result)) {
+      useLocalBests.getState().record(bestKey(state.config, mode2Of(state.config, runDate)), result);
+    }
+  }, [status, result, state.config, runDate]);
 
   // Save a finished test once auth has settled. Each run is submitted at most once.
   const submittedRun = useRef(-1);
@@ -241,7 +329,7 @@ export function useTypingTest(): TypingTest {
       return;
     }
     setSaveState({ status: 'saving' });
-    resultsApi.submit(toInput(cfg, result)).then(
+    resultsApi.submit(toInput(cfg, result, runDate)).then(
       () => {
         if (runRef.current !== run) return;
         setSaveState({ status: 'saved' });
@@ -254,7 +342,16 @@ export function useTypingTest(): TypingTest {
         setSaveState({ status: 'error', message });
       },
     );
-  }, [status, result, state.config, user, authLoading, qc]);
+  }, [status, result, state.config, runDate, user, authLoading, qc]);
+
+  const pace = paceTarget({
+    caret: paceCaret,
+    customWpm: paceWpm,
+    mode: state.config.mode,
+    localBest: localBestMap[bestKey(state.config, mode2Of(state.config, runDate))]?.wpm,
+    serverBest: user ? serverBestWpm(qc, state.config, runDate) : undefined,
+    average: averageOf(recentWpm),
+  });
 
   const canType = useCallback((): boolean => {
     const ui = useUi.getState();
@@ -267,26 +364,51 @@ export function useTypingTest(): TypingTest {
     return s.status !== 'finished' && (s.words.length > 0 || s.config.mode === 'zen');
   }, []);
 
+  /**
+   * Sends one action to the engine and plays its sound. The reducer runs here as well, from the last
+   * committed state, so each key's sound knows whether it was right (React applies the same actions).
+   */
+  const apply = useCallback((base: ReturnType<typeof createInitialState>, action: EngineAction) => {
+    const next = engineReducer(base, action);
+    if (next !== base) {
+      const { sound, soundVolume } = useSettings.getState();
+      if (action.type === 'char' || action.type === 'space') {
+        const added = next.keystrokes[next.keystrokes.length - 1];
+        const error = action.type === 'char' && added !== undefined && !added.correct;
+        playKeySound({ profile: sound, volume: soundVolume, kind: action.type === 'space' ? 'space' : 'key', error });
+      } else if (action.type === 'backspace') {
+        playKeySound({ profile: sound, volume: soundVolume, kind: 'backspace' });
+      }
+    }
+    return next;
+  }, []);
+
   const typeText = useCallback(
     (text: string) => {
       if (!canType() || !playable()) return;
+      let base = stateRef.current;
       for (const ch of text) {
         const at = Date.now();
-        if (ch === ' ') dispatch({ type: 'space', at });
-        else if (ch === '\n' || ch === '\r') dispatch({ type: 'newline', at });
+        let action: EngineAction;
+        if (ch === ' ') action = { type: 'space', at };
+        else if (ch === '\n' || ch === '\r') action = { type: 'newline', at };
         else if (ch.charCodeAt(0) < 32) continue;
-        else dispatch({ type: 'char', char: ch, at });
+        else action = { type: 'char', char: ch, at };
+        base = apply(base, action);
+        dispatch(action);
       }
     },
-    [canType, playable],
+    [canType, playable, apply],
   );
 
   const backspace = useCallback(
     (word: boolean) => {
       if (!canType()) return;
-      dispatch({ type: 'backspace', at: Date.now(), word });
+      const action: EngineAction = { type: 'backspace', at: Date.now(), word };
+      apply(stateRef.current, action);
+      dispatch(action);
     },
-    [canType],
+    [canType, apply],
   );
 
   const newline = useCallback(() => {
@@ -431,5 +553,18 @@ export function useTypingTest(): TypingTest {
     return () => window.removeEventListener('keydown', onWindowKey);
   }, [canType, focusInput, restart]);
 
-  return { state, result, saveState, quote, inputRef, onKeyDown, typeText, restart, repeat, focusInput };
+  return {
+    state,
+    result,
+    pace,
+    runDate,
+    saveState,
+    quote,
+    inputRef,
+    onKeyDown,
+    typeText,
+    restart,
+    repeat,
+    focusInput,
+  };
 }

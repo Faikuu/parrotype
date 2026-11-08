@@ -38,7 +38,9 @@
       "quote": "Quote",
       "zen": "Zen",
       "pangram": "Pangram",
-      "custom": "Custom"
+      "custom": "Custom",
+      "daily": "Daily",
+      "weak": "Weak keys"
     },
     "seconds_one": "{{count}} second",
     "seconds_other": "{{count}} seconds",
@@ -59,7 +61,9 @@
     "language": "Language",
     "languages": {
       "en": "English",
-      "pl": "Polski"
+      "pl": "Polski",
+      "de": "Deutsch",
+      "es": "Español"
     },
     "customText": "Custom text",
     "theme": "Theme",
@@ -94,7 +98,24 @@
       "esc": "Esc",
       "off": "Off"
     },
-    "uiLanguage": "Interface language"
+    "uiLanguage": "Interface language",
+    "paceCaret": "Pace caret",
+    "paceCaretOptions": {
+      "off": "Off",
+      "pb": "Personal best",
+      "average": "Average",
+      "custom": "Custom speed"
+    },
+    "paceWpmValue": "{{wpm}} wpm",
+    "tapeMode": "Tape mode",
+    "sound": "Sound",
+    "soundOptions": {
+      "off": "Off",
+      "click": "Click",
+      "soft": "Soft",
+      "typewriter": "Typewriter"
+    },
+    "soundVolume": "Sound volume"
   },
   "commands": {
     "title": "Command line",
@@ -143,6 +164,10 @@
     "customTextLabel": "Text",
     "customTextPlaceholder": "Paste or type your text here",
     "customTextEmpty": "Add some text first.",
-    "customTextUse": "Use this text"
+    "customTextUse": "Use this text",
+    "paceCaret": "Pace caret",
+    "tapeMode": "Tape mode",
+    "sound": "Sound",
+    "soundVolume": "Sound volume"
   }
 }

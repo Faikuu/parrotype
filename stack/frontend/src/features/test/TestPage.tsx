@@ -59,6 +59,7 @@ export default function TestPage() {
           <Results
             config={test.state.config}
             result={result}
+            date={test.runDate}
             saveState={test.saveState}
             onNext={test.restart}
             onRepeat={test.repeat}
@@ -67,8 +68,10 @@ export default function TestPage() {
           <div className="flex flex-col gap-4">
             {test.quote.loading && <p className="text-sub">{t('test:quoteLoading')}</p>}
 
-            <div className="relative">
-              <Words state={test.state} onActivate={focusInput} />
+            {/* Tapping the words must not move focus away from the hidden input: that would hide the
+                keyboard, and the overlay would then appear under the finger and swallow the click. */}
+            <div className="relative" onMouseDown={(e) => e.preventDefault()}>
+              <Words state={test.state} onActivate={focusInput} pace={test.pace} />
               {!focused && !finished && !overlayOpen && (
                 <button
                   type="button"

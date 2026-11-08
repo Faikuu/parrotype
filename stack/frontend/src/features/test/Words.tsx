@@ -4,6 +4,8 @@ import { cn } from '@/components/cn';
 import type { CharState, EngineState } from '@/lib/engine/types';
 import { useSettings } from '@/store/settings';
 import { Caret } from './Caret';
+import { PaceCaret } from './PaceCaret';
+import { layoutX, tapeOffsetFor } from './caretGeometry';
 
 interface LetterState {
   char: string;
@@ -65,16 +67,23 @@ const Word = memo(function Word({ index, target, typed, left, blind }: WordProps
 export interface WordsProps {
   state: EngineState;
   onActivate: () => void;
+  /** Pace caret target in wpm, or null for no pace caret. */
+  pace: number | null;
 }
 
-/** Three visible lines of words. Scrolls by whole lines so the active line stays on the middle line. */
-export function Words({ state, onActivate }: WordsProps) {
+/**
+ * The text. Default: three visible lines that scroll by whole lines so the active line stays on the
+ * middle line. Tape mode: one line that slides sideways so the active letter stays about 40% in.
+ */
+export function Words({ state, onActivate, pace }: WordsProps) {
   const { t } = useTranslation();
   const blind = useSettings((s) => s.blindMode);
   const font = useSettings((s) => s.font);
   const fontSize = useSettings((s) => s.fontSize);
+  const tape = useSettings((s) => s.tapeMode);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [shift, setShift] = useState(0);
+  const [tapeX, setTapeX] = useState(0);
   const [version, setVersion] = useState(0);
   const current = state.current;
 
@@ -94,7 +103,10 @@ export function Words({ state, onActivate }: WordsProps) {
 
   useLayoutEffect(() => {
     const vp = viewportRef.current;
-    if (!vp) return;
+    if (!vp || tape) {
+      if (shift !== 0) setShift(0);
+      return;
+    }
     const el = vp.querySelector<HTMLElement>(`[data-word="${current}"]`);
     if (!el) {
       if (shift !== 0) setShift(0);
@@ -106,14 +118,39 @@ export function Words({ state, onActivate }: WordsProps) {
     if (line - shift >= 2) next = line - 1;
     else if (line - shift < 1) next = Math.max(0, line - 1);
     if (next !== shift) setShift(next);
-  }, [current, state.words.length, shift, version, font, fontSize, blind]);
+  }, [current, state.words.length, shift, version, font, fontSize, blind, tape]);
+
+  // Tape mode: slide the line so the active letter sits at TAPE_ANCHOR of the viewport width.
+  useLayoutEffect(() => {
+    const vp = viewportRef.current;
+    if (!tape) {
+      if (tapeX !== 0) setTapeX(0);
+      return;
+    }
+    if (!vp) return;
+    const target = state.words[current] ?? '';
+    const typedLen = state.typed[current]?.length ?? 0;
+    const x = layoutX(vp, current, typedLen, target.length);
+    if (x === null) return;
+    const next = tapeOffsetFor(vp.clientWidth, x);
+    if (next !== tapeX) setTapeX(next);
+  }, [tape, current, state.typed, state.words, version, font, fontSize, blind, tapeX]);
 
   // Zen leaves the word under the caret out of `words` until it has text, but the caret needs its element.
   const count = state.config.mode === 'zen' ? Math.max(state.words.length, current + 1) : state.words.length;
 
   return (
-    <div ref={viewportRef} className="test-viewport" onClick={onActivate} aria-label={t('test:inputLabel')}>
-      <div className="test-lines" style={{ transform: `translateY(${-shift * 1.6}em)` }}>
+    <div
+      ref={viewportRef}
+      className="test-viewport"
+      data-tape={tape ? '' : undefined}
+      onClick={onActivate}
+      aria-label={t('test:inputLabel')}
+    >
+      <div
+        className="test-lines"
+        style={{ transform: tape ? `translateX(${tapeX}px)` : `translateY(${-shift * 1.6}em)` }}
+      >
         {Array.from({ length: count }, (_, i) => (
           <Word
             key={i}
@@ -125,7 +162,10 @@ export function Words({ state, onActivate }: WordsProps) {
           />
         ))}
       </div>
-      <Caret viewportRef={viewportRef} state={state} shift={shift} />
+      <Caret viewportRef={viewportRef} state={state} shift={shift} tapeX={tapeX} />
+      {pace !== null && (
+        <PaceCaret viewportRef={viewportRef} state={state} wpm={pace} shift={shift} tapeX={tapeX} />
+      )}
     </div>
   );
 }

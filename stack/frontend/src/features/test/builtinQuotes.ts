@@ -17,6 +17,26 @@ const BUILTIN: Record<Language, readonly BuiltinQuote[]> = {
       source: 'Henry David Thoreau, Walden',
     },
   ],
+  de: [
+    {
+      text: 'Übung macht den Meister.',
+      source: 'Sprichwort',
+    },
+    {
+      text: 'Fest gemauert in der Erden steht die Form, aus Lehm gebrannt. Heute muß die Glocke werden! Frisch, Gesellen, seid zur Hand!',
+      source: 'Friedrich Schiller, Das Lied von der Glocke',
+    },
+  ],
+  es: [
+    {
+      text: 'Más vale pájaro en mano que cien volando.',
+      source: 'Refrán',
+    },
+    {
+      text: 'Polvo serán, mas polvo enamorado.',
+      source: 'Francisco de Quevedo',
+    },
+  ],
   pl: [
     {
       text: 'Litwo! Ojczyzno moja! ty jesteś jak zdrowie: ile cię trzeba cenić, ten tylko się dowie, kto cię stracił.',

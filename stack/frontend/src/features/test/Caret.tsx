@@ -2,12 +2,15 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 're
 import { cn } from '@/components/cn';
 import type { EngineState } from '@/lib/engine/types';
 import { useSettings } from '@/store/settings';
+import { wordAnchor } from './caretGeometry';
 
 export interface CaretProps {
   viewportRef: RefObject<HTMLDivElement | null>;
   state: EngineState;
   /** Lines scrolled off the top; a change means the caret jumps rather than glides. */
   shift: number;
+  /** Horizontal tape offset in px (0 outside tape mode). */
+  tapeX?: number;
 }
 
 const IDLE_MS = 1000;
@@ -20,7 +23,7 @@ const BOX_EM = 1.15;
  * The single bold element of the test. Sits on the next letter (or after the last typed letter),
  * glides between letters, and breathes while idle.
  */
-export function Caret({ viewportRef, state, shift }: CaretProps) {
+export function Caret({ viewportRef, state, shift, tapeX = 0 }: CaretProps) {
   const caretStyle = useSettings((s) => s.caretStyle);
   const smooth = useSettings((s) => s.smoothCaret);
   const ref = useRef<HTMLDivElement>(null);
@@ -64,55 +67,33 @@ export function Caret({ viewportRef, state, shift }: CaretProps) {
     const cur = state.current;
     const typed = state.typed[cur] ?? '';
     const target = state.words[cur] ?? '';
-    const wordEl = vp.querySelector<HTMLElement>(`[data-word="${cur}"]`);
-    if (!wordEl) return hide();
-
-    const letter = (k: number) => vp.querySelector<HTMLElement>(`[data-w="${cur}"][data-c="${k}"]`);
-    const vr = vp.getBoundingClientRect();
-    const wr = wordEl.getBoundingClientRect();
+    const pos = wordAnchor(vp, cur, typed.length, target.length);
+    if (!pos) return hide();
     const fontPx = parseFloat(getComputedStyle(vp).fontSize) || 16;
-    const t = typed.length;
-    const L = target.length;
-
-    // x: the left edge of the next letter, or the right edge of the last typed letter.
-    let x: number;
-    let w: number;
-    if (t < L) {
-      const lr = letter(t)?.getBoundingClientRect();
-      if (!lr) return hide();
-      x = lr.left;
-      w = lr.width;
-    } else if (t > 0) {
-      const lr = letter(t - 1)?.getBoundingClientRect();
-      if (!lr) return hide();
-      x = lr.right;
-      w = lr.width;
-    } else {
-      x = wr.left;
-      w = fontPx * 0.6;
-    }
+    const x = pos.x + tapeX;
+    const w = pos.width;
 
     el.style.display = '';
     let width: number;
     let height: number;
     let left: number;
     let top: number;
-    const wordTop = wr.top - vr.top;
+    const wordTop = pos.wordTop;
     if (caretStyle === 'line') {
       width = LINE_WIDTH;
       height = BOX_EM * fontPx;
-      left = x - vr.left;
-      top = wordTop + (wr.height - height) / 2;
+      left = x;
+      top = wordTop + (pos.wordHeight - height) / 2;
     } else if (caretStyle === 'block') {
       width = w;
       height = BOX_EM * fontPx;
-      left = x - vr.left;
-      top = wordTop + (wr.height - height) / 2;
+      left = x;
+      top = wordTop + (pos.wordHeight - height) / 2;
     } else {
       width = w;
       height = UNDERLINE_HEIGHT;
-      left = x - vr.left;
-      top = wordTop + wr.height / 2 + 0.5 * fontPx;
+      left = x;
+      top = wordTop + pos.wordHeight / 2 + 0.5 * fontPx;
     }
 
     // Jumps (line scroll) and first placement should not glide.

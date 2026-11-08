@@ -38,7 +38,9 @@
       "quote": "Cytat",
       "zen": "Zen",
       "pangram": "Pangram",
-      "custom": "Własny"
+      "custom": "Własny",
+      "daily": "Dzienny",
+      "weak": "Słabe litery"
     },
     "seconds_one": "{{count}} sekunda",
     "seconds_few": "{{count}} sekundy",
@@ -65,7 +67,9 @@
     "language": "Język",
     "languages": {
       "en": "English",
-      "pl": "Polski"
+      "pl": "Polski",
+      "de": "Deutsch",
+      "es": "Español"
     },
     "customText": "Własny tekst",
     "theme": "Motyw",
@@ -100,7 +104,24 @@
       "esc": "Esc",
       "off": "Wyłączony"
     },
-    "uiLanguage": "Język interfejsu"
+    "uiLanguage": "Język interfejsu",
+    "paceCaret": "Kursor tempa",
+    "paceCaretOptions": {
+      "off": "Wyłączony",
+      "pb": "Rekord osobisty",
+      "average": "Średnia",
+      "custom": "Własne tempo"
+    },
+    "paceWpmValue": "{{wpm}} wpm",
+    "tapeMode": "Tryb taśmy",
+    "sound": "Dźwięk",
+    "soundOptions": {
+      "off": "Wyłączony",
+      "click": "Klik",
+      "soft": "Miękki",
+      "typewriter": "Maszyna do pisania"
+    },
+    "soundVolume": "Głośność dźwięku"
   },
   "commands": {
     "title": "Polecenia",
@@ -149,6 +170,10 @@
     "customTextLabel": "Tekst",
     "customTextPlaceholder": "Wklej lub wpisz tutaj tekst",
     "customTextEmpty": "Najpierw wpisz jakiś tekst.",
-    "customTextUse": "Użyj tego tekstu"
+    "customTextUse": "Użyj tego tekstu",
+    "paceCaret": "Kursor tempa",
+    "tapeMode": "Tryb taśmy",
+    "sound": "Dźwięk",
+    "soundVolume": "Głośność dźwięku"
   }
 }

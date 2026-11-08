@@ -24,6 +24,29 @@
   text-underline-offset: 6px;
 }
 
+.test-viewport[data-tape] {
+  height: 1.6em;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+}
+
+.test-viewport[data-tape] .test-lines {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  transition: transform 90ms linear;
+}
+
+.test-pace-caret {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2px;
+  pointer-events: none;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--sub) 60%, transparent);
+  will-change: transform;
+}
+
 .test-caret {
   position: absolute;
   left: 0;
@@ -57,8 +80,13 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .test-caret {
+  .test-caret,
+  .test-pace-caret {
     transition: none !important;
     animation: none !important;
+  }
+
+  .test-viewport[data-tape] .test-lines {
+    transition: none !important;
   }
 }

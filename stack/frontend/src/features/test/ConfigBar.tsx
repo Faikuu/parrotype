@@ -3,11 +3,14 @@ import { useTranslation } from 'react-i18next';
 import { AtSign, Globe, Hash } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/components/cn';
+import { LANGUAGE_NAMES, LANGUAGES } from '@/lib/text/languages';
+import { utcDateString } from '@/lib/text/daily';
 import type { Mode, PangramCount, QuoteLength, TimeOption, WordsOption } from '@/lib/engine/types';
+import { useKeyStats, weakLetters } from '@/store/keyStats';
 import { useSettings } from '@/store/settings';
 import { useUi } from '@/store/ui';
 
-const MODES: readonly Mode[] = ['time', 'words', 'quote', 'zen', 'pangram', 'custom'];
+const MODES: readonly Mode[] = ['time', 'words', 'quote', 'zen', 'pangram', 'custom', 'daily', 'weak'];
 const TIMES: readonly TimeOption[] = [15, 30, 60, 120];
 const WORD_COUNTS: readonly WordsOption[] = [10, 25, 50, 100];
 const QUOTE_LENGTHS: readonly QuoteLength[] = ['short', 'medium', 'long', 'any'];
@@ -18,14 +21,18 @@ interface OptProps {
   onPick: () => void;
   children: ReactNode;
   keepFocus?: boolean;
+  title?: string;
+  ariaLabel?: string;
 }
 
 /** A config option. Clicking hands focus back to the test input so typing continues. */
-function Opt({ pressed, onPick, children, keepFocus }: OptProps) {
+function Opt({ pressed, onPick, children, keepFocus, title, ariaLabel }: OptProps) {
   return (
     <button
       type="button"
       aria-pressed={pressed}
+      title={title}
+      aria-label={ariaLabel}
       onClick={(e) => {
         onPick();
         e.currentTarget.blur();
@@ -45,8 +52,15 @@ function Divider() {
   return <span aria-hidden="true" className="mx-2 h-4 w-px bg-bg" />;
 }
 
+/** "Nov 8" for a UTC date, in the UI language. */
+function shortDate(date: string, locale: string): string {
+  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
+    new Date(`${date}T00:00:00Z`),
+  );
+}
+
 export function ConfigBar() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const cfg = useSettings(
     useShallow((s) => ({
       mode: s.mode,
@@ -63,6 +77,7 @@ export function ConfigBar() {
   const set = useSettings((s) => s.set);
   const typing = useUi((s) => s.isTyping);
   const openCustomText = useUi((s) => s.openCustomText);
+  const langStats = useKeyStats((s) => s.byLanguage[cfg.language]);
 
   const showToggles = cfg.mode === 'time' || cfg.mode === 'words';
 
@@ -102,7 +117,28 @@ export function ConfigBar() {
     case 'zen':
       sub = null;
       break;
+    case 'daily':
+      sub = (
+        <time dateTime={utcDateString()} className="px-2 py-1 text-text">
+          {shortDate(utcDateString(), i18n.language)}
+        </time>
+      );
+      break;
+    case 'weak': {
+      const letters = weakLetters(langStats, cfg.language);
+      sub =
+        letters.length > 0 ? (
+          <span className="px-2 py-1 tracking-[0.2em] text-text" title={t('test:weakLetters', { letters: letters.join(' ') })}>
+            {letters.join(' ')}
+          </span>
+        ) : (
+          <span className="px-2 py-1 text-sub">{t('test:typeFewTests')}</span>
+        );
+      break;
+    }
   }
+
+  const nextLanguage = LANGUAGES[(LANGUAGES.indexOf(cfg.language) + 1) % LANGUAGES.length] ?? 'en';
 
   return (
     <div
@@ -147,9 +183,13 @@ export function ConfigBar() {
       {cfg.mode !== 'custom' && cfg.mode !== 'zen' && (
         <>
           <Divider />
-          <Opt onPick={() => set('language', cfg.language === 'en' ? 'pl' : 'en')}>
+          <Opt
+            onPick={() => set('language', nextLanguage)}
+            title={t('test:changeLanguage')}
+            ariaLabel={`${t('settings:language')}: ${LANGUAGE_NAMES[cfg.language]}. ${t('test:changeLanguage')}`}
+          >
             <Globe size={13} className="mr-1 inline-block align-[-2px]" aria-hidden="true" />
-            {t(`settings:languages.${cfg.language}`)}
+            {LANGUAGE_NAMES[cfg.language]}
           </Opt>
         </>
       )}

@@ -3,11 +3,14 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import { CategoryScale, Chart as ChartJS, LineController, LineElement, LinearScale, PointElement, ScatterController, Tooltip, type ChartData, type ChartOptions } from 'chart.js';
 import { Chart } from 'react-chartjs-2';
-import { ChevronRight, RotateCcw } from 'lucide-react';
-import type { TestConfig, TestResult } from '@/lib/engine/types';
+import { ChevronRight, Copy, RotateCcw } from 'lucide-react';
+import type { TestConfig } from '@/lib/engine/types';
+import { foldKeyStats } from '@/store/keyStats';
 import { useSettings } from '@/store/settings';
 import { useUi } from '@/store/ui';
-import type { SaveState } from './useTypingTest';
+import { KeyHeatmap } from './KeyHeatmap';
+import { copyText, summaryText } from './copySummary';
+import type { FinishedResult, SaveState } from './useTypingTest';
 
 ChartJS.register(CategoryScale, LinearScale, LineController, LineElement, PointElement, ScatterController, Tooltip);
 
@@ -94,17 +97,36 @@ function Stat({ label, value, title }: { label: string; value: string; title?: s
 
 interface ResultsProps {
   config: TestConfig;
-  result: TestResult;
+  result: FinishedResult;
+  /** UTC date of a daily test (for the copied summary). */
+  date: string;
   saveState: SaveState;
   onNext: () => void;
   onRepeat: () => void;
 }
 
-export function Results({ config, result, saveState, onNext, onRepeat }: ResultsProps) {
+/** How long "Copied" stays after a copy. */
+const COPIED_MS = 2000;
+
+export function Results({ config, result, date, saveState, onNext, onRepeat }: ResultsProps) {
   const { t } = useTranslation();
   const palette = usePalette();
   const samples = result.samples;
   const { correct, incorrect, extra, missed } = result.charStats;
+  const [copied, setCopied] = useState(false);
+  const missedKeys = useMemo(() => foldKeyStats(result.keyStats, config.language), [result.keyStats, config.language]);
+  const hasKeys = Object.keys(missedKeys).length > 0;
+
+  useEffect(() => {
+    if (!copied) return;
+    const id = setTimeout(() => setCopied(false), COPIED_MS);
+    return () => clearTimeout(id);
+  }, [copied]);
+
+  async function onCopy() {
+    const ok = await copyText(summaryText(config, result, date));
+    setCopied(ok);
+  }
 
   const chart = useMemo(() => {
     const labels = samples.map((s) => String(s.second));
@@ -208,16 +230,23 @@ export function Results({ config, result, saveState, onNext, onRepeat }: Results
   return (
     <section aria-label={t('results:title')} className="flex flex-col gap-8 py-2">
       <div className="grid items-center gap-8 md:grid-cols-[minmax(0,12rem)_1fr]">
-        <dl className="flex gap-8 md:flex-col md:gap-4">
-          <div>
-            <dd className="m-0 text-[5rem] leading-none tabular-nums text-main">{Math.round(result.wpm)}</dd>
-            <dt className="mt-1 text-[0.85rem] text-sub">{t('results:wpm')}</dt>
-          </div>
-          <div>
-            <dd className="m-0 text-[2.5rem] leading-none tabular-nums text-main">{acc}%</dd>
-            <dt className="mt-1 text-[0.85rem] text-sub">{t('results:acc')}</dt>
-          </div>
-        </dl>
+        <div className="flex flex-col gap-3">
+          <dl className="flex gap-8 md:flex-col md:gap-4">
+            <div>
+              <dd className="m-0 text-[5rem] leading-none tabular-nums text-main">{Math.round(result.wpm)}</dd>
+              <dt className="mt-1 text-[0.85rem] text-sub">{t('results:wpm')}</dt>
+            </div>
+            <div>
+              <dd className="m-0 text-[2.5rem] leading-none tabular-nums text-main">{acc}%</dd>
+              <dt className="mt-1 text-[0.85rem] text-sub">{t('results:acc')}</dt>
+            </div>
+          </dl>
+          {result.isPersonalBest && (
+            <p role="status" className="m-0 text-[0.9rem] text-caret">
+              {t('results:personalBest')}
+            </p>
+          )}
+        </div>
 
         <div className="relative h-[15rem] min-w-0" role="img" aria-label={t('results:chartLabel')}>
           {samples.length > 0 ? (
@@ -240,6 +269,8 @@ export function Results({ config, result, saveState, onNext, onRepeat }: Results
         <Stat label={t('results:test')} value={testLabel(config, t)} />
       </dl>
 
+      {hasKeys && <KeyHeatmap stats={missedKeys} language={config.language} />}
+
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -259,6 +290,18 @@ export function Results({ config, result, saveState, onNext, onRepeat }: Results
         >
           <RotateCcw size={18} aria-hidden="true" />
         </button>
+        <button
+          type="button"
+          onClick={() => void onCopy()}
+          title={t('results:copyTitle')}
+          aria-label={t('results:copy')}
+          className={ACTION_BUTTON}
+        >
+          <Copy size={18} aria-hidden="true" />
+        </button>
+        <span role="status" aria-live="polite" className="text-[0.9rem] text-main">
+          {copied ? t('results:copied') : ''}
+        </span>
         <SaveStatus saveState={saveState} />
       </div>
     </section>
