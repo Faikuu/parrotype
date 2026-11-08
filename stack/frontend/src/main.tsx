@@ -1,28 +1,13 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
-import { BrowserRouter } from 'react-router-dom';
-// import { ReactQueryDevtools } from '@tanstack/react-query-devtools'; 
-import { AppRouter } from './router';
-import './index.css'
-import './i18n.ts'
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import './index.css';
 
+function Placeholder() {
+  return <p>ParroType</p>;
+}
 
-const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        refetchOnWindowFocus: false,
-      },
-    },
-});
-
-ReactDOM.createRoot(document.getElementById('root')!).render(
-    <BrowserRouter>
-        <React.StrictMode>
-            <QueryClientProvider client={queryClient}>
-                <AppRouter />
-                {/* <ReactQueryDevtools initialIsOpen={false}/> */}
-            </QueryClientProvider>
-        </React.StrictMode>
-    </BrowserRouter>
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <Placeholder />
+  </StrictMode>,
 );

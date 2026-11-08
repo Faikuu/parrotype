@@ -1,26 +1,24 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react-swc'
-import { VitePWA } from 'vite-plugin-pwa'
-import tsconfigPaths from 'vite-tsconfig-paths'
+/// <reference types="vitest/config" />
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+import { fileURLToPath, URL } from 'node:url';
 
-// https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react(),
-    VitePWA({
-      registerType: 'autoUpdate' ,
-      strategies: 'generateSW',
-      workbox: {
-        cleanupOutdatedCaches: true,
-        navigateFallbackDenylist: [/^\/api/]
-      },
-      devOptions: {
-        enabled: true
-      }
-  }),
-  tsconfigPaths()],
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
   server: {
-    watch: {
-      usePolling: true
-    }
-  }
-})
+    port: 5173,
+    proxy: {
+      '/api': { target: 'http://localhost:3000', changeOrigin: false },
+    },
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.ts'],
+    css: false,
+  },
+});

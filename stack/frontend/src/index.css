@@ -1,19 +1,56 @@
-@import 'tailwindcss/base';
-@import 'tailwindcss/components';
-@import 'tailwindcss/utilities';
+@import 'tailwindcss';
 
+/* Theme tokens: values are set per theme in src/themes (applied to <html> as CSS vars).
+   Defaults below are the Kea theme so first paint is correct. */
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+  --bg: #1d2119;
+  --surface: #272c22;
+  --text: #e4e3d3;
+  --sub: #6f7562;
+  --main: #9db35f;
+  --caret: #f0782f;
+  --error: #e0525a;
+  --error-extra: #8f3a3f;
+  --font-test: 'Spline Sans Mono', ui-monospace, monospace;
+  --font-ui: 'Familjen Grotesk', system-ui, sans-serif;
+  --test-scale: 1.5;
+}
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #0c1316;
-  /* background-color: #16252c; */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-text: var(--text);
+  --color-sub: var(--sub);
+  --color-main: var(--main);
+  --color-caret: var(--caret);
+  --color-error: var(--error);
+  --color-error-extra: var(--error-extra);
+  --font-ui: var(--font-ui);
+  --font-test: var(--font-test);
+}
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 150ms linear, color 150ms linear;
+}
+
+:focus-visible {
+  outline: 2px solid var(--main);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--main);
+  color: var(--bg);
 }
