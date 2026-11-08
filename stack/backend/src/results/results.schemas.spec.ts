@@ -74,7 +74,7 @@ describe('resultInputSchema', () => {
     expect(resultInputSchema.safeParse({ ...valid, durationMs: 999 }).success).toBe(false);
     expect(resultInputSchema.safeParse({ ...valid, durationMs: 1.5 }).success).toBe(false);
     expect(resultInputSchema.safeParse({ ...valid, mode: 'hard' }).success).toBe(false);
-    expect(resultInputSchema.safeParse({ ...valid, language: 'de' }).success).toBe(false);
+    expect(resultInputSchema.safeParse({ ...valid, language: 'fr' }).success).toBe(false);
     expect(resultInputSchema.safeParse({ ...valid, charStats: { ...valid.charStats, extra: -1 } }).success).toBe(false);
   });
 
@@ -85,15 +85,75 @@ describe('resultInputSchema', () => {
 });
 
 describe('leaderboardQuerySchema', () => {
-  it('rejects zen and custom with a message', () => {
-    for (const mode of ['zen', 'custom']) {
+  it('rejects zen, custom and weak with a message', () => {
+    for (const mode of ['zen', 'custom', 'weak']) {
       const r = leaderboardQuerySchema.safeParse({ mode, mode2: 'x', language: 'en' });
       expect(r.success).toBe(false);
-      if (!r.success) expect(r.error.issues[0].message).toBe('zen and custom results are not ranked');
+      if (!r.success) expect(r.error.issues[0].message).toBe('zen, custom and weak results are not ranked');
+    }
+  });
+
+  it('accepts daily with a date mode2, and rejects a malformed date', () => {
+    expect(leaderboardQuerySchema.safeParse({ mode: 'daily', mode2: '2026-11-08', language: 'de' }).success).toBe(true);
+    expect(leaderboardQuerySchema.safeParse({ mode: 'daily', mode2: 'today', language: 'en' }).success).toBe(false);
+    expect(leaderboardQuerySchema.safeParse({ mode: 'daily', mode2: '2026-1-8', language: 'en' }).success).toBe(false);
+  });
+
+  it('accepts the other ranked modes and the four languages', () => {
+    for (const mode of ['time', 'words', 'quote', 'pangram']) {
+      expect(leaderboardQuerySchema.safeParse({ mode, mode2: '60', language: 'es' }).success).toBe(true);
     }
   });
 
   it('accepts ranked modes', () => {
     expect(leaderboardQuerySchema.safeParse({ mode: 'time', mode2: '60', language: 'en' }).success).toBe(true);
+  });
+});
+
+describe('daily and weak result validation', () => {
+  // Fixed clock: 8 Nov 2026, 12:00 UTC.
+  beforeEach(() => jest.useFakeTimers({ now: Date.parse('2026-11-08T12:00:00Z') }));
+  afterEach(() => jest.useRealTimers());
+
+  const daily = (mode2: string) => ({ ...valid, mode: 'daily', mode2, language: 'en' });
+  const messages = (r: ReturnType<typeof resultInputSchema.safeParse>) =>
+    r.success ? [] : r.error.issues.map((i) => i.message);
+
+  it("accepts today's and yesterday's UTC date", () => {
+    expect(resultInputSchema.safeParse(daily('2026-11-08')).success).toBe(true);
+    expect(resultInputSchema.safeParse(daily('2026-11-07')).success).toBe(true);
+  });
+
+  it('rejects a stale or future date with the daily message', () => {
+    for (const mode2 of ['2026-11-06', '2026-11-09', '2025-11-08']) {
+      const r = resultInputSchema.safeParse(daily(mode2));
+      expect(r.success).toBe(false);
+      expect(messages(r)).toContain("Daily results are only accepted for today's challenge");
+    }
+  });
+
+  it('rejects a malformed or impossible date', () => {
+    expect(resultInputSchema.safeParse(daily('2026-11-8')).success).toBe(false);
+    expect(resultInputSchema.safeParse(daily('2026-11-31')).success).toBe(false);
+    expect(resultInputSchema.safeParse(daily('today')).success).toBe(false);
+  });
+
+  it('rolls the window over at UTC midnight', () => {
+    jest.setSystemTime(Date.parse('2026-11-09T00:00:01Z'));
+    // 8 Nov is now yesterday, so it is still accepted; 7 Nov is too old.
+    expect(resultInputSchema.safeParse(daily('2026-11-08')).success).toBe(true);
+    expect(resultInputSchema.safeParse(daily('2026-11-07')).success).toBe(false);
+  });
+
+  it('requires mode2 "weak" for weak results', () => {
+    expect(resultInputSchema.safeParse({ ...valid, mode: 'weak', mode2: 'weak' }).success).toBe(true);
+    const r = resultInputSchema.safeParse({ ...valid, mode: 'weak', mode2: '60' });
+    expect(r.success).toBe(false);
+    expect(messages(r)).toContain('weak results must have mode2 "weak"');
+  });
+
+  it('accepts the de and es languages', () => {
+    expect(resultInputSchema.safeParse({ ...valid, language: 'de' }).success).toBe(true);
+    expect(resultInputSchema.safeParse({ ...valid, language: 'es' }).success).toBe(true);
   });
 });

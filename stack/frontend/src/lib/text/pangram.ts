@@ -1,14 +1,34 @@
 import type { Language } from '../engine/types';
-import { en } from './wordlists/en';
-import { pl } from './wordlists/pl';
+import { WORDLISTS } from './languages';
 import { pick, shuffle, type Rng } from './rng';
 
+/**
+ * Letters each language needs in a pangram. Umlauts and ß count as their own letters in German.
+ * Spanish accents fold onto their base letter (see normalizeText); ñ is its own letter.
+ */
 export const ALPHABETS: Record<Language, string> = {
   en: 'abcdefghijklmnopqrstuvwxyz',
   pl: 'aąbcćdeęfghijklłmnńoóprsśtuwyzźż',
+  de: 'abcdefghijklmnopqrstuvwxyzäöüß',
+  es: 'abcdefghijklmnñopqrstuvwxyz',
 };
 
-const WORDLISTS: Record<Language, readonly string[]> = { en, pl };
+const ES_NTILDE_PLACEHOLDER = '';
+
+/**
+ * Lower-cases `text` and maps it onto the alphabet of `language`.
+ * - es: accents are stripped (á → a, ü → u) but ñ is kept, via a placeholder around NFD.
+ * - en, pl, de: only NFC composition and lower-casing, so ä ö ü ß and the Polish letters stay as they are.
+ */
+export function normalizeText(text: string, language: Language): string {
+  const lower = text.normalize('NFC').toLowerCase();
+  if (language !== 'es') return lower;
+  return lower
+    .replace(/ñ/g, ES_NTILDE_PLACEHOLDER)
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(new RegExp(ES_NTILDE_PLACEHOLDER, 'g'), 'ñ');
+}
 
 export interface PangramOptions {
   /** Greedy trials per pangram (default 60). */
@@ -19,7 +39,7 @@ export interface PangramOptions {
 
 /** Letters of the language's alphabet that `text` does not contain (case-insensitive). */
 export function missingLetters(text: string, language: Language): string[] {
-  const present = new Set(text.normalize('NFC').toLowerCase());
+  const present = new Set(normalizeText(text, language));
   return [...ALPHABETS[language]].filter((letter) => !present.has(letter));
 }
 
@@ -30,7 +50,7 @@ export function isPangram(text: string, language: Language): boolean {
 interface WordInfo {
   word: string;
   length: number;
-  /** Bitmask over the alphabet indices of the distinct letters in the word. */
+  /** Bitmask over the alphabet indices of the distinct letters in the word (every alphabet is under 31 letters). */
   mask: number;
 }
 
@@ -49,7 +69,7 @@ function analyse(language: Language): WordInfo[] {
   const infos: WordInfo[] = [];
   for (const word of WORDLISTS[language]) {
     let mask = 0;
-    for (const ch of word.normalize('NFC').toLowerCase()) {
+    for (const ch of normalizeText(word, language)) {
       const index = alphabet.indexOf(ch);
       if (index >= 0) mask = (mask | (1 << index)) >>> 0;
     }

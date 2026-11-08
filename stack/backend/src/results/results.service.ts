@@ -84,6 +84,37 @@ export function computeBests(rows: BestCandidate[]): Summary['bests'] {
     }));
 }
 
+/**
+ * Best result per (mode, mode2, language) for one user, optionally limited to some modes.
+ * Two queries: groupBy for each combination's best wpm, then the rows at those values.
+ */
+export async function bestsForUser(
+  prisma: PrismaService,
+  userId: number,
+  modes?: readonly string[],
+): Promise<Summary['bests']> {
+  const where = modes ? { userId, mode: { in: [...modes] } } : { userId };
+  const bestGroups = await prisma.result.groupBy({
+    by: ['mode', 'mode2', 'language'],
+    where,
+    _max: { wpm: true },
+  });
+
+  // The rows at each combination's best wpm. computeBests then keeps the earliest of them.
+  const bestWhere = bestGroups.flatMap((g) =>
+    g._max.wpm === null
+      ? []
+      : [{ mode: g.mode, mode2: g.mode2, language: g.language, wpm: g._max.wpm }],
+  );
+  if (bestWhere.length === 0) return [];
+  const bestRows = await prisma.result.findMany({
+    where: { userId, OR: bestWhere },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    select: { id: true, mode: true, mode2: true, language: true, wpm: true, accuracy: true, createdAt: true },
+  });
+  return computeBests(bestRows);
+}
+
 @Injectable()
 export class ResultsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -121,7 +152,7 @@ export class ResultsService {
   }
 
   async summary(userId: number): Promise<Summary> {
-    const [totals, recent, bestGroups] = await Promise.all([
+    const [totals, recent, bests] = await Promise.all([
       this.prisma.result.aggregate({
         where: { userId },
         _count: { _all: true },
@@ -133,34 +164,15 @@ export class ResultsService {
         take: 10,
         select: { wpm: true, accuracy: true },
       }),
-      this.prisma.result.groupBy({
-        by: ['mode', 'mode2', 'language'],
-        where: { userId },
-        _max: { wpm: true },
-      }),
+      bestsForUser(this.prisma, userId),
     ]);
-
-    // The rows at each combination's best wpm. computeBests then keeps the earliest of them.
-    const bestWhere = bestGroups.flatMap((g) =>
-      g._max.wpm === null
-        ? []
-        : [{ mode: g.mode, mode2: g.mode2, language: g.language, wpm: g._max.wpm }],
-    );
-    const bestRows =
-      bestWhere.length === 0
-        ? []
-        : await this.prisma.result.findMany({
-            where: { userId, OR: bestWhere },
-            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-            select: { id: true, mode: true, mode2: true, language: true, wpm: true, accuracy: true, createdAt: true },
-          });
 
     return {
       totalTests: totals._count._all,
       totalTimeMs: totals._sum.durationMs ?? 0,
       averageWpm: round2(mean(recent.map((r) => r.wpm))),
       averageAccuracy: round2(mean(recent.map((r) => r.accuracy))),
-      bests: computeBests(bestRows),
+      bests,
     };
   }
 }

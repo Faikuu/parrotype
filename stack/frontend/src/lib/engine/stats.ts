@@ -1,4 +1,5 @@
 import { getCharStates, isWordCorrect } from './engine';
+import { computeKeyStats } from './keystats';
 import type { EngineState, SecondSample, TestResult } from './types';
 
 export type CharStats = TestResult['charStats'];
@@ -82,5 +83,6 @@ export function computeResult(state: EngineState): TestResult {
     durationMs,
     charStats: countChars(state),
     samples: state.samples,
+    keyStats: computeKeyStats(state),
   };
 }

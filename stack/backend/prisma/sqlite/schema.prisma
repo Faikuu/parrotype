@@ -1,0 +1,58 @@
+// GENERATED from prisma/schema.template.prisma by scripts/prisma-schema.mjs. Do not edit.
+// Prisma schema for ParroType. This is the single source for every database engine.
+// scripts/prisma-schema.mjs renders it into prisma/<provider>/schema.prisma; edit this file, not the copies.
+// Migrations: prisma/<provider>/migrations, applied through `npm run prisma:migrate` / `npm run prisma:deploy`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String   @unique
+  /// name in lower case; usernames are unique regardless of case.
+  nameLower    String   @unique
+  email        String   @unique
+  passwordHash String
+  /// Bumped on logout. A session token carries the version it was issued with.
+  tokenVersion Int      @default(0)
+  createdAt    DateTime @default(now())
+  results      Result[]
+}
+
+model Quote {
+  id       Int    @id @default(autoincrement())
+  language String // "en" | "pl" | "de" | "es"
+  text     String
+  source   String
+  length   Int // text length in chars
+  @@index([language])
+}
+
+model Result {
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mode           String // time|words|quote|zen|pangram|custom|daily|weak
+  mode2          String // "15" | "60" | "25" | "short" | "3" | "custom" | YYYY-MM-DD ...
+  language       String
+  wpm            Float
+  rawWpm         Float
+  accuracy       Float
+  consistency    Float
+  durationMs     Int
+  correctChars   Int
+  incorrectChars Int
+  extraChars     Int
+  missedChars    Int
+  punctuation    Boolean
+  numbers        Boolean
+  createdAt      DateTime @default(now())
+  @@index([userId, createdAt])
+  @@index([mode, mode2, language, wpm])
+}

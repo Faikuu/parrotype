@@ -1,12 +1,14 @@
-// Prisma schema for ParroType (SQLite).
-// Migrations: npm run prisma:migrate (dev) / npm run prisma:deploy (prod).
+// GENERATED from prisma/schema.template.prisma by scripts/prisma-schema.mjs. Do not edit.
+// Prisma schema for ParroType. This is the single source for every database engine.
+// scripts/prisma-schema.mjs renders it into prisma/<provider>/schema.prisma; edit this file, not the copies.
+// Migrations: prisma/<provider>/migrations, applied through `npm run prisma:migrate` / `npm run prisma:deploy`.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -15,7 +17,7 @@ model User {
   name         String   @unique
   /// name in lower case; usernames are unique regardless of case.
   nameLower    String   @unique
-  email        String   @unique
+  email        String   @unique @db.VarChar(254)
   passwordHash String
   /// Bumped on logout. A session token carries the version it was issued with.
   tokenVersion Int      @default(0)
@@ -25,9 +27,9 @@ model User {
 
 model Quote {
   id       Int    @id @default(autoincrement())
-  language String // "en" | "pl"
-  text     String
-  source   String
+  language String // "en" | "pl" | "de" | "es"
+  text     String @db.Text
+  source   String @db.Text
   length   Int // text length in chars
   @@index([language])
 }
@@ -36,8 +38,8 @@ model Result {
   id             Int      @id @default(autoincrement())
   userId         Int
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  mode           String // time|words|quote|zen|pangram|custom
-  mode2          String // "15" | "60" | "25" | "short" | "3" | "custom" ...
+  mode           String // time|words|quote|zen|pangram|custom|daily|weak
+  mode2          String // "15" | "60" | "25" | "short" | "3" | "custom" | YYYY-MM-DD ...
   language       String
   wpm            Float
   rawWpm         Float

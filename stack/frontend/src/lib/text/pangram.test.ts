@@ -1,9 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { ALPHABETS, generatePangram, generatePangrams, isPangram, missingLetters } from './pangram';
+import {
+  ALPHABETS,
+  generatePangram,
+  generatePangrams,
+  isPangram,
+  missingLetters,
+  normalizeText,
+} from './pangram';
 import { createRng } from './rng';
 import type { Language } from '../engine/types';
 
-const languages: Language[] = ['en', 'pl'];
+const languages: Language[] = ['en', 'pl', 'de', 'es'];
 
 describe('isPangram / missingLetters', () => {
   it('detects the classic English pangram', () => {
@@ -30,9 +37,46 @@ describe('isPangram / missingLetters', () => {
     expect(missingLetters(text, 'pl')).toEqual(['ń', 'ó', 'ź']);
   });
 
+  it('German: umlauts and ß are required letters', () => {
+    expect(missingLetters('abcdefghijklmnopqrstuvwxyz', 'de')).toEqual(['ä', 'ö', 'ü', 'ß']);
+    expect(isPangram('Victor jagt zwölf Boxkämpfer quer über den großen Sylter Deich.', 'de')).toBe(true);
+  });
+
+  it('Spanish: accented vowels count as their base letter, ñ does not', () => {
+    expect(missingLetters('canción', 'es')).not.toContain('o');
+    expect(missingLetters('Pingüino', 'es')).not.toContain('u');
+    expect(missingLetters("ano", "es")).toContain("ñ");
+    expect(missingLetters("ano", "es")).not.toContain("a");
+    expect(isPangram('abcdefghijklmnopqrstuvwxyz', 'es')).toBe(false);
+  });
+
   it('exposes the alphabets', () => {
     expect(ALPHABETS.en).toBe('abcdefghijklmnopqrstuvwxyz');
     expect(ALPHABETS.pl).toHaveLength(32);
+    expect(ALPHABETS.de).toBe('abcdefghijklmnopqrstuvwxyzäöüß');
+    expect(ALPHABETS.de).toHaveLength(30);
+    expect(ALPHABETS.es).toBe('abcdefghijklmnñopqrstuvwxyz');
+    expect(ALPHABETS.es).toHaveLength(27);
+  });
+});
+
+describe('normalizeText', () => {
+  it('es: strips accents but keeps ñ', () => {
+    expect(normalizeText('Año', 'es')).toBe('año');
+    expect(normalizeText('Ámbito pingüino', 'es')).toBe('ambito pinguino');
+    expect(normalizeText('ÑANDÚ', 'es')).toBe('ñandu');
+    // Decomposed input (n + combining tilde) is composed first, so ñ survives.
+    expect(normalizeText('año', 'es')).toBe('año');
+  });
+
+  it('de: keeps ä ö ü ß and composes decomposed umlauts', () => {
+    expect(normalizeText('Größe', 'de')).toBe('größe');
+    expect(normalizeText('äpfel', 'de')).toBe('äpfel');
+  });
+
+  it('en and pl only compose and lower-case', () => {
+    expect(normalizeText('ŁÓDŹ', 'pl')).toBe('łódź');
+    expect(normalizeText('Café', 'en')).toBe('café');
   });
 });
 
@@ -76,6 +120,16 @@ describe('generatePangram', () => {
     }
   });
 
+  it('punctuation for German and Spanish keeps the pangram valid', () => {
+    for (const language of ['de', 'es'] as const) {
+      for (let seed = 1; seed <= 20; seed++) {
+        const text = generatePangram(language, createRng(seed), { punctuation: true });
+        expect(text.endsWith('.')).toBe(true);
+        expect(isPangram(text, language)).toBe(true);
+      }
+    }
+  });
+
   it('no punctuation by default', () => {
     const text = generatePangram('en', createRng(7));
     expect(text).toBe(text.toLowerCase());
@@ -102,5 +156,13 @@ describe('generatePangrams', () => {
 
   it('is deterministic for a seeded rng', () => {
     expect(generatePangrams('pl', 5, { rng: createRng(11) })).toEqual(generatePangrams('pl', 5, { rng: createRng(11) }));
+  });
+
+  it('German and Spanish: the flat list of 3 pangrams is still valid', () => {
+    for (const language of ['de', 'es'] as const) {
+      const words = generatePangrams(language, 3, { rng: createRng(12) });
+      // Each pangram is verified; the joined run of 3 is a pangram too.
+      expect(isPangram(words.join(' '), language)).toBe(true);
+    }
   });
 });

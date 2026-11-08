@@ -18,7 +18,7 @@ function isZen(config: TestConfig): boolean {
 }
 
 function finishesOnLastWord(mode: Mode): boolean {
-  return mode === 'words' || mode === 'quote' || mode === 'pangram' || mode === 'custom';
+  return mode === 'words' || mode === 'quote' || mode === 'pangram' || mode === 'custom' || mode === 'daily' || mode === 'weak';
 }
 
 function replaceAt(list: string[], index: number, value: string): string[] {
@@ -94,7 +94,9 @@ function onChar(state: EngineState, char: string, at: number): EngineState {
   const insert = !overCap && (correct || config.stopOnError !== 'letter');
 
   const typed = insert ? replaceAt(state.typed, i, typedWord + char) : state.typed;
-  const keystroke: Keystroke = { at, correct };
+  // The target char at the cursor; '' for extra chars (past the end of the word) and in zen.
+  const expected = zen ? '' : target.charAt(typedWord.length);
+  const keystroke: Keystroke = { at, correct, expected };
   const next: EngineState = {
     ...state,
     status: 'running',

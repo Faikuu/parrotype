@@ -5,7 +5,7 @@
     "./stack/*"
   ],
   "scripts": {
-    "setup": "npm install && node scripts/init-env.mjs && npm --workspace stack/backend run prisma:deploy && npm --workspace stack/backend run seed",
+    "setup": "npm install && node scripts/init-env.mjs && npm --workspace stack/backend run prisma:generate && npm --workspace stack/backend run prisma:deploy && npm --workspace stack/backend run seed",
     "dev": "concurrently -n api,web -c yellow,green \"npm --workspace stack/backend run start:dev\" \"npm --workspace stack/frontend run dev\"",
     "build": "npm --workspace stack/backend run build && npm --workspace stack/frontend run build",
     "test": "npm --workspace stack/backend test && npm --workspace stack/frontend test",

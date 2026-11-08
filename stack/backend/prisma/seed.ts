@@ -1,10 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 
-type SeedQuote = { language: 'en' | 'pl'; text: string; source: string };
+export type SeedQuote = { language: 'en' | 'pl' | 'de' | 'es'; text: string; source: string };
 
 // Public domain only: authors who died before 1929 (or whose works are in the public domain),
 // and traditional proverbs.
-const QUOTES: SeedQuote[] = [
+export const QUOTES: SeedQuote[] = [
   // English
   { language: 'en', text: 'It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.', source: 'Jane Austen, Pride and Prejudice (1813)' },
   { language: 'en', text: 'I could easily forgive his pride, if he had not mortified mine.', source: 'Jane Austen, Pride and Prejudice (1813)' },
@@ -55,8 +55,45 @@ const QUOTES: SeedQuote[] = [
   { language: 'en', text: 'YOU don\'t know about me without you have read a book by the name of The Adventures of Tom Sawyer; but that ain\'t no matter. That book was made by Mr. Mark Twain, and he told the truth, mainly. There was things which he stretched, but mainly he told the truth. That is nothing. I never seen anybody but lied, one time or another, without it was Aunt Polly, or the widow, or maybe Mary.', source: 'Mark Twain, Adventures of Huckleberry Finn (1884)' },
   { language: 'en', text: 'There were a king with a large jaw and a queen with a plain face, on the throne of England; there were a king with a large jaw and a queen with a fair face, on the throne of France. In both countries it was clearer than crystal to the lords of the State preserves of loaves and fishes, that things in general were settled for ever.', source: 'Charles Dickens, A Tale of Two Cities (1859)' },
   { language: 'en', text: 'I went to the woods because I wished to live deliberately, to front only the essential facts of life, and see if I could not learn what it had to teach, and not, when I came to die, discover that I had not lived. I did not wish to live what was not life, living is so dear; nor did I wish to practise resignation, unless it was quite necessary. I wanted to live deep and suck out all the marrow of life, to live so sturdily and Spartan-like as to put to rout all that was not life, to cut a broad swath and shave close, to drive life into a corner, and reduce it to its lowest terms, and, if it proved to be mean, why then to get the whole and genuine meanness of it, and publish its meanness to the world; or if it were sublime, to know it by experience, and be able to give a true account of it in my next excursion.', source: 'Henry David Thoreau, Walden (1854)' },
+  // German (public domain: pre-1929 works, or pre-1900 for Nietzsche, and traditional proverbs)
+  { language: 'de', text: 'Sapere aude! Habe Mut, dich deines eigenen Verstandes zu bedienen!', source: 'Immanuel Kant, Was ist Aufklärung? (1784)' },
+  { language: 'de', text: 'Gott ist tot! Gott bleibt tot! Und wir haben ihn getötet!', source: 'Friedrich Nietzsche, Die fröhliche Wissenschaft (1882)' },
+  { language: 'de', text: 'Was mich nicht umbringt, macht mich stärker.', source: 'Friedrich Nietzsche, Götzen-Dämmerung (1888)' },
+  { language: 'de', text: 'Ich ging im Walde so für mich hin, und nichts zu suchen, das war mein Sinn.', source: 'Johann Wolfgang von Goethe, Gefunden (1813)' },
+  { language: 'de', text: 'Das war ein Vorspiel nur, dort wo man Bücher verbrennt, verbrennt man auch am Ende Menschen.', source: 'Heinrich Heine, Almansor (1821)' },
+  { language: 'de', text: 'Spieglein, Spieglein an der Wand, wer ist die Schönste im ganzen Land?', source: 'Brothers Grimm, Schneewittchen (1812)' },
+  { language: 'de', text: 'Übung macht den Meister.', source: 'Sprichwort' },
+  { language: 'de', text: 'Wer rastet, der rostet.', source: 'Sprichwort' },
+  { language: 'de', text: 'Wer reitet so spät durch Nacht und Wind? Es ist der Vater mit seinem Kind; Er hat den Knaben wohl in dem Arm, Er faßt ihn sicher, er hält ihn warm.', source: 'Johann Wolfgang von Goethe, Erlkönig (1782)' },
+  { language: 'de', text: 'Wer mit Ungeheuern kämpft, mag zusehn, dass er nicht dabei zum Ungeheuer wird. Und wenn du lange in einen Abgrund blickst, blickt der Abgrund auch in dich hinein.', source: 'Friedrich Nietzsche, Jenseits von Gut und Böse (1886)' },
+  { language: 'de', text: 'Ich weiß nicht, was soll es bedeuten, daß ich so traurig bin; ein Märchen aus alten Zeiten, das kommt mir nicht aus dem Sinn. Die Luft ist kühl und es dunkelt, und ruhig fließt der Rhein; der Gipfel des Berges funkelt im Abendsonnenschein. Die schönste Jungfrau sitzet dort oben wunderbar, ihr goldnes Geschmeide blitzet, sie kämmt ihr goldenes Haar.', source: 'Heinrich Heine, Die Loreley (1824)' },
+  { language: 'de', text: 'Habe nun, ach! Philosophie, Juristerei und Medizin, und leider auch Theologie! Durchaus studiert, mit heißem Bemühn.', source: 'Johann Wolfgang von Goethe, Faust I (1808)' },
+  { language: 'de', text: 'Fest gemauert in der Erden steht die Form, aus Lehm gebrannt. Heute muß die Glocke werden! Frisch, Gesellen, seid zur Hand!', source: 'Friedrich Schiller, Das Lied von der Glocke (1799)' },
+  { language: 'de', text: 'Aufklärung ist der Ausgang des Menschen aus seiner selbstverschuldeten Unmündigkeit. Unmündigkeit ist das Unvermögen, sich seines Verstandes ohne Leitung eines anderen zu bedienen. Selbstverschuldet ist diese Unmündigkeit, wenn die Ursache derselben nicht am Mangel des Verstandes, sondern der Entschließung und des Mutes liegt, sich seiner ohne Leitung eines anderen zu bedienen. Sapere aude! Habe Mut, dich deines eigenen Verstandes zu bedienen! ist also der Wahlspruch der Aufklärung.', source: 'Immanuel Kant, Was ist Aufklärung? (1784)' },
+  { language: 'de', text: 'Freude, schöner Götterfunken, Tochter aus Elysium, Wir betreten feuertrunken, Himmlische, dein Heiligtum! Deine Zauber binden wieder, Was die Mode streng geteilt; Alle Menschen werden Brüder, Wo dein sanfter Flügel weilt.', source: 'Friedrich Schiller, An die Freude (1785)' },
+  { language: 'de', text: 'Zwei Seelen wohnen, ach! in meiner Brust, Die eine will sich von der andern trennen; Die eine hält, in derber Liebeslust, Sich an die Welt mit klammernden Organen; Die andre hebt gewaltsam sich vom Dust Zu den Gefilden hoher Ahnen.', source: 'Johann Wolfgang von Goethe, Faust I (1808)' },
+  { language: 'de', text: 'Es war mitten im Winter, und die Schneeflocken fielen wie Federn vom Himmel herab, da saß eine Königin an einem Fenster, das einen Rahmen von schwarzem Ebenholz hatte, und nähte. Und wie sie so nähte und nach dem Schnee aufsah, stach sie sich mit der Nadel in den Finger, und es fielen drei Tropfen Blut in den Schnee.', source: 'Brothers Grimm, Schneewittchen (1812)' },
+  // Spanish (public domain: pre-1929 works, or older, and traditional proverbs)
+  { language: 'es', text: 'Ladran, Sancho, señal que cabalgamos.', source: 'Miguel de Cervantes, Don Quijote de la Mancha, Parte II (1615)' },
+  { language: 'es', text: 'Polvo serán, mas polvo enamorado.', source: 'Francisco de Quevedo, soneto (siglo XVII)' },
+  { language: 'es', text: 'En boca cerrada no entran moscas.', source: 'Refrán' },
+  { language: 'es', text: 'No hay mal que por bien no venga.', source: 'Refrán' },
+  { language: 'es', text: 'Más vale pájaro en mano que cien volando.', source: 'Refrán' },
+  { language: 'es', text: 'Quien mucho abarca, poco aprieta.', source: 'Refrán' },
+  { language: 'es', text: 'Al mal tiempo, buena cara.', source: 'Refrán' },
+  { language: 'es', text: 'Camarón que se duerme, se lo lleva la corriente.', source: 'Refrán' },
+  { language: 'es', text: 'Caminante, son tus huellas el camino y nada más; caminante, no hay camino, se hace camino al andar. Al andar se hace el camino, y al volver la vista atrás se ve la senda que nunca se ha de volver a pisar.', source: 'Antonio Machado, Campos de Castilla (1912)' },
+  { language: 'es', text: 'Volverán las oscuras golondrinas en tu balcón sus nidos a colgar, y, otra vez, con el ala a sus cristales, jugando llamarán; pero aquellas que el vuelo refrenaban tu hermosura y mi dicha a contemplar, aquellas que aprendieron nuestros nombres, ésas... ¡ésas no volverán!', source: 'Gustavo Adolfo Bécquer, Rimas (1871)' },
+  { language: 'es', text: 'Miré los muros de la patria mía, si un tiempo fuertes, ya desmoronados, de la carrera de la edad cansados, por quien caduca ya su valentía.', source: 'Francisco de Quevedo, soneto (siglo XVII)' },
+  { language: 'es', text: '¿Qué es la vida? Un frenesí. ¿Qué es la vida? Una ilusión, una sombra, una ficción, y el mayor bien es pequeño; que toda la vida es sueño, y los sueños, sueños son.', source: 'Pedro Calderón de la Barca, La vida es sueño (1635)' },
+  { language: 'es', text: 'En un lugar de la Mancha, de cuyo nombre no quiero acordarme, no ha mucho tiempo que vivía un hidalgo de los de lanza en astillero, adarga antigua, rocín flaco y galgo corredor. Una olla de algo más vaca que carnero, salpicón las más noches, duelos y quebrantos los sábados, lentejas los viernes, algún palomino de añadidura los domingos, consumían las tres partes de su hacienda.', source: 'Miguel de Cervantes, Don Quijote de la Mancha (1605)' },
+  { language: 'es', text: 'La libertad, Sancho, es uno de los más preciosos dones que a los hombres dieron los cielos; con ella no se pueden igualar los tesoros que encierra la tierra ni el mar encubre; por la libertad, así como por la honra, se puede y debe aventurar la vida; y, por el contrario, el cautiverio es el mayor mal que puede venir a los hombres.', source: 'Miguel de Cervantes, Don Quijote de la Mancha, Parte II (1615)' },
+  { language: 'es', text: 'Podrá nublarse el sol eternamente; podrá secarse en un instante el mar; podrá romperse el eje de la tierra como un débil cristal. ¡Todo sucederá! Podrá la muerte cubrirme con su fúnebre crespón; pero jamás en mí podrá apagarse la llama de tu amor.', source: 'Gustavo Adolfo Bécquer, Rimas (1871)' },
   // Polish
-  { language: 'pl', text: 'Litwo! Ojczyzno moja! ty jesteś jak zdrowie. Ile cię trzeba cenić, ten tylko się dowie, kto cię stracił. Dziś piękność twą w całej ozdobie widzę i opisuję, bo tęsknię po tobie.', source: 'Adam Mickiewicz, Pan Tadeusz (1834)' },
+  { language: 'pl', text: 'Litwo! Ojczyzno moja! ty jesteś jak zdrowie. Ile cię trzeba cenić, ten tylko się dowie, Kto cię stracił. Dziś piękność twą w całej ozdobie Widzę i opisuję, bo tęsknię po tobie. Panno Święta, co jasnej bronisz Częstochowy I w Ostrej świecisz Bramie! Ty, co gród zamkowy Nowogródzki ochraniasz z jego wiernym ludem!', source: 'Adam Mickiewicz, Pan Tadeusz (1834)' },
+  { language: 'pl', text: 'Wielkieś mi uczyniła pustki w domu moim, Moja droga Orszulo, tym zniknienim swoim. Pełno nas, a jakoby nikogo nie było: Jedną maluczką duszą tak wiele ubyło. Tyś za wszytki mówiła, za wszytki śpiewała, Wszytkie w domu kąciki zawżdy pobiegała.', source: 'Jan Kochanowski, Tren VIII (1580)' },
+  { language: 'pl', text: 'Żyłem z wami, cierpiałem i płakałem z wami, Nigdy mi, kto szlachetny, nie był obojętny, Dziś was rzucam i dalej idę w cień — z duchami — A jak gdyby tu szczęście było — idę smętny.', source: 'Juliusz Słowacki, Testament mój (1840)' },
+  { language: 'pl', text: 'Bez serc, bez ducha, to szkieletów ludy; Młodości! dodaj mi skrzydła! Niech nad martwym wzlecę światem W rajską dziedzinę ułudy: Kędy zapał tworzy cudy, Nowości potrząsa kwiatem I obleka w nadziei złote malowidła!', source: 'Adam Mickiewicz, Oda do młodości (1820)' },
   { language: 'pl', text: 'Co nagle, to po diable.', source: 'Przysłowie polskie' },
   { language: 'pl', text: 'Lepszy wróbel w garści niż gołąb na dachu.', source: 'Przysłowie polskie' },
   { language: 'pl', text: 'Kto pyta, nie błądzi.', source: 'Przysłowie polskie' },
@@ -77,22 +114,26 @@ const QUOTES: SeedQuote[] = [
   { language: 'pl', text: 'Mądry Polak po szkodzie.', source: 'Przysłowie polskie' },
 ];
 
-const prisma = new PrismaClient();
-
 async function main(): Promise<void> {
-  // Replace the whole quote set in one transaction, so re-running the seed is idempotent.
-  await prisma.$transaction([
-    prisma.quote.deleteMany(),
-    prisma.quote.createMany({
-      data: QUOTES.map((q) => ({ ...q, length: q.text.length })),
-    }),
-  ]);
-  console.log(`Seeded ${QUOTES.length} quotes.`);
+  const prisma = new PrismaClient();
+  try {
+    // Replace the whole quote set in one transaction, so re-running the seed is idempotent.
+    await prisma.$transaction([
+      prisma.quote.deleteMany(),
+      prisma.quote.createMany({
+        data: QUOTES.map((q) => ({ ...q, length: q.text.length })),
+      }),
+    ]);
+    console.log(`Seeded ${QUOTES.length} quotes.`);
+  } finally {
+    await prisma.$disconnect();
+  }
 }
 
-main()
-  .catch((err: unknown) => {
+// Only when run directly (prisma db seed), so the quote list can be imported by tests.
+if (require.main === module) {
+  main().catch((err: unknown) => {
     console.error(err);
     process.exitCode = 1;
-  })
-  .finally(() => prisma.$disconnect());
+  });
+}

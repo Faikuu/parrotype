@@ -107,3 +107,19 @@ describe('consistency', () => {
     expect(computeResult(withSamples).consistency).toBe(0);
   });
 });
+
+describe('computeResult keyStats', () => {
+  it('includes per-letter hits and misses', () => {
+    const s = typeAt(createInitialState(cfg, ['cat']), [['c', 0], ['x', 100], ['t', 200]]);
+    const r = computeResult(s);
+    expect(r.keyStats).toEqual({
+      c: { hits: 1, misses: 0 },
+      a: { hits: 0, misses: 1 },
+      t: { hits: 1, misses: 0 },
+    });
+  });
+
+  it('is empty when nothing was typed', () => {
+    expect(computeResult(createInitialState(cfg, ['cat'])).keyStats).toEqual({});
+  });
+});

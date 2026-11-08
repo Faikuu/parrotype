@@ -1,7 +1,6 @@
 import { z } from 'zod';
-
-export const RESULT_MODES = ['time', 'words', 'quote', 'zen', 'pangram', 'custom'] as const;
-export const LANGUAGES = ['en', 'pl'] as const;
+import { utcDate } from '../common/dates';
+import { DAILY_DATE_REGEX, isRankedMode, languageSchema, RESULT_MODES } from '../common/domain';
 
 const num = (min: number, max: number) => z.number().finite().min(min).max(max);
 const count = z.number().int().min(0);
@@ -10,7 +9,7 @@ export const resultInputSchema = z
   .object({
     mode: z.enum(RESULT_MODES),
     mode2: z.string().min(1).max(16),
-    language: z.enum(LANGUAGES),
+    language: languageSchema,
     wpm: num(0, 350),
     rawWpm: num(0, 400),
     accuracy: num(0, 100),
@@ -47,20 +46,48 @@ export const resultInputSchema = z
         message: 'rawWpm does not match charStats and durationMs',
       });
     }
+    if (r.mode === 'daily') {
+      // A grace day for tests that cross midnight (UTC).
+      const current = r.mode2 === utcDate(0) || r.mode2 === utcDate(-1);
+      if (!DAILY_DATE_REGEX.test(r.mode2) || !current) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['mode2'],
+          message: "Daily results are only accepted for today's challenge",
+        });
+      }
+    }
+    if (r.mode === 'weak' && r.mode2 !== 'weak') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['mode2'],
+        message: 'weak results must have mode2 "weak"',
+      });
+    }
   });
 
 export const resultsListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 
-/** Zen and custom tests can be saved but are never ranked. */
-export const leaderboardQuerySchema = z.object({
-  mode: z.enum(RESULT_MODES).refine((m) => m !== 'zen' && m !== 'custom', {
-    message: 'zen and custom results are not ranked',
-  }),
-  mode2: z.string().min(1).max(16),
-  language: z.enum(LANGUAGES),
-});
+/** Zen, custom and weak tests can be saved but are never ranked. */
+export const leaderboardQuerySchema = z
+  .object({
+    mode: z.enum(RESULT_MODES).refine((m) => isRankedMode(m), {
+      message: 'zen, custom and weak results are not ranked',
+    }),
+    mode2: z.string().min(1).max(16),
+    language: languageSchema,
+  })
+  .superRefine((q, ctx) => {
+    if (q.mode === 'daily' && !DAILY_DATE_REGEX.test(q.mode2)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['mode2'],
+        message: 'daily mode2 must be a date (YYYY-MM-DD)',
+      });
+    }
+  });
 
 export type ResultInput = z.infer<typeof resultInputSchema>;
 export type ResultsListQuery = z.infer<typeof resultsListQuerySchema>;

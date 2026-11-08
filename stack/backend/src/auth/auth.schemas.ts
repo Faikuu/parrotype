@@ -29,5 +29,25 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'password is required').max(PASSWORD_MAX_BYTES),
 });
 
+/** A password of min..max UTF-8 bytes (bcrypt only uses the first 72). */
+const passwordBytes = (min: number, max: number) =>
+  z
+    .string()
+    .refine((p) => {
+      const n = Buffer.byteLength(p, 'utf8');
+      return n >= min && n <= max;
+    }, `newPassword must be ${min}-${max} bytes`);
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'currentPassword is required').max(200),
+  newPassword: passwordBytes(8, PASSWORD_MAX_BYTES),
+});
+
+export const deleteAccountSchema = z.object({
+  password: z.string().min(1, 'password is required').max(200),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type DeleteAccountInput = z.infer<typeof deleteAccountSchema>;

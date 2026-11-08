@@ -1,5 +1,5 @@
-export type Mode = 'time' | 'words' | 'quote' | 'zen' | 'pangram' | 'custom';
-export type Language = 'en' | 'pl';
+export type Mode = 'time' | 'words' | 'quote' | 'zen' | 'pangram' | 'custom' | 'daily' | 'weak';
+export type Language = 'en' | 'pl' | 'de' | 'es';
 export type TimeOption = 15 | 30 | 60 | 120;
 export type WordsOption = 10 | 25 | 50 | 100;
 export type QuoteLength = 'short' | 'medium' | 'long' | 'any';
@@ -12,7 +12,8 @@ export interface TestConfig {
   stopOnError: 'off' | 'letter' | 'word';
 }
 export type CharState = 'pending' | 'correct' | 'incorrect' | 'extra' | 'missed';
-export interface Keystroke { at: number; correct: boolean }      // ms timestamps
+/** `expected` is the target char at the cursor ('' for extra chars and in zen). */
+export interface Keystroke { at: number; correct: boolean; expected: string }      // ms timestamps
 export interface SecondSample { second: number; wpm: number; raw: number; errors: number }
 export interface EngineState {
   status: 'idle' | 'running' | 'finished';
@@ -34,8 +35,12 @@ export type EngineAction =
   | { type: 'tick'; at: number }                   // called by the UI ~every 100ms while running; records samples, finishes time mode
   | { type: 'append'; words: string[] }            // infinite modes (time, zen-not-needed)
   | { type: 'finish'; at: number };
+/** Hits and misses for one key. Fractional after mergeKeyStats (decay). */
+export interface KeyStat { hits: number; misses: number }
+export type KeyStatsMap = Record<string, KeyStat>;
 export interface TestResult {
   wpm: number; rawWpm: number; accuracy: number; consistency: number; durationMs: number;
   charStats: { correct: number; incorrect: number; extra: number; missed: number };
   samples: SecondSample[];
+  keyStats: KeyStatsMap;
 }

@@ -1,9 +1,18 @@
-import { Body, Controller, Get, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { AuthService, SESSION_COOKIE, sessionCookieOptions } from './auth.service';
-import { loginSchema, registerSchema, type LoginInput, type RegisterInput } from './auth.schemas';
+import {
+  changePasswordSchema,
+  deleteAccountSchema,
+  loginSchema,
+  registerSchema,
+  type ChangePasswordInput,
+  type DeleteAccountInput,
+  type LoginInput,
+  type RegisterInput,
+} from './auth.schemas';
 import { CurrentUser } from './current-user.decorator';
 import { JwtAuthGuard, readSessionUser, type AuthUser } from './jwt-auth.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -59,5 +68,34 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async me(@CurrentUser() current: AuthUser) {
     return { user: await this.auth.getPublicUser(current.id) };
+  }
+
+  /** Bumps tokenVersion (every other session ends) and sets a fresh cookie for this one. */
+  @Patch('password')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  @Throttle(AUTH_THROTTLE)
+  async changePassword(
+    @CurrentUser() current: AuthUser,
+    @Body(new ZodValidationPipe(changePasswordSchema)) body: ChangePasswordInput,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = await this.auth.changePassword(current.id, body);
+    res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
+    return { ok: true };
+  }
+
+  @Delete('account')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  @Throttle(AUTH_THROTTLE)
+  async deleteAccount(
+    @CurrentUser() current: AuthUser,
+    @Body(new ZodValidationPipe(deleteAccountSchema)) body: DeleteAccountInput,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    await this.auth.deleteAccount(current.id, body.password);
+    res.clearCookie(SESSION_COOKIE, sessionCookieOptions());
+    return { ok: true };
   }
 }

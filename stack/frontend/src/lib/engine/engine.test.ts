@@ -36,7 +36,7 @@ describe('start and basic typing', () => {
     const s = engineReducer(make(['cat']), { type: 'char', char: 'c', at: 100 });
     expect(s.status).toBe('running');
     expect(s.startedAt).toBe(100);
-    expect(s.keystrokes).toEqual([{ at: 100, correct: true }]);
+    expect(s.keystrokes).toEqual([{ at: 100, correct: true, expected: 'c' }]);
     expect(s.typed[0]).toBe('c');
   });
 
@@ -120,7 +120,7 @@ describe('stopOnError', () => {
   it("'letter': a wrong char is recorded as an error but not inserted", () => {
     const s = engineReducer(make(['cat'], { stopOnError: 'letter' }), { type: 'char', char: 'x', at: 0 });
     expect(s.typed[0]).toBe('');
-    expect(s.keystrokes).toEqual([{ at: 0, correct: false }]);
+    expect(s.keystrokes).toEqual([{ at: 0, correct: false, expected: 'c' }]);
     const ok = engineReducer(s, { type: 'char', char: 'c', at: 100 });
     expect(ok.typed[0]).toBe('c');
   });
@@ -364,4 +364,58 @@ describe('reducer purity', () => {
     typeText(s, 'cat d', 0);
     expect(JSON.stringify(s)).toBe(snapshot);
   });
+});
+
+describe('keystroke.expected', () => {
+  it('is the target char at the cursor, for correct and wrong keys alike', () => {
+    const s = typeText(make(['cat']), 'cx', 0);
+    expect(s.keystrokes.map((k) => [k.expected, k.correct])).toEqual([
+      ['c', true],
+      ['a', false],
+    ]);
+  });
+
+  it("is '' for extra chars typed past the end of a word", () => {
+    const s = typeText(make(['ab', 'cd']), 'abz', 0);
+    expect(s.keystrokes.map((k) => k.expected)).toEqual(['a', 'b', '']);
+    expect(s.keystrokes[2]?.correct).toBe(false);
+  });
+
+  it("is '' in zen", () => {
+    const s = typeText(createInitialState({ ...base, mode: 'zen' }, []), 'hi', 0);
+    expect(s.keystrokes.map((k) => k.expected)).toEqual(['', '']);
+  });
+
+  it('is the cursor target with stopOnError letter (the wrong char is not inserted)', () => {
+    let s = make(['cat'], { stopOnError: 'letter' });
+    s = engineReducer(s, { type: 'char', char: 'x', at: 0 });
+    s = engineReducer(s, { type: 'char', char: 'c', at: 100 });
+    expect(s.keystrokes.map((k) => k.expected)).toEqual(['c', 'c']);
+  });
+
+  it('keeps the original case of the target', () => {
+    const s = typeText(make(['Hi']), 'h', 0);
+    expect(s.keystrokes[0]?.expected).toBe('H');
+  });
+});
+
+describe('daily and weak modes finish like words mode', () => {
+  for (const mode of ['daily', 'weak'] as const) {
+    it(`${mode}: finishes when the last char of the last word is typed`, () => {
+      const s = typeText(make(['cat', 'dog'], { mode }), 'cat dog', 0);
+      expect(s.status).toBe('finished');
+      expect(s.finishedAt).toBe(600);
+    });
+
+    it(`${mode}: finishes on space over the last word`, () => {
+      const s = typeText(make(['cat', 'dog'], { mode }), 'cat dog ', 0);
+      expect(s.status).toBe('finished');
+    });
+
+    it(`${mode}: does not finish on the time limit (only time mode does)`, () => {
+      let s = typeText(make(['cat', 'dog'], { mode, time: 15 }), 'ca', 0);
+      s = engineReducer(s, { type: 'tick', at: 60_000 });
+      expect(s.status).toBe('running');
+    });
+  }
 });
