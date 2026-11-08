@@ -13,8 +13,12 @@ datasource db {
 model User {
   id           Int      @id @default(autoincrement())
   name         String   @unique
+  /// name in lower case; usernames are unique regardless of case.
+  nameLower    String   @unique
   email        String   @unique
   passwordHash String
+  /// Bumped on logout. A session token carries the version it was issued with.
+  tokenVersion Int      @default(0)
   createdAt    DateTime @default(now())
   results      Result[]
 }

@@ -4,6 +4,10 @@ A minimal typing test, named after the bird that repeats what it hears. You type
 
 ![Typing test in the Kea theme](docs/screenshot-test.png)
 
+| While typing | Results |
+|---|---|
+| ![Typing with a mistake underlined](docs/screenshot-typing.png) | ![Results with the per-second chart](docs/screenshot-results.png) |
+
 ## What it does
 
 - **Six modes**: time (15/30/60/120 s), words (10/25/50/100), quote, zen (free typing, finish with Shift+Enter), pangram and custom text. Punctuation and numbers can be mixed into time and words tests.

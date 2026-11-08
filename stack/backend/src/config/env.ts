@@ -7,6 +7,8 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   COOKIE_SECURE: z.enum(['true', 'false']).optional(),
+  /** Number of reverse proxies in front of the API. 0 means connections come straight from the client. */
+  TRUST_PROXY: z.coerce.number().int().min(0).default(0),
 });
 
 export interface Env {
@@ -16,6 +18,7 @@ export interface Env {
   NODE_ENV: 'development' | 'test' | 'production';
   corsOrigins: string[];
   cookieSecure: boolean;
+  trustProxy: number;
 }
 
 /** Parses and validates the environment. Throws with a readable list of problems. */
@@ -37,6 +40,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     cookieSecure: e.COOKIE_SECURE !== undefined
       ? e.COOKIE_SECURE === 'true'
       : e.NODE_ENV === 'production',
+    trustProxy: e.TRUST_PROXY,
   };
 }
 

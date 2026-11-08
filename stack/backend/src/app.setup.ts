@@ -12,4 +12,8 @@ export function configureApp(app: INestApplication): void {
   app.use(cookieParser());
   app.use(express.json({ limit: '50kb' }));
   app.enableCors({ origin: env.corsOrigins, credentials: true });
+  // Behind reverse proxies, req.ip must be the real client, or the throttler sees one client.
+  if (env.trustProxy > 0) {
+    (app.getHttpAdapter().getInstance() as express.Express).set('trust proxy', env.trustProxy);
+  }
 }

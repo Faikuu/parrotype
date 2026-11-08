@@ -10,7 +10,15 @@ jest.mock('bcrypt', () => {
   return { ...actual, compare: jest.fn(actual.compare) };
 });
 
-type UserRow = { id: number; name: string; email: string; passwordHash: string; createdAt: Date };
+type UserRow = {
+  id: number;
+  name: string;
+  nameLower: string;
+  email: string;
+  passwordHash: string;
+  tokenVersion: number;
+  createdAt: Date;
+};
 
 function setup() {
   const prisma = {
@@ -35,8 +43,10 @@ describe('AuthService', () => {
       prisma.user.create.mockImplementation(async ({ data }: { data: UserRow }) => ({
         id: 7,
         name: data.name,
+        nameLower: data.nameLower,
         email: data.email,
         passwordHash: data.passwordHash,
+        tokenVersion: 0,
         createdAt: new Date('2026-01-02T03:04:05Z'),
       }));
 
@@ -58,7 +68,40 @@ describe('AuthService', () => {
       });
       expect(result.user).not.toHaveProperty('passwordHash');
       expect(result.token).toBe('signed.token.value');
-      expect(jwt.signAsync).toHaveBeenCalledWith({ sub: 7, name: 'typist_1' });
+      expect(jwt.signAsync).toHaveBeenCalledWith({ sub: 7, name: 'typist_1', v: 0 });
+      expect(stored.nameLower).toBe('typist_1');
+    });
+
+    it('stores the lower-case name for lookups but keeps the display casing', async () => {
+      const { service, prisma } = setup();
+      prisma.user.create.mockImplementation(async ({ data }: { data: UserRow }) => ({
+        id: 8,
+        name: data.name,
+        nameLower: data.nameLower,
+        email: data.email,
+        passwordHash: data.passwordHash,
+        tokenVersion: 0,
+        createdAt: new Date(0),
+      }));
+
+      const result = await service.register({ name: 'TypistOne', email: 'o@example.com', password: 'password123' });
+
+      expect(prisma.user.create.mock.calls[0][0].data).toMatchObject({ name: 'TypistOne', nameLower: 'typistone' });
+      expect(result.user.name).toBe('TypistOne');
+    });
+
+    it('rejects a name that differs only by case from an existing one (ALICE after alice) with 409', async () => {
+      const { service, prisma } = setup();
+      // Behaves like the database: a row exists with nameLower 'alice'.
+      prisma.user.findFirst.mockImplementation(async (args: unknown) => {
+        const { where } = args as { where: { OR: Array<{ nameLower?: string }> } };
+        return where.OR.some((c) => c.nameLower === 'alice') ? { id: 1 } : null;
+      });
+
+      await expect(
+        service.register({ name: 'ALICE', email: 'new@example.com', password: 'password123' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.user.create).not.toHaveBeenCalled();
     });
 
     it('rejects a duplicate name or email with 409', async () => {
@@ -79,8 +122,10 @@ describe('AuthService', () => {
       prisma.user.findUnique.mockResolvedValue({
         id: 3,
         name: 'alice',
+        nameLower: 'alice',
         email: 'alice@example.com',
         passwordHash,
+        tokenVersion: 0,
         createdAt: new Date(0),
       });
 
@@ -95,8 +140,10 @@ describe('AuthService', () => {
       prisma.user.findUnique.mockResolvedValueOnce({
         id: 3,
         name: 'alice',
+        nameLower: 'alice',
         email: 'alice@example.com',
         passwordHash,
+        tokenVersion: 0,
         createdAt: new Date(0),
       });
       prisma.user.findUnique.mockResolvedValueOnce(null);

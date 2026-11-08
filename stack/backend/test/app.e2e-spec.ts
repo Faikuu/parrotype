@@ -64,9 +64,26 @@ describe('ParroType API (e2e)', () => {
 
     const summary = await request(server).get('/api/results/me/summary').set('Cookie', cookie).expect(200);
     expect(summary.body).toMatchObject({ totalTests: 1, totalTimeMs: 60_000, averageWpm: 80 });
+    expect(summary.body.bests).toEqual([
+      expect.objectContaining({ mode: 'time', mode2: '60', language: 'en', wpm: 80 }),
+    ]);
 
     await request(server).post('/api/auth/logout').set('Cookie', cookie).expect(200);
+    // The old cookie still has a valid signature, but logout bumped the user's tokenVersion.
+    await request(server).get('/api/auth/me').set('Cookie', cookie).expect(401);
     await request(server).get('/api/auth/me').expect(401);
+  });
+
+  it('rejects a username that differs only by case from an existing one', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/auth/register')
+      .send({ name: 'E2E_TYPIST', email: 'other@example.com', password: 'a-good-password' })
+      .expect(409);
+    expect(res.body.message).toBe('Username or email is already taken');
+  });
+
+  it('logout without a cookie is still 200', async () => {
+    await request(app.getHttpServer()).post('/api/auth/logout').expect(200);
   });
 
   it('gives the same 401 for a wrong password and an unknown email', async () => {
@@ -121,5 +138,12 @@ describe('ParroType API (e2e)', () => {
     await request(server).get('/api/quotes/random?language=pl&length=long').expect(404);
 
     await request(server).get('/api/leaderboard?mode=zen&mode2=x&language=en').expect(400);
+  });
+
+  it('lists the saved ranked result on the leaderboard', async () => {
+    const board = await request(app.getHttpServer()).get('/api/leaderboard?mode=time&mode2=60&language=en').expect(200);
+    expect(board.body).toEqual([
+      expect.objectContaining({ rank: 1, name: 'e2e_typist', wpm: 80 }),
+    ]);
   });
 });

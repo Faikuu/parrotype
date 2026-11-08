@@ -54,8 +54,9 @@ export class AuthService {
   ) {}
 
   async register(input: RegisterInput): Promise<{ user: PublicUser; token: string }> {
+    const nameLower = input.name.toLowerCase();
     const taken = await this.prisma.user.findFirst({
-      where: { OR: [{ name: input.name }, { email: input.email }] },
+      where: { OR: [{ nameLower }, { email: input.email }] },
       select: { id: true },
     });
     if (taken) throw new ConflictException(TAKEN);
@@ -64,7 +65,7 @@ export class AuthService {
     let user: User;
     try {
       user = await this.prisma.user.create({
-        data: { name: input.name, email: input.email, passwordHash },
+        data: { name: input.name, nameLower, email: input.email, passwordHash },
       });
     } catch (err) {
       // Lost a race with another registration of the same name or email.
@@ -89,7 +90,16 @@ export class AuthService {
     return toPublicUser(user);
   }
 
-  private signSession(user: Pick<User, 'id' | 'name'>): Promise<string> {
-    return this.jwt.signAsync({ sub: user.id, name: user.name });
+  /** Invalidates every session token the user holds, on every device. */
+  async revokeSessions(userId: number): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
+  }
+
+  /** The `v` claim must match User.tokenVersion at verify time, which is what makes logout effective. */
+  private signSession(user: Pick<User, 'id' | 'name' | 'tokenVersion'>): Promise<string> {
+    return this.jwt.signAsync({ sub: user.id, name: user.name, v: user.tokenVersion });
   }
 }

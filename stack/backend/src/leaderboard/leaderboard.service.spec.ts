@@ -1,4 +1,5 @@
-import { LEADERBOARD_SIZE, rankLeaderboard, type LeaderboardRow } from './leaderboard.service';
+import type { PrismaService } from '../prisma/prisma.service';
+import { LEADERBOARD_SIZE, LeaderboardService, rankLeaderboard, type LeaderboardRow } from './leaderboard.service';
 
 function row(partial: Partial<LeaderboardRow> & { id: number; userId: number; wpm: number }): LeaderboardRow {
   return {
@@ -51,5 +52,74 @@ describe('rankLeaderboard', () => {
 
   it('returns an empty list when there are no results', () => {
     expect(rankLeaderboard([])).toEqual([]);
+  });
+});
+
+describe('LeaderboardService.top', () => {
+  const query = { mode: 'time' as const, mode2: '60', language: 'en' as const };
+
+  function setup(groupBy: jest.Mock, rows: unknown[], users: Array<{ id: number; name: string }>) {
+    const prisma = {
+      result: { groupBy, findMany: jest.fn().mockResolvedValue(rows) },
+      user: { findMany: jest.fn().mockResolvedValue(users) },
+    };
+    return { service: new LeaderboardService(prisma as unknown as PrismaService), prisma };
+  }
+
+  it('reads the best wpm per user with groupBy, then the rows and names once each', async () => {
+    const groupBy = jest.fn().mockResolvedValue([
+      { userId: 1, _max: { wpm: 95 } },
+      { userId: 2, _max: { wpm: 90 } },
+    ]);
+    const rows = [
+      { id: 2, userId: 1, wpm: 95, rawWpm: 97, accuracy: 96, createdAt: new Date('2026-02-01T00:00:00Z') },
+      { id: 4, userId: 2, wpm: 90, rawWpm: 92, accuracy: 95, createdAt: new Date('2026-01-01T00:00:00Z') },
+    ];
+    const { service, prisma } = setup(groupBy, rows, [
+      { id: 1, name: 'alice' },
+      { id: 2, name: 'bob' },
+    ]);
+
+    const entries = await service.top(query);
+
+    expect(groupBy).toHaveBeenCalledTimes(1);
+    expect(groupBy.mock.calls[0][0]).toMatchObject({ by: ['userId'], take: LEADERBOARD_SIZE });
+    expect(prisma.result.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.user.findMany).toHaveBeenCalledTimes(1);
+    expect(entries).toEqual([
+      { rank: 1, name: 'alice', wpm: 95, rawWpm: 97, accuracy: 96, createdAt: '2026-02-01T00:00:00.000Z' },
+      { rank: 2, name: 'bob', wpm: 90, rawWpm: 92, accuracy: 95, createdAt: '2026-01-01T00:00:00.000Z' },
+    ]);
+  });
+
+  it('returns an empty list without fetching rows when nothing matches', async () => {
+    const { service, prisma } = setup(jest.fn().mockResolvedValue([]), [], []);
+    expect(await service.top(query)).toEqual([]);
+    expect(prisma.result.findMany).not.toHaveBeenCalled();
+  });
+
+  it('includes every user tied with the last place, so the earlier date decides the cut', async () => {
+    // Users 1..50 have wpm 100..51. User 51 ties the last place (51) with an earlier date.
+    const groups = Array.from({ length: LEADERBOARD_SIZE }, (_, i) => ({ userId: i + 1, _max: { wpm: 100 - i } }));
+    const tied = { userId: 51, _max: { wpm: 51 } };
+    const groupBy = jest
+      .fn()
+      .mockResolvedValueOnce(groups)
+      .mockResolvedValueOnce([...groups, tied]);
+    const day = (n: number) => new Date(Date.UTC(2026, 0, n));
+    const rows = [
+      ...groups.map((g, i) => ({ id: i + 1, userId: g.userId, wpm: g._max.wpm, rawWpm: g._max.wpm + 2, accuracy: 95, createdAt: day(2) })),
+      { id: 99, userId: 51, wpm: 51, rawWpm: 53, accuracy: 95, createdAt: day(1) },
+    ];
+    const users = [...groups, tied].map((g) => ({ id: g.userId, name: `user${g.userId}` }));
+    const { service } = setup(groupBy, rows, users);
+
+    const entries = await service.top(query);
+
+    expect(groupBy).toHaveBeenCalledTimes(2);
+    expect(groupBy.mock.calls[1][0]).toMatchObject({ having: { wpm: { _max: { gte: 51 } } } });
+    expect(entries).toHaveLength(LEADERBOARD_SIZE);
+    expect(entries[LEADERBOARD_SIZE - 1]).toMatchObject({ rank: 50, name: 'user51', wpm: 51 });
+    expect(entries.map((e) => e.name)).not.toContain('user50');
   });
 });

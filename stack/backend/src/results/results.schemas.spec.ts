@@ -26,12 +26,47 @@ describe('resultInputSchema', () => {
     if (!r.success) expect(r.error.issues.map((i) => i.message)).toContain('wpm cannot be higher than rawWpm');
   });
 
-  it('rejects wpm that does not match charStats and duration', () => {
-    // 400 correct chars in a minute is about 80 wpm, so claiming 10 is more than wpm*1.5+10 off.
+  it('rejects rawWpm that does not match charStats and duration', () => {
+    // 410 typed chars in a minute is about 82 raw wpm, so claiming 12 is far outside tolerance.
     const r = resultInputSchema.safeParse({ ...valid, wpm: 10, rawWpm: 12 });
     expect(r.success).toBe(false);
-    // Within tolerance (80 vs 75 is fine) is accepted.
+    if (!r.success) expect(r.error.issues.map((i) => i.message)).toContain('rawWpm does not match charStats and durationMs');
+    // Within tolerance (82 vs 80) is accepted.
     expect(resultInputSchema.safeParse({ ...valid, wpm: 75, rawWpm: 80 }).success).toBe(true);
+  });
+
+  it('accepts a 60s test at 80 wpm', () => {
+    expect(resultInputSchema.safeParse(valid).success).toBe(true);
+  });
+
+  it('accepts a low-wpm test with many one-letter mistakes', () => {
+    // 50 words of 5 letters, each with its last letter wrong: wpm 0 (no fully correct word),
+    // but 250 typed chars in 30s is 100 raw wpm and correct is 200.
+    const r = resultInputSchema.safeParse({
+      ...valid,
+      wpm: 0,
+      rawWpm: 100,
+      accuracy: 80,
+      durationMs: 30_000,
+      charStats: { correct: 200, incorrect: 50, extra: 0, missed: 0 },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('accepts raw speed inflated by spaces that are not in charStats', () => {
+    // 410 typed letters in 60s is 82 raw wpm; with about 25% extra for spaces it is about 102.
+    expect(resultInputSchema.safeParse({ ...valid, wpm: 80, rawWpm: 102 }).success).toBe(true);
+  });
+
+  it('rejects a forged payload: high wpm with almost no typed characters', () => {
+    const r = resultInputSchema.safeParse({
+      ...valid,
+      wpm: 300,
+      rawWpm: 300,
+      durationMs: 60_000,
+      charStats: { correct: 10, incorrect: 0, extra: 0, missed: 0 },
+    });
+    expect(r.success).toBe(false);
   });
 
   it('rejects out-of-range values and unknown modes', () => {

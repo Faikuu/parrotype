@@ -121,7 +121,7 @@ export class ResultsService {
   }
 
   async summary(userId: number): Promise<Summary> {
-    const [totals, recent, all] = await Promise.all([
+    const [totals, recent, bestGroups] = await Promise.all([
       this.prisma.result.aggregate({
         where: { userId },
         _count: { _all: true },
@@ -133,18 +133,34 @@ export class ResultsService {
         take: 10,
         select: { wpm: true, accuracy: true },
       }),
-      this.prisma.result.findMany({
+      this.prisma.result.groupBy({
+        by: ['mode', 'mode2', 'language'],
         where: { userId },
-        select: { id: true, mode: true, mode2: true, language: true, wpm: true, accuracy: true, createdAt: true },
+        _max: { wpm: true },
       }),
     ]);
+
+    // The rows at each combination's best wpm. computeBests then keeps the earliest of them.
+    const bestWhere = bestGroups.flatMap((g) =>
+      g._max.wpm === null
+        ? []
+        : [{ mode: g.mode, mode2: g.mode2, language: g.language, wpm: g._max.wpm }],
+    );
+    const bestRows =
+      bestWhere.length === 0
+        ? []
+        : await this.prisma.result.findMany({
+            where: { userId, OR: bestWhere },
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            select: { id: true, mode: true, mode2: true, language: true, wpm: true, accuracy: true, createdAt: true },
+          });
 
     return {
       totalTests: totals._count._all,
       totalTimeMs: totals._sum.durationMs ?? 0,
       averageWpm: round2(mean(recent.map((r) => r.wpm))),
       averageAccuracy: round2(mean(recent.map((r) => r.accuracy))),
-      bests: computeBests(all),
+      bests: computeBests(bestRows),
     };
   }
 }
