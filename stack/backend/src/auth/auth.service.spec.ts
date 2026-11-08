@@ -1,4 +1,4 @@
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
 import type { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -173,5 +173,32 @@ describe('AuthService', () => {
       expect(compare).toHaveBeenCalledTimes(1);
       expect(compare).toHaveBeenCalledWith('whatever12', expect.stringMatching(/^\$2b\$12\$/));
     });
+  });
+});
+
+describe('AuthService.changePassword', () => {
+  it('rejects a new password equal to the current one with 400, before any database read', async () => {
+    const { service, prisma } = setup();
+
+    const error = await service
+      .changePassword(3, { currentPassword: 'same-password', newPassword: 'same-password' })
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(BadRequestException);
+    expect((error as BadRequestException).getStatus()).toBe(400);
+    expect((error as BadRequestException).message).toBe('New password must be different from the current one');
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('still checks the current password when the new one is different', async () => {
+    const { service, prisma } = setup();
+    const passwordHash = await bcrypt.hash('old-password', 4);
+    prisma.user.findUnique.mockResolvedValue({
+      id: 3, name: 'alice', nameLower: 'alice', email: 'a@example.com', passwordHash, tokenVersion: 0, createdAt: new Date(0),
+    });
+
+    await expect(
+      service.changePassword(3, { currentPassword: 'not-it', newPassword: 'brand-new-one' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

@@ -5,8 +5,9 @@ export const E2E_DB_FILE = join(__dirname, '..', 'prisma', 'test.db');
 
 /**
  * Environment for the e2e run. Defaults to the SQLite test file. Set E2E_DATABASE_URL (and optionally
- * E2E_DATABASE_PROVIDER) to run against PostgreSQL or MySQL/MariaDB instead. Use a database that is
- * safe to wipe: the setup resets it before the run.
+ * E2E_DATABASE_PROVIDER) to run against PostgreSQL or MySQL/MariaDB instead. The setup resets that
+ * database before the run, but only if test/e2e-guard.ts allows it (E2E_ALLOW_RESET=1 and a
+ * test-named database on a local host).
  */
 export function applyE2eEnv(): void {
   const url = process.env.E2E_DATABASE_URL || `file:${E2E_DB_FILE}`;

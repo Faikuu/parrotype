@@ -88,6 +88,49 @@ describe('daily challenge (e2e)', () => {
     expect(viaLeaderboard.body).toEqual([expect.objectContaining({ name: 'daily_racer' })]);
   });
 
+  it("ranks each user by their first daily result: a faster retry is saved but does not move the rank", async () => {
+    const server = app.getHttpServer();
+    const today = utcDate(0);
+    const login = await request(server)
+      .post('/api/auth/login')
+      .send({ email: 'daily@example.com', password: 'a-good-password' })
+      .expect(200);
+    // A retry at 95 wpm. It is saved (201), but daily_racer keeps the 80 from the first attempt.
+    await request(server)
+      .post('/api/results')
+      .set('Cookie', cookieFrom(login))
+      .send({
+        ...result('daily', today),
+        wpm: 95,
+        rawWpm: 100,
+        accuracy: 99,
+        charStats: { correct: 480, incorrect: 20, extra: 0, missed: 0 },
+      })
+      .expect(201);
+
+    // daily_second's first attempt is 85 wpm, so it ranks above daily_racer (80).
+    const reg = await request(server)
+      .post('/api/auth/register')
+      .send({ name: 'daily_second', email: 'daily2@example.com', password: 'a-good-password' })
+      .expect(201);
+    await request(server)
+      .post('/api/results')
+      .set('Cookie', cookieFrom(reg))
+      .send({
+        ...result('daily', today),
+        wpm: 85,
+        rawWpm: 87,
+        charStats: { correct: 420, incorrect: 15, extra: 0, missed: 0 },
+      })
+      .expect(201);
+
+    const board = await request(server).get('/api/daily?language=en').expect(200);
+    expect(board.body.entries).toEqual([
+      expect.objectContaining({ rank: 1, name: 'daily_second', wpm: 85 }),
+      expect.objectContaining({ rank: 2, name: 'daily_racer', wpm: 80 }),
+    ]);
+  });
+
   it('accepts weak results but never ranks them', async () => {
     const server = app.getHttpServer();
     const login = await request(server)

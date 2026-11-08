@@ -7,7 +7,7 @@ From the repo root: `npm run setup` (installs, creates `stack/backend/.env`, gen
 
 Or by hand, from `stack/backend`:
 ```sh
-cp .env.sample .env        # then set JWT_SECRET to a random string of 32+ characters
+cp .env.sample .env        # then set JWT_SECRET: the sample value is refused at startup (see below)
 npm run prisma:deploy      # apply migrations (dev: npm run prisma:migrate)
 npm run seed               # upsert public-domain quotes
 npm run start:dev          # http://localhost:3000/api/health
@@ -43,20 +43,32 @@ PostgreSQL and MariaDB are not started by this project. Run them yourself, or us
 ## Scripts
 - `npm run build` (generates the client, then `nest build`), `npm run start:prod` (runs `dist/main` with `.env` loaded)
 - `npm test` (unit tests)
-- `npm run test:e2e` runs the end-to-end suite. By default it uses SQLite in `prisma/test.db`, which it deletes and recreates each run. To test another engine, set `E2E_DATABASE_URL` (and optionally `E2E_DATABASE_PROVIDER`; it is inferred from the URL). The run drops the app's tables in that database first, so it refuses any database whose name lacks `e2e` or `test`. It also regenerates the Prisma client for the engine it runs against, so run `npm run prisma:generate` afterwards to get your own provider back.
+- `npm run test:e2e` runs the end-to-end suite. By default it uses SQLite in `prisma/test.db`, which it deletes and recreates each run. To test another engine, set `E2E_DATABASE_URL` (and optionally `E2E_DATABASE_PROVIDER`; it is inferred from the URL). The run drops the app's tables in that database first, so it has a guard (`test/e2e-guard.ts`) that runs before anything else:
+  - The default `prisma/test.db` is always allowed.
+  - Any other SQLite file needs `E2E_ALLOW_RESET=1` and a file name ending in `test.db` or `e2e.db`.
+  - PostgreSQL or MySQL needs `E2E_ALLOW_RESET=1`, a database name `parrotype_e2e`, `parrotype_e2e_<suffix>` or `<name>_test`, and a host of `localhost`, `127.0.0.1` or `::1`.
+
+  Anything else fails with a message saying why, and nothing is dropped. The guard is unit-tested in `src/e2e-guard.spec.ts`, so `npm test` covers it.
 
   ```sh
-  E2E_DATABASE_URL='postgresql://parrotype:parrotype@localhost:5432/parrotype_e2e' npm run test:e2e
-  E2E_DATABASE_URL='mysql://parrotype:parrotype@localhost:3306/parrotype_e2e' npm run test:e2e
+  E2E_ALLOW_RESET=1 E2E_DATABASE_URL='postgresql://parrotype:parrotype@localhost:5432/parrotype_e2e' npm run test:e2e
+  E2E_ALLOW_RESET=1 E2E_DATABASE_URL='mysql://parrotype:parrotype@localhost:3306/parrotype_e2e' npm run test:e2e
   ```
+
+  The run also regenerates the Prisma client for the engine it runs against, so run `npm run prisma:generate` afterwards to get your own provider back.
 - `npm run lint`
 - `npm run prisma:schema` renders the per-provider schemas from the template.
+
+## Daily board
+Each user is ranked on the daily board by their first result for the UTC date and language. Retries are saved but do not change the rank. The other modes rank each user by their best result.
 
 ## Health
 `GET /api/health` returns `{ "ok": true, "db": "<provider>" }`.
 
 ## Auth
 Session = JWT (HS256, 7 days) in the httpOnly cookie `pt_session`. Set `COOKIE_SECURE=true` behind HTTPS.
+
+`JWT_SECRET` must be at least 32 characters with at least 10 distinct characters. The API refuses to start if it is the `.env.sample` placeholder or contains `change-me`. Generate one with `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`, or run `npm run setup` from the repo root, which writes a random one into `.env`.
 
 ## Docker
 `docker-compose.yml` in the repo root runs PostgreSQL 16, the API (`stack/backend/Dockerfile`) and the web app (`stack/frontend/Dockerfile`, nginx, which proxies `/api` to the API).

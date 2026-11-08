@@ -1,9 +1,34 @@
 import { z } from 'zod';
 import { utcDate } from '../common/dates';
-import { DAILY_DATE_REGEX, isRankedMode, languageSchema, RESULT_MODES } from '../common/domain';
+import { DAILY_DATE_REGEX, isRankedMode, languageSchema, RESULT_MODES, type ResultMode } from '../common/domain';
 
 const num = (min: number, max: number) => z.number().finite().min(min).max(max);
 const count = z.number().int().min(0);
+
+/**
+ * The mode2 values the frontend sends for each mode (mode2Of in stack/frontend/src/features/test/useTypingTest.ts).
+ * Daily is not listed: its mode2 is a date, checked separately.
+ */
+const FIXED_MODE2: Record<Exclude<ResultMode, 'daily'>, readonly string[]> = {
+  time: ['15', '30', '60', '120'],
+  words: ['10', '25', '50', '100'],
+  quote: ['short', 'medium', 'long', 'any'],
+  pangram: ['1', '3', '5'],
+  zen: ['zen'],
+  custom: ['custom'],
+  weak: ['weak'],
+};
+
+/** Why mode2 does not fit the mode, or null. A daily mode2 must be a well-formed date. */
+export function mode2Problem(mode: ResultMode, mode2: string): string | null {
+  if (mode === 'daily') {
+    return DAILY_DATE_REGEX.test(mode2) ? null : 'daily mode2 must be a date (YYYY-MM-DD)';
+  }
+  const allowed = FIXED_MODE2[mode];
+  if (allowed.includes(mode2)) return null;
+  const expected = allowed.length === 1 ? `"${allowed[0]}"` : `one of ${allowed.join(', ')}`;
+  return `${mode} results must have mode2 ${expected}`;
+}
 
 export const resultInputSchema = z
   .object({
@@ -57,12 +82,11 @@ export const resultInputSchema = z
         });
       }
     }
-    if (r.mode === 'weak' && r.mode2 !== 'weak') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['mode2'],
-        message: 'weak results must have mode2 "weak"',
-      });
+    if (r.mode !== 'daily') {
+      const problem = mode2Problem(r.mode, r.mode2);
+      if (problem) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['mode2'], message: problem });
+      }
     }
   });
 
@@ -80,13 +104,10 @@ export const leaderboardQuerySchema = z
     language: languageSchema,
   })
   .superRefine((q, ctx) => {
-    if (q.mode === 'daily' && !DAILY_DATE_REGEX.test(q.mode2)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['mode2'],
-        message: 'daily mode2 must be a date (YYYY-MM-DD)',
-      });
-    }
+    // Unranked modes already failed the refinement above.
+    if (!isRankedMode(q.mode)) return;
+    const problem = mode2Problem(q.mode, q.mode2);
+    if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['mode2'], message: problem });
   });
 
 export type ResultInput = z.infer<typeof resultInputSchema>;

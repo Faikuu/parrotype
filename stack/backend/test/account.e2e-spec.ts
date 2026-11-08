@@ -95,6 +95,13 @@ describe('public profile and account settings (e2e)', () => {
       .send({ currentPassword: OLD_PASSWORD, newPassword: 'short' })
       .expect(400);
 
+    const same = await request(server)
+      .patch('/api/auth/password')
+      .set('Cookie', oldCookie)
+      .send({ currentPassword: OLD_PASSWORD, newPassword: OLD_PASSWORD })
+      .expect(400);
+    expect(same.body.message).toBe('New password must be different from the current one');
+
     const changed = await request(server)
       .patch('/api/auth/password')
       .set('Cookie', oldCookie)

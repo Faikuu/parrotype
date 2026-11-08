@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -14,6 +14,7 @@ const INVALID_CREDENTIALS = 'Invalid email or password';
 const TAKEN = 'Username or email is already taken';
 const WRONG_CURRENT_PASSWORD = 'Current password is incorrect';
 const WRONG_PASSWORD = 'Password is incorrect';
+const SAME_PASSWORD = 'New password must be different from the current one';
 
 /**
  * bcrypt hash of a throwaway string. Compared against when the email is unknown,
@@ -97,6 +98,8 @@ export class AuthService {
    * session token (on every device) stops working. Returns a token for the new version.
    */
   async changePassword(userId: number, input: ChangePasswordInput): Promise<string> {
+    // Compares the two inputs only, so it needs no database read.
+    if (input.newPassword === input.currentPassword) throw new BadRequestException(SAME_PASSWORD);
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
     if (!(await bcrypt.compare(input.currentPassword, user.passwordHash))) {

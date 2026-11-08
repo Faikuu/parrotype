@@ -10,6 +10,23 @@ const URL_RULES: Record<DatabaseProvider, { matches: (url: string) => boolean; e
   mysql: { matches: (url) => url.startsWith('mysql://'), example: 'mysql://user:password@host:3306/parrotype' },
 };
 
+/** The placeholder in .env.sample. A server started with it must refuse to run. */
+export const SAMPLE_JWT_SECRET = 'change-me-to-a-long-random-string-of-at-least-32-chars';
+export const MIN_JWT_SECRET_LENGTH = 32;
+export const MIN_JWT_SECRET_DISTINCT_CHARS = 10;
+export const JWT_SAMPLE_MESSAGE =
+  'JWT_SECRET is still the sample value. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'base64url\'))"';
+
+/** Returns the reason a JWT secret is unacceptable, or null when it is fine. */
+export function jwtSecretProblem(secret: string): string | null {
+  if (secret === SAMPLE_JWT_SECRET || secret.toLowerCase().includes('change-me')) return JWT_SAMPLE_MESSAGE;
+  const distinct = new Set(Array.from(secret)).size;
+  if (distinct < MIN_JWT_SECRET_DISTINCT_CHARS) {
+    return `JWT_SECRET must have at least ${MIN_JWT_SECRET_DISTINCT_CHARS} distinct characters`;
+  }
+  return null;
+}
+
 const envSchema = z
   .object({
     DATABASE_PROVIDER: z
@@ -18,7 +35,13 @@ const envSchema = z
       })
       .default('sqlite'),
     DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
-    JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
+    JWT_SECRET: z
+      .string()
+      .min(MIN_JWT_SECRET_LENGTH, `JWT_SECRET must be at least ${MIN_JWT_SECRET_LENGTH} characters`)
+      .superRefine((secret, ctx) => {
+        const problem = jwtSecretProblem(secret);
+        if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem });
+      }),
     CORS_ORIGINS: z.string().default('http://localhost:5173'),
     PORT: z.coerce.number().int().min(1).max(65535).default(3000),
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),

@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { applyE2eEnv, E2E_DB_FILE } from './e2e.env';
+import { assertE2eResetAllowed } from './e2e-guard';
 
 const backend = join(__dirname, '..');
 
@@ -33,6 +34,11 @@ function dropAppTables(provider: string): void {
 
 export default function globalSetup(): void {
   applyE2eEnv();
+  // First, before the client is generated or any table is touched.
+  assertE2eResetAllowed(process.env, {
+    defaultSqliteFile: E2E_DB_FILE,
+    sqliteSchemaDir: join(backend, 'prisma', 'sqlite'),
+  });
   // The generated client is shared by the whole project, so generate it for the engine under test.
   runPrisma(['generate']);
 
@@ -44,13 +50,6 @@ export default function globalSetup(): void {
     return;
   }
 
-  // The e2e run wipes this database, so refuse anything that doesn't look like a test database.
-  const dbName = new URL(process.env.DATABASE_URL ?? '').pathname.replace(/^\//, '');
-  if (!/e2e|test/i.test(dbName)) {
-    throw new Error(
-      `Refusing to reset database "${dbName}": the e2e run drops its tables, so its name must contain "e2e" or "test".`,
-    );
-  }
   dropAppTables(process.env.DATABASE_PROVIDER ?? '');
   runPrisma(['migrate', 'deploy']);
 }

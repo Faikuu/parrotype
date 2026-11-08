@@ -79,8 +79,65 @@ describe('resultInputSchema', () => {
   });
 
   it('accepts zen and custom results (they are saved, just not ranked)', () => {
-    expect(resultInputSchema.safeParse({ ...valid, mode: 'zen' }).success).toBe(true);
-    expect(resultInputSchema.safeParse({ ...valid, mode: 'custom' }).success).toBe(true);
+    expect(resultInputSchema.safeParse({ ...valid, mode: 'zen', mode2: 'zen' }).success).toBe(true);
+    expect(resultInputSchema.safeParse({ ...valid, mode: 'custom', mode2: 'custom' }).success).toBe(true);
+  });
+});
+
+describe('mode2 per mode', () => {
+  const messages = (r: ReturnType<typeof resultInputSchema.safeParse>) =>
+    r.success ? [] : r.error.issues.map((i) => i.message);
+  const withMode = (mode: string, mode2: string) => resultInputSchema.safeParse({ ...valid, mode, mode2 });
+
+  it('accepts each time, words, quote and pangram value the frontend sends', () => {
+    for (const mode2 of ['15', '30', '60', '120']) expect(withMode('time', mode2).success).toBe(true);
+    for (const mode2 of ['10', '25', '50', '100']) expect(withMode('words', mode2).success).toBe(true);
+    for (const mode2 of ['short', 'medium', 'long', 'any']) expect(withMode('quote', mode2).success).toBe(true);
+    for (const mode2 of ['1', '3', '5']) expect(withMode('pangram', mode2).success).toBe(true);
+  });
+
+  it('rejects values that are not in the mode list', () => {
+    expect(messages(withMode('time', '45'))).toEqual(['time results must have mode2 one of 15, 30, 60, 120']);
+    expect(messages(withMode('words', '30'))).toEqual(['words results must have mode2 one of 10, 25, 50, 100']);
+    expect(messages(withMode('quote', 'huge'))).toEqual(['quote results must have mode2 one of short, medium, long, any']);
+    expect(messages(withMode('pangram', '2'))).toEqual(['pangram results must have mode2 one of 1, 3, 5']);
+    expect(withMode('time', '60s').success).toBe(false);
+    expect(withMode('words', '').success).toBe(false);
+  });
+
+  it('requires the exact mode name for zen, custom and weak', () => {
+    expect(messages(withMode('zen', '60'))).toEqual(['zen results must have mode2 "zen"']);
+    expect(messages(withMode('custom', 'zen'))).toEqual(['custom results must have mode2 "custom"']);
+    expect(messages(withMode('weak', 'weak'))).toEqual([]);
+    expect(messages(withMode('weak', 'zen'))).toEqual(['weak results must have mode2 "weak"']);
+  });
+
+  it('rejects a time mode2 on a words result and the reverse', () => {
+    expect(withMode('words', '60').success).toBe(false);
+    expect(withMode('time', '25').success).toBe(false);
+  });
+});
+
+describe('leaderboardQuerySchema mode2 per mode', () => {
+  const q = (mode: string, mode2: string) => leaderboardQuerySchema.safeParse({ mode, mode2, language: 'en' });
+
+  it('accepts the same values as results, per mode', () => {
+    expect(q('time', '120').success).toBe(true);
+    expect(q('words', '100').success).toBe(true);
+    expect(q('quote', 'any').success).toBe(true);
+    expect(q('pangram', '5').success).toBe(true);
+    expect(q('time', '45').success).toBe(false);
+    expect(q('words', '15').success).toBe(false);
+    expect(q('quote', 'tiny').success).toBe(false);
+    expect(q('pangram', '4').success).toBe(false);
+  });
+
+  it('accepts any well-formed date for daily, and the unranked modes keep their own message', () => {
+    expect(q('daily', '2001-02-03').success).toBe(true);
+    expect(q('daily', '2001-2-3').success).toBe(false);
+    const zen = q('zen', 'zen');
+    expect(zen.success).toBe(false);
+    if (!zen.success) expect(zen.error.issues.map((i) => i.message)).toEqual(['zen, custom and weak results are not ranked']);
   });
 });
 
@@ -99,9 +156,12 @@ describe('leaderboardQuerySchema', () => {
     expect(leaderboardQuerySchema.safeParse({ mode: 'daily', mode2: '2026-1-8', language: 'en' }).success).toBe(false);
   });
 
-  it('accepts the other ranked modes and the four languages', () => {
-    for (const mode of ['time', 'words', 'quote', 'pangram']) {
-      expect(leaderboardQuerySchema.safeParse({ mode, mode2: '60', language: 'es' }).success).toBe(true);
+  it('accepts the other ranked modes with their own mode2 and all four languages', () => {
+    const mode2For = { time: '60', words: '25', quote: 'medium', pangram: '3' } as const;
+    for (const [mode, mode2] of Object.entries(mode2For)) {
+      for (const language of ['en', 'pl', 'de', 'es']) {
+        expect(leaderboardQuerySchema.safeParse({ mode, mode2, language }).success).toBe(true);
+      }
     }
   });
 

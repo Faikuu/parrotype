@@ -1,5 +1,5 @@
 import type { PrismaService } from '../prisma/prisma.service';
-import { LEADERBOARD_SIZE, LeaderboardService, rankLeaderboard, type LeaderboardRow } from './leaderboard.service';
+import { LEADERBOARD_SIZE, LeaderboardService, rankLeaderboard, TIE_EXTRA_MAX, type LeaderboardRow } from './leaderboard.service';
 
 function row(partial: Partial<LeaderboardRow> & { id: number; userId: number; wpm: number }): LeaderboardRow {
   return {
@@ -121,5 +121,79 @@ describe('LeaderboardService.top', () => {
     expect(entries).toHaveLength(LEADERBOARD_SIZE);
     expect(entries[LEADERBOARD_SIZE - 1]).toMatchObject({ rank: 50, name: 'user51', wpm: 51 });
     expect(entries.map((e) => e.name)).not.toContain('user50');
+  });
+});
+
+describe('LeaderboardService.top, daily board', () => {
+  const daily = { mode: 'daily' as const, mode2: '2026-11-08', language: 'en' as const };
+  const at = (iso: string) => new Date(iso);
+
+  function setup(rows: unknown[]) {
+    const groupBy = jest.fn();
+    const prisma = {
+      result: { groupBy, findMany: jest.fn().mockResolvedValue(rows) },
+      user: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    return { service: new LeaderboardService(prisma as unknown as PrismaService), prisma, groupBy };
+  }
+
+  it("shows each user's first result for the day, so a faster retry does not change the rank", async () => {
+    // alice's retry (id 3, 99 wpm) is listed first to show that the order of the rows does not matter.
+    const { service, groupBy } = setup([
+      { id: 3, userId: 1, wpm: 99, rawWpm: 100, accuracy: 99, createdAt: at('2026-11-08T10:00:00Z'), user: { name: 'alice' } },
+      { id: 1, userId: 1, wpm: 70, rawWpm: 72, accuracy: 95, createdAt: at('2026-11-08T09:00:00Z'), user: { name: 'alice' } },
+      { id: 2, userId: 2, wpm: 85, rawWpm: 87, accuracy: 96, createdAt: at('2026-11-08T11:00:00Z'), user: { name: 'bob' } },
+    ]);
+
+    const entries = await service.top(daily);
+
+    expect(groupBy).not.toHaveBeenCalled();
+    expect(entries).toEqual([
+      { rank: 1, name: 'bob', wpm: 85, rawWpm: 87, accuracy: 96, createdAt: '2026-11-08T11:00:00.000Z' },
+      { rank: 2, name: 'alice', wpm: 70, rawWpm: 72, accuracy: 95, createdAt: '2026-11-08T09:00:00.000Z' },
+    ]);
+  });
+
+  it('breaks ties between first results by the earlier createdAt', async () => {
+    const { service } = setup([
+      { id: 5, userId: 1, wpm: 88, rawWpm: 90, accuracy: 96, createdAt: at('2026-11-08T12:00:00Z'), user: { name: 'late' } },
+      { id: 4, userId: 2, wpm: 88, rawWpm: 90, accuracy: 96, createdAt: at('2026-11-08T08:00:00Z'), user: { name: 'early' } },
+    ]);
+    expect((await service.top(daily)).map((e) => e.name)).toEqual(['early', 'late']);
+  });
+
+  it('keeps the earliest of a user first results when the timestamps are equal, by id', async () => {
+    const { service } = setup([
+      { id: 9, userId: 1, wpm: 60, rawWpm: 62, accuracy: 95, createdAt: at('2026-11-08T08:00:00Z'), user: { name: 'x' } },
+      { id: 8, userId: 1, wpm: 50, rawWpm: 52, accuracy: 95, createdAt: at('2026-11-08T08:00:00Z'), user: { name: 'x' } },
+    ]);
+    const entries = await service.top(daily);
+    expect(entries).toEqual([expect.objectContaining({ name: 'x', wpm: 50 })]);
+  });
+});
+
+describe('LeaderboardService.top, tie query', () => {
+  const query = { mode: 'time' as const, mode2: '60', language: 'en' as const };
+
+  it('caps the tie query and reads the candidates with one userId-in and wpm-gte query, no OR list', async () => {
+    const groups = Array.from({ length: LEADERBOARD_SIZE }, (_, i) => ({ userId: i + 1, _max: { wpm: 100 - i } }));
+    const groupBy = jest.fn().mockResolvedValueOnce(groups).mockResolvedValueOnce(groups);
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = {
+      result: { groupBy, findMany },
+      user: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const service = new LeaderboardService(prisma as unknown as PrismaService);
+
+    await service.top(query);
+
+    expect(groupBy.mock.calls[1][0]).toMatchObject({
+      having: { wpm: { _max: { gte: 51 } } },
+      take: LEADERBOARD_SIZE + TIE_EXTRA_MAX,
+    });
+    const rowQuery = findMany.mock.calls[0][0];
+    expect(rowQuery.where.userId).toEqual({ in: groups.map((g) => g.userId) });
+    expect(rowQuery.where.wpm).toEqual({ gte: 51 });
+    expect(rowQuery.where).not.toHaveProperty('OR');
   });
 });
