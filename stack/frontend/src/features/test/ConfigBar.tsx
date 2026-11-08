@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AtSign, Hash } from 'lucide-react';
+import { AtSign, Globe, Hash } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/components/cn';
 import type { Mode, PangramCount, QuoteLength, TimeOption, WordsOption } from '@/lib/engine/types';
@@ -17,10 +17,11 @@ interface OptProps {
   pressed?: boolean;
   onPick: () => void;
   children: ReactNode;
+  keepFocus?: boolean;
 }
 
-/** A config option. Clicking blurs it so typing goes straight back to the test. */
-function Opt({ pressed, onPick, children }: OptProps) {
+/** A config option. Clicking hands focus back to the test input so typing continues. */
+function Opt({ pressed, onPick, children, keepFocus }: OptProps) {
   return (
     <button
       type="button"
@@ -28,6 +29,7 @@ function Opt({ pressed, onPick, children }: OptProps) {
       onClick={(e) => {
         onPick();
         e.currentTarget.blur();
+        if (!keepFocus) document.querySelector<HTMLInputElement>('[data-typing-input]')?.focus({ preventScroll: true });
       }}
       className={cn(
         'rounded-[6px] px-2 py-1 transition-colors',
@@ -54,6 +56,7 @@ export function ConfigBar() {
       pangramCount: s.pangramCount,
       punctuation: s.punctuation,
       numbers: s.numbers,
+      language: s.language,
       focusMode: s.focusMode,
     })),
   );
@@ -94,7 +97,7 @@ export function ConfigBar() {
       ));
       break;
     case 'custom':
-      sub = <Opt onPick={openCustomText}>{t('test:edit')}</Opt>;
+      sub = <Opt onPick={openCustomText} keepFocus>{t('test:edit')}</Opt>;
       break;
     case 'zen':
       sub = null;
@@ -138,6 +141,16 @@ export function ConfigBar() {
         <>
           <Divider />
           <div className="flex flex-wrap items-center gap-0.5">{sub}</div>
+        </>
+      )}
+
+      {cfg.mode !== 'custom' && cfg.mode !== 'zen' && (
+        <>
+          <Divider />
+          <Opt onPick={() => set('language', cfg.language === 'en' ? 'pl' : 'en')}>
+            <Globe size={13} className="mr-1 inline-block align-[-2px]" aria-hidden="true" />
+            {t(`settings:languages.${cfg.language}`)}
+          </Opt>
         </>
       )}
     </div>

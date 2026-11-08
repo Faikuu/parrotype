@@ -70,8 +70,10 @@ function Palette() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { list, trail } = resolveLevel(root, ids);
+  // At the top level a search also reaches nested options ("Theme: Cockatoo"), like monkeytype.
+  const searchable = query.trim() && ids.length === 0 ? withNestedOptions(list) : list;
   const items = query.trim()
-    ? fuzzyFilter(list, query, (c) => c.label, (c) => c.keywords ?? [])
+    ? fuzzyFilter(searchable, query, (c) => c.label, (c) => c.keywords ?? [])
     : list.map((item) => ({ item, indices: [] as number[] }));
   const count = items.length;
   const active = count === 0 ? -1 : Math.min(index, count - 1);
@@ -262,4 +264,22 @@ function Palette() {
       </div>
     </div>
   );
+}
+
+/** The list plus each submenu's direct leaf options, labelled "Parent: option". */
+function withNestedOptions(list: Command[]): Command[] {
+  const out: Command[] = [...list];
+  for (const parent of list) {
+    if (!parent.children) continue;
+    for (const child of parent.children()) {
+      if (child.children || !child.run) continue;
+      out.push({
+        ...child,
+        id: `${parent.id}/${child.id}`,
+        label: `${parent.label}: ${child.label}`,
+        keywords: [...(parent.keywords ?? []), ...(child.keywords ?? [])],
+      });
+    }
+  }
+  return out;
 }

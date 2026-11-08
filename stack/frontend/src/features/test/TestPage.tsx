@@ -40,6 +40,7 @@ export default function TestPage() {
 
         <input
           ref={test.inputRef}
+          data-typing-input
           type="text"
           className="sr-only"
           aria-label={t('test:inputLabel')}
