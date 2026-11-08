@@ -101,7 +101,7 @@ export function Caret({ viewportRef, state, shift }: CaretProps) {
     if (caretStyle === 'line') {
       width = LINE_WIDTH;
       height = BOX_EM * fontPx;
-      left = x - vr.left - LINE_WIDTH / 2;
+      left = x - vr.left;
       top = wordTop + (wr.height - height) / 2;
     } else if (caretStyle === 'block') {
       width = w;
