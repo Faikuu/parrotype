@@ -45,8 +45,8 @@ describe('isPangram / missingLetters', () => {
   it('Spanish: accented vowels count as their base letter, ñ does not', () => {
     expect(missingLetters('canción', 'es')).not.toContain('o');
     expect(missingLetters('Pingüino', 'es')).not.toContain('u');
-    expect(missingLetters("ano", "es")).toContain("ñ");
-    expect(missingLetters("ano", "es")).not.toContain("a");
+    expect(missingLetters('ano', 'es')).toContain('ñ');
+    expect(missingLetters('ano', 'es')).not.toContain('a');
     expect(isPangram('abcdefghijklmnopqrstuvwxyz', 'es')).toBe(false);
   });
 

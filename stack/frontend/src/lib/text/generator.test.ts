@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateWords, quoteToWords, wordsForConfig, DEFAULT_CUSTOM_TEXT, MAX_CUSTOM_WORDS } from './generator';
+import { en } from './wordlists/en';
+import { es } from './wordlists/es';
 import { createRng } from './rng';
 import { isPangram } from './pangram';
 import type { TestConfig } from '../engine/types';
@@ -118,5 +120,68 @@ describe('quoteToWords', () => {
   it('splits on any whitespace and drops empties', () => {
     expect(quoteToWords('  To be,\n or not  to be.  ')).toEqual(['To', 'be,', 'or', 'not', 'to', 'be.']);
     expect(quoteToWords('   ')).toEqual([]);
+  });
+});
+
+describe('wordsForConfig: daily and weak', () => {
+  const now = Date.UTC(2026, 10, 8, 15, 30);
+
+  it('daily gives today\'s seeded text, the same for the same UTC date and language', () => {
+    const a = wordsForConfig({ ...base, mode: 'daily', language: 'de' }, createRng(1), { now });
+    const b = wordsForConfig({ ...base, mode: 'daily', language: 'de' }, createRng(999), { now: now + 3_600_000 });
+    expect(a).toEqual(b);
+    expect(a.length).toBeGreaterThan(40);
+  });
+
+  it('daily uses the UTC date of `now`', () => {
+    const today = wordsForConfig({ ...base, mode: 'daily' }, Math.random, { now });
+    const tomorrow = wordsForConfig({ ...base, mode: 'daily' }, Math.random, { now: now + 86_400_000 });
+    expect(today).not.toEqual(tomorrow);
+  });
+
+  it('daily ignores the config word count and the punctuation flag', () => {
+    const plain = wordsForConfig({ ...base, mode: 'daily', words: 10, punctuation: false }, Math.random, { now });
+    const other = wordsForConfig({ ...base, mode: 'daily', words: 100, punctuation: true }, Math.random, { now });
+    expect(plain).toEqual(other);
+  });
+
+  it('weak gives 40 words and uses the weak letters from extras', () => {
+    const words = wordsForConfig({ ...base, mode: 'weak' }, createRng(2), { weakKeys: ['q', 'z'] });
+    expect(words).toHaveLength(40);
+    expect(words.every((w) => en.includes(w))).toBe(true);
+  });
+
+  it('weak with no extras falls back to plain words', () => {
+    const words = wordsForConfig({ ...base, mode: 'weak', language: 'es' }, createRng(3));
+    expect(words).toHaveLength(40);
+    expect(words.every((w) => es.includes(w))).toBe(true);
+  });
+
+  it('daily and weak work for every language', () => {
+    for (const language of ['en', 'pl', 'de', 'es'] as const) {
+      expect(wordsForConfig({ ...base, mode: 'daily', language }, Math.random, { now }).length).toBeGreaterThan(40);
+      expect(wordsForConfig({ ...base, mode: 'weak', language }, createRng(4), { weakKeys: ['x'] })).toHaveLength(40);
+    }
+  });
+
+  it('keeps the two-argument call working (existing callers)', () => {
+    expect(wordsForConfig({ ...base, mode: 'words', words: 10 }, createRng(5))).toHaveLength(10);
+  });
+});
+
+describe('generateWords for de and es', () => {
+  it('never repeats a word in a row, with numbers and punctuation', () => {
+    for (const language of ['de', 'es'] as const) {
+      const words = generateWords({ language, numbers: true, punctuation: true }, 1000, createRng(21));
+      const bare = words.map((w) => w.replace(/^"|"$/g, '').toLowerCase().replace(/[.,?!:;]$/, ''));
+      for (let i = 1; i < bare.length; i++) expect(bare[i], `repeat at ${i} (${language})`).not.toBe(bare[i - 1]);
+    }
+  });
+
+  it('draws German and Spanish words from their lists', async () => {
+    const { de } = await import('./wordlists/de');
+    const { es } = await import('./wordlists/es');
+    expect(generateWords({ language: 'de', numbers: false, punctuation: false }, 300, createRng(22)).every((w) => de.includes(w))).toBe(true);
+    expect(generateWords({ language: 'es', numbers: false, punctuation: false }, 300, createRng(23)).every((w) => es.includes(w))).toBe(true);
   });
 });

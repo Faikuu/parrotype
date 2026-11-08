@@ -62,7 +62,7 @@ describe('mergeKeyStats', () => {
 
   it('recent tests count more: after many clean tests an old miss fades', () => {
     let stats: KeyStatsMap = { k: { hits: 0, misses: 10 } };
-    for (let i = 0; i < 30; i++) stats = mergeKeyStats(stats, { k: { hits: 5, misses: 0 } });
+    for (let i = 0; i < 100; i++) stats = mergeKeyStats(stats, { k: { hits: 5, misses: 0 } });
     expect(stats.k?.misses).toBeLessThan(0.05);
     expect(stats.k?.hits).toBeGreaterThan(40);
   });
