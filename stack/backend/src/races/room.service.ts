@@ -51,11 +51,24 @@ export interface JoinResult {
   token: string;
 }
 
+/** Why a room was removed. 'moderator' is an admin's close (closeRoom). */
+export type RoomCloseReason = 'expired' | 'empty' | 'moderator';
+
 /** Emitted whenever a room is removed. connIds lists the connections still seated in it. */
 export interface RoomClosedEvent {
   roomId: string;
   connIds: string[];
-  reason: 'expired' | 'empty';
+  reason: RoomCloseReason;
+}
+
+/** One live room for the admin panel. Names only: no seat tokens, no seat or user ids. */
+export interface RoomSummary {
+  id: string;
+  language: Language;
+  status: RoomStatus;
+  players: Array<{ name: string; isGuest: boolean; connected: boolean; progress: number }>;
+  createdAt: string;
+  lastActivity: string;
 }
 
 interface Player {
@@ -394,6 +407,47 @@ export class RoomService extends EventEmitter implements OnModuleInit, OnModuleD
 
   get roomCount(): number {
     return this.rooms.size;
+  }
+
+  /** Seats across all rooms, connected or waiting for a reconnect. */
+  get playerCount(): number {
+    let count = 0;
+    for (const room of this.rooms.values()) count += room.players.length;
+    return count;
+  }
+
+  /**
+   * Closes a room for a moderator: its connected members get the error and their sockets are closed (the
+   * gateway handles the 'closed' event). Returns false when there is no such room.
+   */
+  closeRoom(roomId: string, reason: 'moderator'): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    this.removeRoom(room, reason);
+    return true;
+  }
+
+  /** Every live room, newest first, for the admin panel. Progress is the seat's share of the text. */
+  list(): RoomSummary[] {
+    return [...this.rooms.values()]
+      .filter((room) => this.advance(room))
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((room) => {
+        const length = room.text.length;
+        return {
+          id: room.id,
+          language: room.language,
+          status: room.status,
+          players: room.players.map((p) => ({
+            name: p.name,
+            isGuest: p.isGuest,
+            connected: p.connected,
+            progress: length > 0 ? p.chars / length : 0,
+          })),
+          createdAt: new Date(room.createdAt).toISOString(),
+          lastActivity: new Date(room.lastActivity).toISOString(),
+        };
+      });
   }
 
   private now(): number {

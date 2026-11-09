@@ -21,5 +21,6 @@ import { RoomService } from './room.service';
       useFactory: () => raceSocketLimits(),
     },
   ],
+  exports: [RoomService],
 })
 export class RacesModule {}

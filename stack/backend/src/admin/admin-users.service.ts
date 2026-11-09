@@ -235,7 +235,7 @@ export class AdminUsersService {
     if (target.name === name) return this.rowOf(id);
 
     const nameLower = name.toLowerCase();
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.writeTx(async (tx) => {
       const clash = await tx.user.findFirst({ where: { nameLower, NOT: { id } }, select: { id: true } });
       if (clash) throw new ConflictException(TAKEN_NAME);
       try {
@@ -264,7 +264,7 @@ export class AdminUsersService {
   async revokeSessions(actor: AuthUser, id: number): Promise<{ ok: true }> {
     await this.findUser(id);
     await this.permissions.assertCanActOn(actor.id, id);
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.writeTx(async (tx) => {
       await this.bumpOrThrow(tx, id);
       await tx.adminAction.create({
         data: { adminId: actor.id, action: 'user_revoke_sessions', target: `user:${id}` },
@@ -282,7 +282,7 @@ export class AdminUsersService {
     if (id === actor.id) throw new BadRequestException(SELF_BAN);
     await this.findUser(id);
     await this.permissions.assertCanActOn(actor.id, id);
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.writeTx(async (tx) => {
       const { count } = await tx.user.updateMany({
         where: { id, bannedAt: null, groups: { none: { group: { name: ADMINISTRATORS_GROUP, system: true } } } },
         data: { bannedAt: new Date(), banReason: reason, tokenVersion: { increment: 1 } },
@@ -300,7 +300,7 @@ export class AdminUsersService {
     if (id === actor.id) throw new BadRequestException("You can't unsuspend your own account");
     await this.findUser(id);
     await this.permissions.assertCanActOn(actor.id, id);
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.writeTx(async (tx) => {
       const { count } = await tx.user.updateMany({
         where: { id, bannedAt: { not: null } },
         data: { bannedAt: null, banReason: null },
@@ -361,7 +361,7 @@ export class AdminUsersService {
     const removingAdmin = adminGroup !== null && removed.includes(adminGroup.id);
 
     try {
-      await this.prisma.$transaction(async (tx) => {
+      await this.prisma.writeTx(async (tx) => {
         if (removingAdmin) {
           await lockAdministrators(tx, adminGroup!.id);
           if (!(await remainsAdministrator(tx, adminGroup!.id, [id]))) throw new BadRequestException(LAST_ADMINISTRATOR);
@@ -398,7 +398,7 @@ export class AdminUsersService {
     if (input.confirm !== target.name) throw new BadRequestException('Type the username exactly to confirm the deletion');
     await this.permissions.assertCanActOn(actor.id, id);
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.writeTx(async (tx) => {
       const adminGroup = await administratorsGroupId(tx);
       if (adminGroup !== null) {
         await lockAdministrators(tx, adminGroup);

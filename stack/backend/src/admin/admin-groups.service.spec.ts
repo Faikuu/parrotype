@@ -56,7 +56,7 @@ function setup(options: {
     adminAction: { create: jest.fn().mockResolvedValue({}) },
   };
   const prisma = Object.assign(db, {
-    $transaction: jest.fn((cb: (tx: typeof db) => Promise<unknown>) => cb(db)),
+    writeTx: jest.fn((cb: (tx: typeof db) => Promise<unknown>) => cb(db)),
   });
   const permissions = {
     assertCanGrant: jest.fn().mockImplementation(async () => {

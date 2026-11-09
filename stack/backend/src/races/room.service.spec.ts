@@ -652,4 +652,50 @@ describe('RoomService', () => {
       expect(service.view(id)).not.toBeNull();
     });
   });
+  describe('closeRoom (a moderator)', () => {
+    it('removes the room, reports it as closed for the moderator, and lists the seated connections', async () => {
+      const id = await roomWith('c1', 'c2');
+      const closed: RoomClosedEvent[] = [];
+      service.on('closed', (e: RoomClosedEvent) => closed.push(e));
+
+      expect(service.closeRoom(id, 'moderator')).toBe(true);
+
+      expect(closed).toEqual([{ roomId: id, connIds: ['c1', 'c2'], reason: 'moderator' }]);
+      expect(service.view(id)).toBeNull();
+      expect(service.roomCount).toBe(0);
+      expect(service.memberConnIds(id)).toEqual([]);
+    });
+
+    it('returns false for a room that does not exist, and emits nothing', async () => {
+      const closed: RoomClosedEvent[] = [];
+      service.on('closed', (e: RoomClosedEvent) => closed.push(e));
+      expect(service.closeRoom('nope1234', 'moderator')).toBe(false);
+      expect(closed).toEqual([]);
+    });
+
+    it('frees the seats: a closed connection can join another room', async () => {
+      const id = await roomWith('c1');
+      service.closeRoom(id, 'moderator');
+      const other = await roomWith('c2');
+      expect(() => service.join(other, 'c1', { user: null, guestName: 'again' })).not.toThrow();
+    });
+  });
+
+  describe('admin views', () => {
+    it('counts the seats across rooms, and lists rooms with names and progress only', async () => {
+      const id = await running('h1', 'h2');
+      await roomWith('lobby1');
+      expect(service.roomCount).toBe(2);
+      expect(service.playerCount).toBe(3);
+
+      const rooms = service.list();
+      expect(rooms.map((r) => r.id)).toContain(id);
+      const row = rooms.find((r) => r.id === id)!;
+      expect(row.status).toBe('racing'); // the countdown has passed (the view advances the clock too)
+      expect(row.players.map((p) => p.name)).toEqual(['guest player0', 'guest player1']);
+      expect(Object.keys(row.players[0]).sort()).toEqual(['connected', 'isGuest', 'name', 'progress']);
+      expect(JSON.stringify(rooms)).not.toMatch(/[0-9a-f]{32}/);
+      expect(new Date(row.createdAt).toISOString()).toBe(row.createdAt);
+    });
+  });
 });

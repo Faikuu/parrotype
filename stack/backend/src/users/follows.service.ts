@@ -53,7 +53,7 @@ export class FollowsService {
   private async createWithinLimit(followerId: number, followeeId: number): Promise<void> {
     for (let attempt = 1; ; attempt++) {
       try {
-        await this.prisma.$transaction(
+        await this.prisma.writeTx(
           async (tx) => {
             const count = await tx.follow.count({ where: { followerId } });
             if (count >= MAX_FOLLOWS) {

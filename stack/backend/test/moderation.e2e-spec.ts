@@ -269,18 +269,18 @@ describe('reports, admin moderation and suspensions (e2e)', () => {
     });
 
     it('records the actions in the audit log, with the admin name', async () => {
-      const actions = await request(server).get('/api/admin/actions').set('Cookie', admin).expect(200);
-      const kinds = actions.body.map((a: { action: string }) => a.action);
+      const actions = await request(server).get('/api/admin/actions?pageSize=100').set('Cookie', admin).expect(200);
+      const kinds = actions.body.items.map((a: { action: string }) => a.action);
       expect(kinds).toEqual(
         expect.arrayContaining(['resolve_report', 'dismiss_report', 'delete_result', 'ban', 'unban']),
       );
-      const ban = actions.body.find((a: { action: string }) => a.action === 'ban');
+      const ban = actions.body.items.find((a: { action: string }) => a.action === 'ban');
       expect(ban).toMatchObject({
         adminName: 'mod_admin',
         target: `user:${targetId}`,
         note: 'spam accounts',
       });
-      expect(actions.body.find((a: { action: string }) => a.action === 'resolve_report')).toMatchObject({
+      expect(actions.body.items.find((a: { action: string }) => a.action === 'resolve_report')).toMatchObject({
         target: `report:${reportByReporter}`,
         adminName: 'mod_admin',
       });

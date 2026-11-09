@@ -27,7 +27,7 @@ function setup(opts: {
   };
   // Interactive transactions run against the same mocks, so the count and create are checked together.
   const withTx = Object.assign(prisma, {
-    $transaction: jest.fn((...args: unknown[]) => (args[0] as (tx: typeof prisma) => Promise<unknown>)(prisma)),
+    writeTx: jest.fn((...args: unknown[]) => (args[0] as (tx: typeof prisma) => Promise<unknown>)(prisma)),
   });
   return { service: new FollowsService(withTx as unknown as PrismaService), prisma: withTx };
 }
@@ -73,28 +73,28 @@ describe('FollowsService.follow', () => {
   it('counts and inserts in one serializable transaction', async () => {
     const { service, prisma } = setup({ count: 3 });
     await service.follow(1, 'bob');
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(prisma.$transaction.mock.calls[0][1]).toEqual({ isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    expect(prisma.writeTx).toHaveBeenCalledTimes(1);
+    expect(prisma.writeTx.mock.calls[0][1]).toEqual({ isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   });
 
   it('retries a write conflict (P2034) so two racing follows cannot both pass the limit', async () => {
     const { service, prisma } = setup({ count: 999 });
     prisma.follow.create.mockRejectedValueOnce(p2034()).mockResolvedValueOnce({});
     await expect(service.follow(1, 'bob')).resolves.toEqual({ following: true });
-    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(prisma.writeTx).toHaveBeenCalledTimes(2);
   });
 
   it('gives up after three conflicts, and rethrows the last one', async () => {
     const { service, prisma } = setup({ count: 3 });
     prisma.follow.create.mockRejectedValue(p2034());
     await expect(service.follow(1, 'bob')).rejects.toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
-    expect(prisma.$transaction).toHaveBeenCalledTimes(3);
+    expect(prisma.writeTx).toHaveBeenCalledTimes(3);
   });
 
   it('does not retry the limit refusal: the count at the limit is a 400 inside the transaction', async () => {
     const { service, prisma } = setup({ count: 1000 });
     await expect(service.follow(1, 'bob')).rejects.toBeInstanceOf(BadRequestException);
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.writeTx).toHaveBeenCalledTimes(1);
   });
 
   it('treats a concurrent duplicate insert as success', async () => {

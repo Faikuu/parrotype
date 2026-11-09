@@ -511,10 +511,10 @@ describe('permission groups, admin users and the safety rules (e2e)', () => {
 
   describe('audit and the CLI-free rules', () => {
     it('lets a moderator read the audit log (audit.read), and writes group and user actions with the admin named', async () => {
-      const actions = await get('/api/admin/actions', mod).expect(200);
-      const kinds = actions.body.map((a: { action: string }) => a.action);
+      const actions = await get('/api/admin/actions?pageSize=100', mod).expect(200);
+      const kinds = actions.body.items.map((a: { action: string }) => a.action);
       expect(kinds).toEqual(expect.arrayContaining(['group_create', 'group_permissions', 'group_member_add', 'user_groups']));
-      expect(actions.body.find((a: { action: string }) => a.action === 'group_create')).toMatchObject({ adminName: 'rb_root' });
+      expect(actions.body.items.find((a: { action: string }) => a.action === 'group_create')).toMatchObject({ adminName: 'rb_root' });
       const other = await sessionFor(app, prisma, 'rb_other');
       await get('/api/admin/actions', other).expect(403);
     });

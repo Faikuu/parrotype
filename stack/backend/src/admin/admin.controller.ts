@@ -7,8 +7,15 @@ import type { Page } from '../common/pagination';
 import { CATALOG, type CatalogEntry, type Permission } from '../permissions/catalog';
 import { PermissionsGuard } from '../permissions/permissions.guard';
 import { RequirePermissions } from '../permissions/permissions.decorator';
-import { AdminService, type AdminAuditEntry, type AdminReport } from './admin.service';
-import { reportsQuerySchema, type ReportsQuery } from './admin.schemas';
+import { AdminService, type AdminAuditEntry, type AdminReport, type AdminResultRow, type AdminStats } from './admin.service';
+import {
+  actionsQuerySchema,
+  reportsQuerySchema,
+  resultsQuerySchema,
+  type ActionsQuery,
+  type ReportsQuery,
+  type ResultsQuery,
+} from './admin.schemas';
 
 /** Every route needs a session (401) and the permission named on it (403). Routes without one need admin.access. */
 @Controller('admin')
@@ -21,6 +28,19 @@ export class AdminController {
   @RequirePermissions('admin.access')
   permissions(@Req() req: Request): { catalog: CatalogEntry[]; mine: Permission[] } {
     return { catalog: [...CATALOG], mine: [...(req.permissions ?? [])].sort() };
+  }
+
+  /** The dashboard numbers. Any admin area can open it. */
+  @Get('stats')
+  @RequirePermissions('admin.access')
+  stats(): Promise<AdminStats> {
+    return this.admin.stats();
+  }
+
+  @Get('results')
+  @RequirePermissions('results.read')
+  results(@Query(new ZodValidationPipe(resultsQuerySchema)) query: ResultsQuery): Promise<Page<AdminResultRow>> {
+    return this.admin.listResults(query);
   }
 
   @Get('reports')
@@ -52,7 +72,7 @@ export class AdminController {
 
   @Get('actions')
   @RequirePermissions('audit.read')
-  actions(): Promise<AdminAuditEntry[]> {
-    return this.admin.listActions();
+  actions(@Query(new ZodValidationPipe(actionsQuerySchema)) query: ActionsQuery): Promise<Page<AdminAuditEntry>> {
+    return this.admin.listActions(query);
   }
 }

@@ -34,6 +34,8 @@ export const GUEST_NAME_REGEX = /^[a-zA-Z0-9_ ]{2,20}$/;
 /** A seat token: 16 random bytes as hex. It is returned only to the connection that took the seat. */
 export const TOKEN_REGEX = /^[0-9a-f]{32}$/;
 export const RACES_WS_PATH = '/api/races/ws';
+/** The error a member gets when a moderator closes the race. The socket is closed after it. */
+export const RACE_CLOSED_BY_MODERATOR = 'This race was closed by a moderator';
 /** Room ids: 8 chars from this alphabet (no i, l, o, u, 0, 1). */
 export const ROOM_ID_ALPHABET = 'abcdefghjkmnpqrstvwxyz23456789';
 export const ROOM_ID_LENGTH = 8;

@@ -24,7 +24,7 @@ const userRow = (over: Row = {}): Row => ({
 });
 
 /**
- * A prisma stand-in. $transaction runs its callback against the same mocks, so writes inside it are
+ * A prisma stand-in. writeTx runs its callback against the same mocks, so writes inside it are
  * visible to the test next to the audit row they must share.
  */
 function setup(options: {
@@ -76,7 +76,7 @@ function setup(options: {
     adminAction: { create: jest.fn().mockResolvedValue({}) },
   };
   const prisma = Object.assign(db, {
-    $transaction: jest.fn((cb: (tx: typeof db) => Promise<unknown>) => cb(db)),
+    writeTx: jest.fn((cb: (tx: typeof db) => Promise<unknown>) => cb(db)),
   });
   const permissions = {
     assertCanActOn: jest.fn().mockImplementation(async () => {
@@ -105,7 +105,7 @@ describe('AdminUsersService.ban', () => {
     await service.ban(me, 7, 'spam accounts');
 
     expect(permissions.assertCanActOn).toHaveBeenCalledWith(1, 7);
-    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.writeTx).toHaveBeenCalledTimes(1);
     const call = prisma.user.updateMany.mock.calls[0][0] as { where: Row; data: Row };
     expect(call.where).toEqual({
       id: 7,
@@ -207,13 +207,13 @@ describe('AdminUsersService.setGroups', () => {
   it('rejects an unknown group id with 400', async () => {
     const { service, prisma } = setup({ groups: [moderators] });
     await expect(service.setGroups(me, 7, { groupIds: [3, 42] })).rejects.toThrow('Unknown group id: 42');
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.writeTx).not.toHaveBeenCalled();
   });
 
   it('is a no-op when the memberships already match', async () => {
     const { service, prisma } = setup({ groups: [moderators], memberships: [3] });
     await service.setGroups(me, 7, { groupIds: [3] });
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.writeTx).not.toHaveBeenCalled();
   });
 
   it('asks the grant check for every group added or removed, and the act-on check for the target', async () => {
@@ -229,7 +229,7 @@ describe('AdminUsersService.setGroups', () => {
   it('refuses a suspended user joining a group, with 400', async () => {
     const { service, prisma } = setup({ groups: [moderators], memberships: [], user: userRow({ bannedAt: new Date(0) }) });
     await expect(service.setGroups(me, 7, { groupIds: [3] })).rejects.toThrow("Suspended users can't be added to groups");
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.writeTx).not.toHaveBeenCalled();
   });
 
   it('refuses to remove the last Administrator, with 400, and writes nothing', async () => {

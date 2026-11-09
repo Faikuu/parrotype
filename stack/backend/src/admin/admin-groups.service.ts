@@ -128,7 +128,7 @@ export class AdminGroupsService {
     await this.permissions.assertCanGrant(actor.id, permissions);
 
     const group = await this.runWrite(() =>
-      this.prisma.$transaction(async (tx) => {
+      this.prisma.writeTx(async (tx) => {
         await this.assertNameFree(tx, input.name);
         const created = await tx.permissionGroup.create({
           data: {
@@ -164,7 +164,7 @@ export class AdminGroupsService {
     if (changed.length === 0) return toAdminGroup(group);
 
     await this.runWrite(() =>
-      this.prisma.$transaction(async (tx) => {
+      this.prisma.writeTx(async (tx) => {
         if (changed.includes('name')) await this.assertNameFree(tx, input.name!, id);
         const data: Prisma.PermissionGroupUpdateManyMutationInput = { updatedAt: new Date() };
         if (changed.includes('name')) data.name = input.name;
@@ -199,7 +199,7 @@ export class AdminGroupsService {
     await this.permissions.assertCanGrant(actor.id, [...added, ...removed]);
 
     await this.runWrite(() =>
-      this.prisma.$transaction(async (tx) => {
+      this.prisma.writeTx(async (tx) => {
         const { count } = await tx.permissionGroup.updateMany({
           where: { id, updatedAt: group.updatedAt },
           data: { updatedAt: new Date() },
@@ -226,7 +226,7 @@ export class AdminGroupsService {
     if (group.system) throw new BadRequestException(SYSTEM_DELETE);
     await this.permissions.assertCanGrant(actor.id, [...permissionsOfGroup(factsOf(group))]);
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.writeTx(async (tx) => {
       const { count } = await tx.permissionGroup.deleteMany({ where: { id, system: false } });
       if (count === 0) throw new NotFoundException(NOT_FOUND_GROUP);
       await tx.adminAction.create({
@@ -253,7 +253,7 @@ export class AdminGroupsService {
     await this.permissions.assertCanActOn(actor.id, userId);
 
     try {
-      await this.prisma.$transaction(async (tx) => {
+      await this.prisma.writeTx(async (tx) => {
         const existing = await tx.userGroup.findUnique({ where: { userId_groupId: { userId, groupId } }, select: { userId: true } });
         if (existing) return;
         await tx.userGroup.create({ data: { userId, groupId } });
@@ -283,7 +283,7 @@ export class AdminGroupsService {
     await this.permissions.assertCanGrant(actor.id, [...permissionsOfGroup(factsOf(group))]);
     await this.permissions.assertCanActOn(actor.id, userId);
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.writeTx(async (tx) => {
       if (isAdministrators(group)) {
         await lockAdministrators(tx, groupId);
         const member = await tx.userGroup.findUnique({ where: { userId_groupId: { userId, groupId } }, select: { userId: true } });

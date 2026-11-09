@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma, type PrismaClient } from '@prisma/client';
-import { getEnv } from '../config/env';
+import { quoteIdent } from '../common/sql-ident';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Permission } from './catalog';
 import { actOnProblem, grantMissing, resolveEffective, type GroupFacts } from './rules';
@@ -32,11 +32,6 @@ interface AccountRow {
 /** Engines return booleans as true/false (PostgreSQL) or 0/1 (SQLite, MySQL). */
 const flag = (value: unknown): boolean => value === true || Number(value) === 1;
 
-/** Identifiers are quoted the way each engine expects; the table and column names are fixed in code. */
-function ident(name: string): string {
-  return getEnv().DATABASE_PROVIDER === 'mysql' ? `\`${name}\`` : `"${name}"`;
-}
-
 /**
  * Effective permissions come from the database on every call (no cache across requests), so a change to a
  * group or a membership applies to the next request.
@@ -55,7 +50,7 @@ export class PermissionsService {
    * statement; used by PermissionsGuard only (see the class comment).
    */
   async loadAccount(userId: number, db: Db = this.prisma): Promise<Account | null> {
-    const q = ident;
+    const q = quoteIdent;
     const sql =
       `SELECT u.${q('id')} AS uid, u.${q('name')} AS uname, u.${q('tokenVersion')} AS utoken, ` +
       `(u.${q('bannedAt')} IS NOT NULL) AS ubanned, ` +

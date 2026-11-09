@@ -19,6 +19,7 @@ import {
   MAX_MESSAGES_PER_SECOND,
   MAX_SOCKETS_TOTAL,
   MAX_STRIKES,
+  RACE_CLOSED_BY_MODERATOR,
   RACES_WS_PATH,
   RaceError,
   type ClientMessage,
@@ -354,14 +355,28 @@ export class RacesGateway implements OnModuleInit, OnModuleDestroy, OnGatewayCon
     }
   }
 
+  /**
+   * A removed room: its members get the reason as an error. After a moderator's close the sockets are
+   * closed as well (1000, the room is gone), so the client does not keep the seat.
+   */
   private notifyClosed(event: RoomClosedEvent): void {
     const send = this.sends.get(event.roomId);
     if (send?.timer) clearTimeout(send.timer);
     this.sends.delete(event.roomId);
+    const moderated = event.reason === 'moderator';
     for (const connId of event.connIds) {
       const conn = this.connsById.get(connId);
-      if (conn) this.sendTo(conn, { type: 'error', message: 'This race has expired' });
+      if (!conn) continue;
+      this.sendTo(conn, { type: 'error', message: moderated ? RACE_CLOSED_BY_MODERATOR : 'This race has expired' });
+      if (moderated) this.endConn(conn, 1000, 'Race closed');
     }
+  }
+
+  /** Ends a socket on the server's say-so. Its seat is already gone from RoomService, so nothing else is undone. */
+  private endConn(conn: Conn, code: number, reason: string): void {
+    conn.closed = true;
+    this.clearJoinTimer(conn);
+    this.closeConn(conn, code, reason);
   }
 
   private sendTo(conn: Conn, msg: ServerMessage): void {

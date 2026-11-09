@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { AuthUser } from '../auth/jwt-auth.guard';
+import type { RoomService } from '../races/room.service';
 import { AdminService, TARGET_RESULTS_SIZE } from './admin.service';
 
 const me: AuthUser = { id: 1, name: 'root' };
@@ -8,7 +9,7 @@ const me: AuthUser = { id: 1, name: 'root' };
 type Row = Record<string, unknown>;
 
 /**
- * A prisma stand-in. $transaction runs its callback against the same mocks, so the writes inside it
+ * A prisma stand-in. writeTx runs its callback against the same mocks, so the writes inside it
  * are visible to the test, and the audit row is checked next to the change it describes.
  */
 function setup(overrides: {
@@ -26,6 +27,7 @@ function setup(overrides: {
       findUnique: jest.fn().mockResolvedValue(overrides.user === undefined ? null : overrides.user),
       findMany: jest.fn().mockResolvedValue(overrides.adminNames ?? []),
       updateMany: jest.fn().mockResolvedValue({ count: matches }),
+      count: jest.fn().mockResolvedValue(0),
     },
     report: {
       findUnique: jest.fn().mockResolvedValue(overrides.report ?? null),
@@ -41,12 +43,18 @@ function setup(overrides: {
     adminAction: {
       create: jest.fn().mockResolvedValue({}),
       findMany: jest.fn().mockResolvedValue(overrides.adminActions ?? []),
+      count: jest.fn().mockResolvedValue((overrides.adminActions ?? []).length),
     },
   };
   const prisma = Object.assign(db, {
-    $transaction: jest.fn((cb: (tx: typeof db) => Promise<unknown>) => cb(db)),
+    writeTx: jest.fn((cb: (tx: typeof db) => Promise<unknown>) => cb(db)),
   });
-  return { service: new AdminService(prisma as unknown as PrismaService), prisma };
+  const rooms = { roomCount: 0, playerCount: 0, closeRoom: jest.fn(() => false), list: jest.fn(() => []) };
+  return {
+    service: new AdminService(prisma as unknown as PrismaService, rooms as unknown as RoomService),
+    prisma,
+    rooms,
+  };
 }
 
 
@@ -140,8 +148,8 @@ describe('AdminService listings', () => {
       ],
       adminNames: [{ id: 1, name: 'root' }],
     });
-    const entries = await service.listActions();
-    expect(entries.map((e) => [e.id, e.adminName])).toEqual([
+    const entries = await service.listActions({ page: 1, pageSize: 25 });
+    expect(entries.items.map((e) => [e.id, e.adminName])).toEqual([
       [3, 'root'],
       [2, null],
       [1, null],
