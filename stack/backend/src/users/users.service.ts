@@ -2,7 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { RANKED_MODES } from '../common/domain';
 import { USERNAME_REGEX } from '../auth/auth.schemas';
 import { PrismaService } from '../prisma/prisma.service';
-import { bestsForUser } from '../results/results.service';
+import { buildInsights, type ActivityDay, type Achievement, type Streak } from '../results/insights';
+import { bestsForUser, loadInsightRows } from '../results/results.service';
 
 export const PROFILE_RECENT_SIZE = 10;
 const NOT_FOUND = 'No user with that name';
@@ -25,6 +26,10 @@ export interface PublicProfile {
   bests: ProfileResult[];
   /** The last PROFILE_RECENT_SIZE results, newest first. */
   recent: ProfileResult[];
+  streak: Streak;
+  achievements: Achievement[];
+  /** Last 365 UTC days, only days with tests. */
+  activity: ActivityDay[];
 }
 
 export interface ProfileSource {
@@ -41,6 +46,9 @@ export interface ProfileSource {
     accuracy: number;
     createdAt: Date;
   }>;
+  streak: Streak;
+  achievements: Achievement[];
+  activity: ActivityDay[];
 }
 
 /**
@@ -62,6 +70,9 @@ export function toPublicProfile(source: ProfileSource): PublicProfile {
       accuracy: r.accuracy,
       createdAt: r.createdAt.toISOString(),
     })),
+    streak: source.streak,
+    achievements: source.achievements,
+    activity: source.activity,
   };
 }
 
@@ -79,7 +90,7 @@ export class UsersService {
     });
     if (!user) throw new NotFoundException(NOT_FOUND);
 
-    const [totals, recent, bests] = await Promise.all([
+    const [totals, recent, bests, insightRows] = await Promise.all([
       this.prisma.result.aggregate({
         where: { userId: user.id },
         _count: { _all: true },
@@ -92,7 +103,9 @@ export class UsersService {
         select: { mode: true, mode2: true, language: true, wpm: true, accuracy: true, createdAt: true },
       }),
       bestsForUser(this.prisma, user.id, RANKED_MODES),
+      loadInsightRows(this.prisma, user.id),
     ]);
+    const insights = buildInsights(insightRows, new Date());
 
     return toPublicProfile({
       name: user.name,
@@ -101,6 +114,9 @@ export class UsersService {
       totalTimeMs: totals._sum.durationMs ?? 0,
       bests,
       recent,
+      streak: insights.streak,
+      achievements: insights.achievements,
+      activity: insights.activity,
     });
   }
 }

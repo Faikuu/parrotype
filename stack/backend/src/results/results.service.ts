@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import type { Result } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { buildInsights, type InsightRow, type Insights } from './insights';
+import { EXPORT_BATCH_SIZE, exportChunks, type ExportFormat } from './export';
 import type { ResultInput } from './results.schemas';
+
+/** Insights read at most this many of the user's most recent results. */
+export const INSIGHTS_ROW_CAP = 20_000;
 
 export interface ResultDto {
   id: number;
@@ -115,6 +120,29 @@ export async function bestsForUser(
   return computeBests(bestRows);
 }
 
+/**
+ * The user's most recent INSIGHTS_ROW_CAP results, oldest first. Ordered newest first so that
+ * take returns the recent end, then reversed. Only the columns the insights use are read.
+ */
+export async function loadInsightRows(prisma: PrismaService, userId: number): Promise<InsightRow[]> {
+  const rows = await prisma.result.findMany({
+    where: { userId },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: INSIGHTS_ROW_CAP,
+    select: {
+      createdAt: true,
+      mode: true,
+      mode2: true,
+      language: true,
+      wpm: true,
+      accuracy: true,
+      correctChars: true,
+      durationMs: true,
+    },
+  });
+  return rows.reverse();
+}
+
 @Injectable()
 export class ResultsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -174,5 +202,41 @@ export class ResultsService {
       averageAccuracy: round2(mean(recent.map((r) => r.accuracy))),
       bests,
     };
+  }
+
+  async insights(userId: number, now: Date = new Date()): Promise<Insights> {
+    return buildInsights(await loadInsightRows(this.prisma, userId), now);
+  }
+
+  /** The user's whole history, in id order, in batches of EXPORT_BATCH_SIZE. */
+  exportStream(userId: number, format: ExportFormat): AsyncGenerator<string> {
+    return exportChunks(
+      format,
+      (afterId) =>
+        this.prisma.result.findMany({
+          where: { userId, id: { gt: afterId } },
+          orderBy: { id: 'asc' },
+          take: EXPORT_BATCH_SIZE,
+          select: {
+            id: true,
+            createdAt: true,
+            mode: true,
+            mode2: true,
+            language: true,
+            wpm: true,
+            rawWpm: true,
+            accuracy: true,
+            consistency: true,
+            durationMs: true,
+            correctChars: true,
+            incorrectChars: true,
+            extraChars: true,
+            missedChars: true,
+            punctuation: true,
+            numbers: true,
+          },
+        }),
+      EXPORT_BATCH_SIZE,
+    );
   }
 }

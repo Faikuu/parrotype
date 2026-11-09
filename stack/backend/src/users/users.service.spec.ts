@@ -11,6 +11,9 @@ const source = (overrides: Partial<ProfileSource> = {}): ProfileSource => ({
   recent: [
     { mode: 'time', mode2: '60', language: 'en', wpm: 88, accuracy: 96, createdAt: new Date('2026-03-01T00:00:00Z') },
   ],
+  streak: { current: 2, longest: 4 },
+  achievements: [{ id: 'first_test', unlockedAt: '2026-01-05T10:00:00.000Z' }],
+  activity: [{ date: '2026-03-01', tests: 1 }],
   ...overrides,
 });
 
@@ -27,9 +30,19 @@ describe('toPublicProfile', () => {
       totalTimeMs: 180_000,
       bests: [{ mode: 'time', mode2: '60', language: 'en', wpm: 90, accuracy: 97, createdAt: '2026-02-01T00:00:00.000Z' }],
       recent: [{ mode: 'time', mode2: '60', language: 'en', wpm: 88, accuracy: 96, createdAt: '2026-03-01T00:00:00.000Z' }],
+      streak: { current: 2, longest: 4 },
+      achievements: [{ id: 'first_test', unlockedAt: '2026-01-05T10:00:00.000Z' }],
+      activity: [{ date: '2026-03-01', tests: 1 }],
     });
     expect(Object.keys(profile)).not.toContain('email');
     expect(JSON.stringify(profile)).not.toContain('secret@example.com');
+  });
+
+  it('passes the streak, achievements and activity through', () => {
+    const profile = toPublicProfile(source({ streak: { current: 0, longest: 9 }, achievements: [], activity: [] }));
+    expect(profile.streak).toEqual({ current: 0, longest: 9 });
+    expect(profile.achievements).toEqual([]);
+    expect(profile.activity).toEqual([]);
   });
 
   it('keeps only the fields of each recent result', () => {

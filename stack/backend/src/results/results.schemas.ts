@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { utcDate } from '../common/dates';
 import { DAILY_DATE_REGEX, isRankedMode, languageSchema, RESULT_MODES, type ResultMode } from '../common/domain';
+import { EXPORT_FORMATS } from './export';
 
 const num = (min: number, max: number) => z.number().finite().min(min).max(max);
 const count = z.number().int().min(0);
@@ -110,6 +111,11 @@ export const leaderboardQuerySchema = z
     if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['mode2'], message: problem });
   });
 
+export const exportQuerySchema = z.object({
+  format: z.enum(EXPORT_FORMATS).default('csv'),
+});
+
 export type ResultInput = z.infer<typeof resultInputSchema>;
 export type ResultsListQuery = z.infer<typeof resultsListQuerySchema>;
 export type LeaderboardQuery = z.infer<typeof leaderboardQuerySchema>;
+export type ExportQuery = z.infer<typeof exportQuerySchema>;
