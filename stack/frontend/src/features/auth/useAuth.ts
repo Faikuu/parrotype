@@ -5,6 +5,14 @@ import type { PublicUser } from '@/lib/api/types';
 
 export const ME_QUERY_KEY = ['me'] as const;
 
+/**
+ * What the password step of a login produced. With two-factor sign-in on there is no session yet:
+ * the caller shows the code step and passes the ticket to verify2fa.
+ */
+export type LoginOutcome =
+  | { twoFactorRequired: false; user: PublicUser }
+  | { twoFactorRequired: true; ticket: string };
+
 /** Cached queries that hold one user's data. Dropped whenever the signed-in user changes. */
 const USER_SCOPED_QUERY_KEYS = [['results'], ['summary'], ['insights']] as const;
 
@@ -38,7 +46,21 @@ export function useAuth() {
   }, [signedOut, qc]);
 
   const login = useMutation({
-    mutationFn: (input: { email: string; password: string }) => authApi.login(input),
+    mutationFn: async (input: { email: string; password: string }): Promise<LoginOutcome> => {
+      const res = await authApi.login(input);
+      if ('user' in res) return { twoFactorRequired: false, user: res.user };
+      return { twoFactorRequired: true, ticket: res.ticket };
+    },
+    onSuccess: (outcome) => {
+      if (outcome.twoFactorRequired) return;
+      clearUserScopedQueries(qc);
+      qc.setQueryData(ME_QUERY_KEY, outcome.user);
+    },
+  });
+
+  /** The second login step. On success the session cookie is set and the user is signed in. */
+  const verify2fa = useMutation({
+    mutationFn: (input: { ticket: string; code: string }) => authApi.verifyTwoFactor(input),
     onSuccess: ({ user }) => {
       clearUserScopedQueries(qc);
       qc.setQueryData(ME_QUERY_KEY, user);
@@ -66,6 +88,7 @@ export function useAuth() {
     user: meQuery.data ?? null,
     isLoading: meQuery.isLoading,
     login: login.mutateAsync,
+    verify2fa: (input: { ticket: string; code: string }) => verify2fa.mutateAsync(input),
     register: register.mutateAsync,
     logout: logout.mutateAsync,
   };

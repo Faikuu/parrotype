@@ -75,6 +75,10 @@ export interface AdminUserRow {
 
 export interface AdminUserDetail extends AdminUserRow {
   banReason: string | null;
+  /** True once the user has followed the link in the verification email. */
+  emailVerified: boolean;
+  /** True when two-factor sign-in is switched on. */
+  twoFactorEnabled: boolean;
   effectivePermissions: Permission[];
   /** What the user's groups grant, ignoring a suspension: the rank used for who may manage them. */
   heldPermissions: Permission[];
@@ -179,7 +183,7 @@ export class AdminUsersService {
   async detail(id: number): Promise<AdminUserDetail> {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      select: { ...ROW_SELECT, banReason: true },
+      select: { ...ROW_SELECT, banReason: true, emailVerifiedAt: true, totpEnabledAt: true },
     });
     if (!user) throw new NotFoundException(NOT_FOUND_USER_ID);
 
@@ -219,6 +223,8 @@ export class AdminUsersService {
     return {
       ...toUserRow(user),
       banReason: user.banReason,
+      emailVerified: user.emailVerifiedAt !== null,
+      twoFactorEnabled: user.totpEnabledAt !== null,
       effectivePermissions: [...effective].sort(),
       heldPermissions: [...held].sort(),
       stats: {

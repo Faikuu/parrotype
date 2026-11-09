@@ -8,6 +8,9 @@ import { fileURLToPath, URL } from 'node:url';
 // The shared typing engine (stack/engine), consumed as source through the aliases below.
 const engineSrc = fileURLToPath(new URL('../engine/src', import.meta.url));
 
+// VITE_API_PROXY points the dev server's /api proxy at another backend (the e2e runs use a second port).
+const apiProxy = process.env.VITE_API_PROXY ?? 'http://localhost:3000';
+
 export default defineConfig({
   plugins: [
     react(),
@@ -53,13 +56,15 @@ export default defineConfig({
       { find: /^@\/lib\/engine$/, replacement: `${engineSrc}/index.ts` },
       { find: /^@\/lib\/engine\/(.*)$/, replacement: `${engineSrc}/engine/$1` },
       { find: /^@\/lib\/text\/(.*)$/, replacement: `${engineSrc}/text/$1` },
+      // The backend imports the engine by its package name (a test checks a replay with the backend's verifier).
+      { find: /^@parrotype\/engine$/, replacement: `${engineSrc}/index.ts` },
       { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
     ],
   },
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: 'http://localhost:3000', changeOrigin: false, ws: true },
+      '/api': { target: apiProxy, changeOrigin: false, ws: true },
     },
   },
   test: {

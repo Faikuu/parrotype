@@ -86,6 +86,7 @@ function setup(options: {
       if (options.grant) throw options.grant;
     }),
     effective: jest.fn().mockResolvedValue(new Set()),
+    held: jest.fn().mockResolvedValue(new Set()),
   };
   const events = new UserEvents();
   const service = new AdminUsersService(
@@ -304,6 +305,32 @@ describe('AdminUsersService.revokeSessions', () => {
     expect(prisma.adminAction.create).toHaveBeenCalledWith({
       data: { adminId: 1, action: 'user_revoke_sessions', target: 'user:1' },
     });
+  });
+});
+
+describe('AdminUsersService.detail', () => {
+  it('reports the email verified and two-factor status as booleans', async () => {
+    const verified = new Date(0);
+    const { service } = setup({
+      user: userRow({ id: 7, emailVerifiedAt: verified, totpEnabledAt: verified }),
+    });
+    const detail = await service.detail(7);
+    expect(detail.emailVerified).toBe(true);
+    expect(detail.twoFactorEnabled).toBe(true);
+  });
+
+  it('reports false for a user who has neither verified nor turned on two-factor', async () => {
+    const { service, prisma } = setup({
+      user: userRow({ emailVerifiedAt: null, totpEnabledAt: null }),
+    });
+    const detail = await service.detail(7);
+    expect(detail.emailVerified).toBe(false);
+    expect(detail.twoFactorEnabled).toBe(false);
+    expect(prisma.user.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ emailVerifiedAt: true, totpEnabledAt: true }),
+      }),
+    );
   });
 });
 

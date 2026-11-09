@@ -18,6 +18,7 @@ function renderLogin(url = '/login') {
           <Route path="/account" element={<p>account page</p>} />
           <Route path="/leaderboard" element={<p>leaderboard page</p>} />
           <Route path="/register" element={<p>register page</p>} />
+          <Route path="/forgot-password" element={<p>forgot page</p>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -119,5 +120,132 @@ describe('LoginPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
 
     await waitFor(() => expect(screen.getByText('account page')).toBeInTheDocument());
+  });
+});
+
+const KEA = { id: 2, name: 'kea', email: 'kea@example.com', createdAt: '2026-01-01T00:00:00Z', permissions: [], emailVerified: true, twoFactorEnabled: true };
+
+/** A login that needs the second step, then a verify that answers with the user. */
+function twoFactorFetch(verifyStatus = 200) {
+  return vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async (input) => {
+    const url = String(input);
+    if (url.endsWith('/auth/login')) return json({ twoFactorRequired: true, ticket: 'ticket-1' });
+    if (url.endsWith('/auth/2fa/verify')) {
+      return verifyStatus === 200 ? json({ user: KEA }) : json({ message: 'nope' }, verifyStatus);
+    }
+    return json({ message: 'nope' }, 401);
+  });
+}
+
+async function logInWithPassword() {
+  await userEvent.type(await screen.findByLabelText('Email'), 'kea@example.com');
+  await userEvent.type(screen.getByLabelText('Password'), 'correct-horse');
+  await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
+}
+
+function verifyBodies(fetchMock: ReturnType<typeof twoFactorFetch>) {
+  return fetchMock.mock.calls
+    .filter(([input]) => String(input).endsWith('/auth/2fa/verify'))
+    .map(([, init]) => JSON.parse(String((init as RequestInit).body)) as unknown);
+}
+
+describe('LoginPage two-factor step', () => {
+  it('asks for the code after a twoFactorRequired login, then signs in and navigates', async () => {
+    const fetchMock = twoFactorFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    renderLogin('/login?next=/account');
+
+    await logInWithPassword();
+
+    expect(await screen.findByRole('heading', { name: 'Enter your code' })).toBeInTheDocument();
+    const code = screen.getByLabelText('Authenticator code');
+    expect(code).toHaveAttribute('inputmode', 'numeric');
+    expect(code).toHaveAttribute('autocomplete', 'one-time-code');
+
+    await userEvent.type(code, '123 456');
+    await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
+
+    expect(await screen.findByText('account page')).toBeInTheDocument();
+    expect(verifyBodies(fetchMock)).toEqual([{ ticket: 'ticket-1', code: '123456' }]);
+  });
+
+  it('rejects a code that is not six digits without calling the server', async () => {
+    const fetchMock = twoFactorFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    renderLogin();
+
+    await logInWithPassword();
+    await userEvent.type(await screen.findByLabelText('Authenticator code'), '12345');
+    await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
+
+    expect(await screen.findByText('Enter the 6-digit code from your app.')).toBeInTheDocument();
+    expect(verifyBodies(fetchMock)).toEqual([]);
+  });
+
+  it('switches to a recovery code field, validates its shape, and sends it normalised', async () => {
+    const fetchMock = twoFactorFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    renderLogin('/login?next=/account');
+
+    await logInWithPassword();
+    await userEvent.click(await screen.findByRole('button', { name: 'Use a recovery code' }));
+
+    const recovery = screen.getByLabelText('Recovery code');
+    expect(recovery).toHaveAttribute('pattern', '[a-zA-Z2-7]{4}-[a-zA-Z2-7]{4}');
+    expect(screen.queryByLabelText('Authenticator code')).not.toBeInTheDocument();
+
+    await userEvent.type(recovery, 'nope');
+    await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
+    expect(await screen.findByText('Enter a recovery code, like xxxx-xxxx.')).toBeInTheDocument();
+    expect(verifyBodies(fetchMock)).toEqual([]);
+
+    await userEvent.clear(recovery);
+    await userEvent.type(recovery, 'abcd2345');
+    await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
+
+    expect(await screen.findByText('account page')).toBeInTheDocument();
+    expect(verifyBodies(fetchMock)).toEqual([{ ticket: 'ticket-1', code: 'abcd-2345' }]);
+  });
+
+  it('toggles back from the recovery code field to the authenticator code field', async () => {
+    vi.stubGlobal('fetch', twoFactorFetch());
+    renderLogin();
+
+    await logInWithPassword();
+    await userEvent.click(await screen.findByRole('button', { name: 'Use a recovery code' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Use an authenticator code' }));
+
+    expect(screen.getByLabelText('Authenticator code')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Recovery code')).not.toBeInTheDocument();
+  });
+
+  it('goes back to the password step, keeping the email', async () => {
+    vi.stubGlobal('fetch', twoFactorFetch());
+    renderLogin();
+
+    await logInWithPassword();
+    await userEvent.click(await screen.findByRole('button', { name: 'Back' }));
+
+    expect(await screen.findByRole('heading', { name: 'Log in' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Email')).toHaveValue('kea@example.com');
+  });
+
+  it('shows a wrong-code message in an alert and stays on the code step', async () => {
+    vi.stubGlobal('fetch', twoFactorFetch(401));
+    renderLogin();
+
+    await logInWithPassword();
+    await userEvent.type(await screen.findByLabelText('Authenticator code'), '654321');
+    await userEvent.click(screen.getByRole('button', { name: 'Verify' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("That code didn't work.");
+    expect(screen.getByLabelText('Authenticator code')).toBeInTheDocument();
+  });
+
+  it('links to the forgot password page from the password step', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json({ message: 'nope' }, 401)));
+    renderLogin();
+
+    expect(await screen.findByRole('link', { name: 'Forgot password?' })).toHaveAttribute('href', '/forgot-password');
   });
 });

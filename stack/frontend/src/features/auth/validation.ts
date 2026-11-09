@@ -32,3 +32,27 @@ export function validateNewPassword(value: string): ErrorKey | undefined {
 export function validateLoginPassword(value: string): ErrorKey | undefined {
   return value.length === 0 ? 'passwordRequired' : undefined;
 }
+
+/** A 6-digit authenticator code. Spaces are ignored, so "123 456" works. */
+export function validateTotpCode(value: string): ErrorKey | undefined {
+  return /^\d{6}$/.test(value.replace(/\s/g, '')) ? undefined : 'codeInvalid';
+}
+
+/**
+ * A recovery code, `xxxx-xxxx`, with or without the dash or spaces and in any case. The result is
+ * the stored form, or null when the input cannot be a recovery code.
+ */
+export function normalizeRecoveryCode(value: string): string | null {
+  const compact = value.toLowerCase().replace(/[\s-]/g, '');
+  return /^[a-z2-7]{8}$/.test(compact) ? `${compact.slice(0, 4)}-${compact.slice(4)}` : null;
+}
+
+export function validateRecoveryCode(value: string): ErrorKey | undefined {
+  return normalizeRecoveryCode(value) === null ? 'recoveryInvalid' : undefined;
+}
+
+/** The code the server expects: a TOTP code (digits only) or a normalised recovery code. */
+export function codeForServer(value: string, recovery: boolean): string {
+  if (recovery) return normalizeRecoveryCode(value) ?? value.trim();
+  return value.replace(/\s/g, '');
+}

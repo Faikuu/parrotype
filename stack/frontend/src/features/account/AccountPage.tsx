@@ -12,6 +12,8 @@ import { BadgeEmbed } from './BadgeEmbed';
 import { ChangePasswordForm } from './ChangePassword';
 import { DataExport } from './DataExport';
 import { DeleteAccountForm } from './DeleteAccount';
+import { TwoFactorSection } from './TwoFactorSection';
+import { VerifyEmailBanner } from './VerifyEmailBanner';
 import {
   formatDate,
   formatDateTime,
@@ -83,6 +85,12 @@ export default function AccountPage() {
           {t('account:logout')}
         </Button>
       </header>
+
+      {user.emailVerified ? null : (
+        <div className="mt-8">
+          <VerifyEmailBanner />
+        </div>
+      )}
 
       <section aria-labelledby="account-stats" className="mt-10">
         <h2 id="account-stats" className="sr-only">
@@ -168,6 +176,9 @@ export default function AccountPage() {
         <div className="mt-8 grid gap-12 md:grid-cols-2">
           <ChangePasswordForm />
           <DeleteAccountForm name={user.name} onLeaving={setLeaving} />
+        </div>
+        <div className="mt-12">
+          <TwoFactorSection enabled={user.twoFactorEnabled} />
         </div>
         <div className="mt-12">
           <DataExport />
