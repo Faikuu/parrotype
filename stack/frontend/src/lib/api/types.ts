@@ -4,9 +4,15 @@ export type Language = 'en' | 'pl' | 'de' | 'es';
 export type Mode = 'time' | 'words' | 'quote' | 'zen' | 'pangram' | 'custom' | 'daily' | 'weak' | 'code';
 export type QuoteLength = 'short' | 'medium' | 'long' | 'any';
 
-export type Role = 'user' | 'admin';
 
-export type PublicUser = { id: number; name: string; email: string; role: Role; createdAt: string };
+export type PublicUser = {
+  id: number;
+  name: string;
+  email: string;
+  /** Sorted. Empty for ordinary users. Any permission grants admin.access. */
+  permissions: string[];
+  createdAt: string;
+};
 
 export type ResultInput = {
   mode: Mode;
@@ -142,6 +148,74 @@ export type ReportInput = { reason: ReportReason; details?: string };
 export type ReportStatus = 'open' | 'resolved' | 'dismissed';
 export type FollowState = { following: boolean };
 
+// Admin panel (docs/SPEC-2.4.md, all under /api/admin). Lists are paginated: { items, total, page, pageSize }.
+export type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
+export type SortOrder = 'asc' | 'desc';
+
+export type AdminStats = {
+  users: { total: number; new7d: number; banned: number };
+  results: { total: number; today: number; last7d: number };
+  reports: { open: number };
+  races: { rooms: number; players: number };
+  signupsByDay: DayCount[];
+  resultsByDay: DayCount[];
+};
+export type DayCount = { date: string; count: number };
+
+export type AdminGroup = {
+  id: number;
+  name: string;
+  description: string;
+  system: boolean;
+  permissions: string[];
+  memberCount: number;
+  updatedAt: string;
+};
+export type GroupMember = { id: number; name: string; bannedAt: string | null };
+export type AdminGroupDetail = AdminGroup & { members: GroupMember[] };
+
+export type GroupRef = { id: number; name: string };
+export type AdminUserRow = {
+  id: number;
+  name: string;
+  email: string;
+  createdAt: string;
+  bannedAt: string | null;
+  groups: GroupRef[];
+  resultCount: number;
+};
+export type AdminResultRow = {
+  id: number;
+  mode: string;
+  mode2: string;
+  language: string;
+  wpm: number;
+  rawWpm: number;
+  accuracy: number;
+  consistency: number;
+  durationMs: number;
+  createdAt: string;
+};
+export type AdminUserReportRef = {
+  id: number;
+  reason: ReportReason;
+  status: ReportStatus;
+  details: string | null;
+  createdAt: string;
+  reporter: { id: number; name: string };
+  target: { id: number; name: string };
+};
+export type AdminUserDetail = AdminUserRow & {
+  banReason: string | null;
+  effectivePermissions: string[];
+  stats: { tests: number; bestWpm: number | null; lastResultAt: string | null };
+  recentResults: AdminResultRow[];
+  reportsReceived: AdminUserReportRef[];
+  reportsMade: AdminUserReportRef[];
+};
+
+export type AdminResult = AdminResultRow & { user: { id: number; name: string } };
+
 export type AdminReport = {
   id: number;
   reason: ReportReason;
@@ -151,17 +225,21 @@ export type AdminReport = {
   resolvedAt: string | null;
   reporter: { id: number; name: string };
   target: { id: number; name: string; bannedAt: string | null; banReason: string | null };
-  targetResults: AdminTargetResult[];
+  targetResults: AdminResultRow[];
 };
-export type AdminTargetResult = {
-  id: number;
-  mode: string;
-  mode2: string;
-  language: string;
-  wpm: number;
-  accuracy: number;
+
+export type AdminQuote = Quote;
+
+export type AdminRacePlayer = { name: string; isGuest: boolean; connected: boolean; progress: number };
+export type AdminRace = {
+  id: string;
+  language: Language;
+  status: string;
+  players: AdminRacePlayer[];
   createdAt: string;
+  lastActivity: string;
 };
+
 export type AdminAuditEntry = {
   id: number;
   adminId: number | null;
@@ -172,6 +250,3 @@ export type AdminAuditEntry = {
   note: string | null;
   createdAt: string;
 };
-export type AdminUserState = { id: number; name: string; bannedAt: string | null; banReason: string | null };
-export type AdminDecision = { id: number; status: ReportStatus };
-export type QuoteQuery = { language: Language; length: QuoteLength };

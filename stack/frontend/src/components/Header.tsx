@@ -28,6 +28,8 @@ function NavIcon({ to, end, label, icon: Icon }: { to: string; end?: boolean; la
 export function Header() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  // Any permission opens the admin panel (docs/SPEC-2.4.md).
+  const canAdmin = (user?.permissions.length ?? 0) > 0;
   return (
     <header className="flex items-center justify-between gap-4 pb-6 pt-6">
       <Link to="/" className="flex items-center gap-2.5 text-text no-underline">
@@ -41,7 +43,7 @@ export function Header() {
         <NavIcon to="/leaderboard" label={t('nav:leaderboard')} icon={Crown} />
         <NavIcon to="/race" label={t('race:navLabel')} icon={Flag} />
         <NavIcon to="/learn" label={t('learn:navLabel')} icon={GraduationCap} />
-        {user?.role === 'admin' && <NavIcon to="/admin" label={t('admin:navLabel')} icon={Shield} />}
+        {canAdmin && <NavIcon to="/admin" label={t('admin:navLabel')} icon={Shield} />}
         {user ? (
           <NavIcon to="/account" label={t('nav:account')} icon={User} />
         ) : (

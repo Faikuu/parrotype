@@ -32,7 +32,7 @@ function mockApi(me: { name: string; role?: string } | null, handler: Handler) {
     const method = init?.method ?? 'GET';
     if (url.endsWith('/auth/me')) {
       return me
-        ? json({ user: { id: 2, name: me.name, email: 'x@example.com', role: me.role ?? 'user', createdAt: '2026-10-01T10:00:00Z' } })
+        ? json({ user: { id: 2, name: me.name, email: 'x@example.com', permissions: me.role === 'admin' ? ['admin.access'] : [], createdAt: '2026-10-01T10:00:00Z' } })
         : json({ message: 'Unauthorized' }, 401);
     }
     return handler(method, url);

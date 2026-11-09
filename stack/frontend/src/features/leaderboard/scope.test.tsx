@@ -15,7 +15,7 @@ function mock(me: boolean) {
     const url = String(input);
     if (url.endsWith('/auth/me')) {
       return me
-        ? json({ user: { id: 2, name: 'macaw', email: 'm@example.com', role: 'user', createdAt: '2026-10-01T10:00:00Z' } })
+        ? json({ user: { id: 2, name: 'macaw', email: 'm@example.com', permissions: [], createdAt: '2026-10-01T10:00:00Z' } })
         : json({ message: 'Unauthorized' }, 401);
     }
     if (url.includes('/leaderboard')) return json([ROW]);

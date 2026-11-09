@@ -6,6 +6,7 @@ import LoginPage from '@/features/auth/LoginPage';
 import RegisterPage from '@/features/auth/RegisterPage';
 import TestPage from '@/features/test/TestPage';
 import { useApplySettings } from '@/store/useApplySettings';
+import { RequirePermission } from '@/features/admin/components/RequirePermission';
 
 // These pull in chart.js later, so keep them out of the first bundle.
 const AccountPage = lazy(() => import('@/features/account/AccountPage'));
@@ -14,7 +15,19 @@ const ProfilePage = lazy(() => import('@/features/profile/ProfilePage'));
 const RaceLobbyPage = lazy(() => import('@/features/race/RaceLobbyPage'));
 const RaceRoomPage = lazy(() => import('@/features/race/RaceRoomPage'));
 const LearnPage = lazy(() => import('@/features/learn/LearnPage'));
-const AdminPage = lazy(() => import('@/features/admin/AdminPage'));
+// The admin panel: a shell with nested pages. Each page is its own chunk.
+const AdminLayout = lazy(() => import('@/features/admin/AdminLayout'));
+const AdminDashboard = lazy(() => import('@/features/admin/pages/DashboardPage'));
+const AdminUsers = lazy(() => import('@/features/admin/pages/UsersPage'));
+const AdminUserDetail = lazy(() => import('@/features/admin/pages/UserDetailPage'));
+const AdminGroups = lazy(() => import('@/features/admin/pages/GroupsPage'));
+const AdminGroupDetail = lazy(() => import('@/features/admin/pages/GroupDetailPage'));
+const AdminPermissions = lazy(() => import('@/features/admin/pages/PermissionsPage'));
+const AdminReports = lazy(() => import('@/features/admin/pages/ReportsPage'));
+const AdminResults = lazy(() => import('@/features/admin/pages/ResultsPage'));
+const AdminQuotes = lazy(() => import('@/features/admin/pages/QuotesPage'));
+const AdminRaces = lazy(() => import('@/features/admin/pages/RacesPage'));
+const AdminAudit = lazy(() => import('@/features/admin/pages/AuditPage'));
 
 export default function App() {
   useApplySettings();
@@ -78,10 +91,22 @@ export default function App() {
             path="admin"
             element={
               <Suspense fallback={null}>
-                <AdminPage />
+                <AdminLayout />
               </Suspense>
             }
-          />
+          >
+            <Route index element={<RequirePermission perm="admin.access"><AdminDashboard /></RequirePermission>} />
+            <Route path="users" element={<RequirePermission perm="users.read"><AdminUsers /></RequirePermission>} />
+            <Route path="users/:id" element={<RequirePermission perm="users.read"><AdminUserDetail /></RequirePermission>} />
+            <Route path="groups" element={<RequirePermission perm="groups.read"><AdminGroups /></RequirePermission>} />
+            <Route path="groups/:id" element={<RequirePermission perm="groups.read"><AdminGroupDetail /></RequirePermission>} />
+            <Route path="permissions" element={<RequirePermission perm="groups.read"><AdminPermissions /></RequirePermission>} />
+            <Route path="reports" element={<RequirePermission perm="reports.read"><AdminReports /></RequirePermission>} />
+            <Route path="results" element={<RequirePermission perm="results.read"><AdminResults /></RequirePermission>} />
+            <Route path="quotes" element={<RequirePermission perm="quotes.read"><AdminQuotes /></RequirePermission>} />
+            <Route path="races" element={<RequirePermission perm="races.read"><AdminRaces /></RequirePermission>} />
+            <Route path="audit" element={<RequirePermission perm="audit.read"><AdminAudit /></RequirePermission>} />
+          </Route>
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
