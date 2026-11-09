@@ -79,7 +79,17 @@ export default function UserDetailPage() {
       </div>
 
       <dl className="grid grid-cols-2 gap-x-8 gap-y-4 rounded-[10px] bg-surface p-4 md:grid-cols-4 md:p-5">
-        <Fact label={t('admin:userDetail.email')} value={<span className="break-all">{u.email}</span>} />
+        <Fact
+          label={t('admin:userDetail.email')}
+          value={
+            <>
+              <span className="block break-all">{u.email}</span>
+              <span className="block text-[0.85rem] text-sub">
+                {u.emailVerified ? t('admin:userDetail.emailVerified') : t('admin:userDetail.emailNotVerified')}
+              </span>
+            </>
+          }
+        />
         <Fact label={t('admin:userDetail.joined')} value={formatDate(u.createdAt, lang)} />
         <Fact label={t('admin:userDetail.tests')} value={formatNumber(u.stats.tests, lang)} />
         <Fact label={t('admin:userDetail.bestWpm')} value={u.stats.bestWpm === null ? t('admin:userDetail.none') : formatNumber(u.stats.bestWpm, lang)} />
@@ -88,6 +98,10 @@ export default function UserDetailPage() {
           value={u.stats.lastResultAt ? relativeTime(u.stats.lastResultAt, lang) : t('admin:userDetail.none')}
         />
         <Fact label={t('admin:userDetail.results')} value={formatNumber(u.resultCount, lang)} />
+        <Fact
+          label={t('admin:userDetail.twoFactor.label')}
+          value={u.twoFactorEnabled ? t('admin:userDetail.twoFactor.on') : t('admin:userDetail.twoFactor.off')}
+        />
       </dl>
 
       <Section title={t('admin:userDetail.account')}>
@@ -103,6 +117,18 @@ export default function UserDetailPage() {
             onDone={refresh}
             done={t('admin:toast.signedOut')}
           />
+          {can('users.security') && (
+            <ActionConfirm
+              label={t('admin:userDetail.reset2fa.label')}
+              title={t('admin:userDetail.reset2fa.title', { name: u.name })}
+              body={t('admin:userDetail.reset2fa.body')}
+              confirmLabel={t('admin:userDetail.reset2fa.confirm')}
+              disabledReason={manageReason('users.security') ?? (u.twoFactorEnabled ? null : t('admin:userDetail.twoFactor.notOn'))}
+              run={() => adminApi.reset2fa(u.id)}
+              onDone={refresh}
+              done={t('admin:toast.twoFactorReset')}
+            />
+          )}
           {u.bannedAt ? (
             <ActionConfirm
               label={t('admin:userDetail.unsuspend.label')}

@@ -48,10 +48,12 @@ interface WordProps {
   indent: number;
   /** Code mode: this word ends its line, so a faint ↵ follows it. */
   lineEnd: boolean;
+  /** Memory funbox: the word is not yet typed and is drawn in the background colour. */
+  hidden: boolean;
 }
 
 // Memoised: only the previous and current word change on a keystroke, so the rest skip re-rendering.
-const Word = memo(function Word({ index, target, typed, left, blind, indent, lineEnd }: WordProps) {
+const Word = memo(function Word({ index, target, typed, left, blind, indent, lineEnd, hidden }: WordProps) {
   const letters = lettersOf(target, typed, left);
   const wrong = left && typed !== target;
   return (
@@ -63,6 +65,7 @@ const Word = memo(function Word({ index, target, typed, left, blind, indent, lin
       {letters.map((l, k) => {
         let cls = LETTER_CLASS[l.state];
         if (blind) cls = l.state === 'missed' || l.state === 'pending' ? 'text-sub' : 'text-text';
+        if (hidden) cls = 'text-bg';
         return (
           <span key={k} data-w={index} data-c={k} className={cls}>
             {l.char}
@@ -87,6 +90,10 @@ export interface WordsProps {
   caretSmooth?: boolean;
   /** A previous run to race: its caret is drawn at the position it had at this time. */
   ghost?: GhostRun | null;
+  /** Mirror funbox: the words are flipped horizontally (the caret with them). */
+  mirror?: boolean;
+  /** Memory funbox: the words after the current one are hidden until they are typed. */
+  hideUpcoming?: boolean;
 }
 
 /**
@@ -95,7 +102,7 @@ export interface WordsProps {
  * Code mode always uses the line view: each line of the snippet breaks after its last word (a zero-height
  * item forces the wrap), and the first word of a line is pushed right by its indentation.
  */
-export function Words({ state, onActivate, pace, caretSmooth, ghost }: WordsProps) {
+export function Words({ state, onActivate, pace, caretSmooth, ghost, mirror = false, hideUpcoming = false }: WordsProps) {
   const { t } = useTranslation();
   const blind = useSettings((s) => s.blindMode);
   const font = useSettings((s) => s.font);
@@ -167,6 +174,8 @@ export function Words({ state, onActivate, pace, caretSmooth, ghost }: WordsProp
       ref={viewportRef}
       className="test-viewport"
       data-tape={tape ? '' : undefined}
+      data-mirror={mirror ? '' : undefined}
+      style={mirror ? { transform: 'scaleX(-1)' } : undefined}
       onClick={onActivate}
       aria-label={t('test:inputLabel')}
     >
@@ -187,6 +196,7 @@ export function Words({ state, onActivate, pace, caretSmooth, ghost }: WordsProp
                 blind={blind}
                 indent={code?.indent[i] ?? 0}
                 lineEnd={lineEnd}
+                hidden={hideUpcoming && i > current}
               />
               {lineEnd && <span aria-hidden="true" className="code-break" />}
             </Fragment>

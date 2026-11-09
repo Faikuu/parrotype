@@ -1,7 +1,7 @@
 // The permission catalog mirrored from the backend (src/permissions/catalog.ts, docs/SPEC-2.4.md).
 // Keep the keys in step with the server. The order here is the order of the matrix rows.
 
-export const AREAS = ['general', 'users', 'groups', 'reports', 'results', 'quotes', 'races', 'audit'] as const;
+export const AREAS = ['general', 'users', 'groups', 'reports', 'results', 'quotes', 'races', 'announcements', 'events', 'audit'] as const;
 export type Area = (typeof AREAS)[number];
 
 export const PERMISSION_CATALOG = [
@@ -11,6 +11,7 @@ export const PERMISSION_CATALOG = [
   { key: 'users.ban', area: 'users' },
   { key: 'users.delete', area: 'users' },
   { key: 'users.groups', area: 'users' },
+  { key: 'users.security', area: 'users' },
   { key: 'groups.read', area: 'groups' },
   { key: 'groups.manage', area: 'groups' },
   { key: 'reports.read', area: 'reports' },
@@ -21,6 +22,8 @@ export const PERMISSION_CATALOG = [
   { key: 'quotes.manage', area: 'quotes' },
   { key: 'races.read', area: 'races' },
   { key: 'races.manage', area: 'races' },
+  { key: 'announcements.manage', area: 'announcements' },
+  { key: 'events.manage', area: 'events' },
   { key: 'audit.read', area: 'audit' },
 ] as const satisfies readonly { key: string; area: Area }[];
 
@@ -40,7 +43,7 @@ export function descKey(key: string): string {
 
 /** A sidebar section. `perm` is what the user needs to see it; `admin.access` means any permission. */
 export interface Section {
-  id: 'dashboard' | 'users' | 'groups' | 'permissions' | 'reports' | 'results' | 'quotes' | 'races' | 'audit';
+  id: 'dashboard' | 'users' | 'groups' | 'permissions' | 'reports' | 'results' | 'quotes' | 'races' | 'announcements' | 'events' | 'audit';
   path: string;
   perm: PermissionKey;
 }
@@ -54,6 +57,8 @@ export const SECTIONS: readonly Section[] = [
   { id: 'results', path: '/admin/results', perm: 'results.read' },
   { id: 'quotes', path: '/admin/quotes', perm: 'quotes.read' },
   { id: 'races', path: '/admin/races', perm: 'races.read' },
+  { id: 'announcements', path: '/admin/announcements', perm: 'announcements.manage' },
+  { id: 'events', path: '/admin/events', perm: 'events.manage' },
   { id: 'audit', path: '/admin/audit', perm: 'audit.read' },
 ];
 

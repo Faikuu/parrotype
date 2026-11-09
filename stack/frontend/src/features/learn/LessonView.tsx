@@ -4,7 +4,9 @@ import { Button } from '@/components/Button';
 import { Kbd } from '@/components/Kbd';
 import { formatNumber } from '@/features/account/format';
 import { TypingArea } from '@/features/race/TypingArea';
+import { OnScreenKeyboard } from '@/components/OnScreenKeyboard';
 import { lessonWords, type Lesson } from '@/lib/text/lessons';
+import { useSettings } from '@/store/settings';
 import { passes, type LessonResult, type LessonRow } from './progress';
 
 /** Words per attempt. */
@@ -26,7 +28,12 @@ export function LessonView({ row, lang, onRecord, onNext, onBack }: LessonViewPr
   // Each attempt has its own text and key, so the typing area starts fresh on a replay.
   const [attempt, setAttempt] = useState(() => ({ key: 0, text: attemptText(lesson) }));
   const [result, setResult] = useState<LessonResult | null>(null);
+  // Correct characters typed so far: the keyboard highlights the next one of the text.
+  const [correctChars, setCorrectChars] = useState(0);
+  const layout = useSettings((s) => s.layout);
+  const hints = useSettings((s) => s.keyboardHints);
   const { text } = attempt;
+  const nextChar = correctChars < text.length ? text.charAt(correctChars) : null;
   const passed = result !== null && passes(lesson, result);
 
   const fmt = (n: number, digits = 0) => formatNumber(n, lang, digits);
@@ -66,7 +73,7 @@ export function LessonView({ row, lang, onRecord, onNext, onBack }: LessonViewPr
           key={attempt.key}
           text={text}
           open={result === null}
-          onChange={noopChange}
+          onChange={(chars) => setCorrectChars(chars)}
           onFinish={(r) => {
             const next = { wpm: r.wpm, accuracy: r.accuracy };
             setResult(next);
@@ -74,6 +81,8 @@ export function LessonView({ row, lang, onRecord, onNext, onBack }: LessonViewPr
           }}
         />
       </div>
+
+      {result === null && <OnScreenKeyboard layout={layout} next={nextChar} hints={hints} />}
 
       {result && (
         <div role="status" className="flex flex-col gap-4 rounded-[10px] bg-surface/60 p-5">
@@ -89,6 +98,7 @@ export function LessonView({ row, lang, onRecord, onNext, onBack }: LessonViewPr
               variant={passed ? 'ghost' : 'primary'}
               onClick={() => {
                 setResult(null);
+                setCorrectChars(0);
                 setAttempt((a) => ({ key: a.key + 1, text: attemptText(lesson) }));
               }}
             >
@@ -105,6 +115,3 @@ function attemptText(lesson: Lesson): string {
   return lessonWords(lesson, WORDS_PER_ATTEMPT).join(' ');
 }
 
-function noopChange(): void {
-  // The lesson keeps its own result; live progress is not shown.
-}

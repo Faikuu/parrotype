@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import i18n from '@/i18n';
-import { applyTestFont, applyTheme, resolveTheme } from '@/themes/themes';
+import { applyTestFont, applyTheme, applyUiFont, applyUiScale, resolveTheme } from '@/themes/themes';
 import { useSettings } from './settings';
 import { useUi } from './ui';
 
@@ -10,6 +10,8 @@ export function useApplySettings(): void {
   const customTheme = useSettings((s) => s.customTheme);
   const font = useSettings((s) => s.font);
   const fontSize = useSettings((s) => s.fontSize);
+  const uiFont = useSettings((s) => s.uiFont);
+  const uiScale = useSettings((s) => s.uiScale);
   const uiLanguage = useSettings((s) => s.uiLanguage);
   const previewTheme = useUi((s) => s.previewTheme);
   const draft = useUi((s) => s.themeDraft);
@@ -22,6 +24,14 @@ export function useApplySettings(): void {
   useEffect(() => {
     applyTestFont(font, fontSize);
   }, [font, fontSize]);
+
+  useEffect(() => {
+    applyUiFont(uiFont);
+  }, [uiFont]);
+
+  useEffect(() => {
+    applyUiScale(uiScale);
+  }, [uiScale]);
 
   useEffect(() => {
     document.documentElement.lang = uiLanguage;

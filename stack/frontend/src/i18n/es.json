@@ -117,7 +117,16 @@
       "soft": "Suave",
       "typewriter": "Máquina de escribir"
     },
-    "soundVolume": "Volumen del sonido"
+    "soundVolume": "Volumen del sonido",
+    "keyboardHintsOptions": {
+      "off": "Desactivadas",
+      "next": "Siguiente tecla",
+      "fingers": "Siguiente tecla y dedos"
+    },
+    "uiFontOptions": {
+      "default": "Predeterminada",
+      "dyslexic": "OpenDyslexic"
+    }
   },
   "commands": {
     "title": "Línea de comandos",
@@ -177,7 +186,13 @@
     "customiseTheme": "Personalizar tema…",
     "codeLanguage": "Lenguaje de código",
     "layout": "Distribución del teclado",
-    "ghost": "Cursor fantasma"
+    "ghost": "Cursor fantasma",
+    "funbox": "Funbox",
+    "funboxOff": "Sin funbox",
+    "keyboardHints": "Pistas del teclado",
+    "showKeyboard": "Mostrar teclado en pantalla",
+    "uiFont": "Fuente de la interfaz",
+    "uiScale": "Tamaño de la interfaz"
   },
   "replay": {
     "title": "Repetición",

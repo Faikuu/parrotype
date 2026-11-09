@@ -117,7 +117,16 @@
       "soft": "Soft",
       "typewriter": "Typewriter"
     },
-    "soundVolume": "Sound volume"
+    "soundVolume": "Sound volume",
+    "keyboardHintsOptions": {
+      "off": "Off",
+      "next": "Next key",
+      "fingers": "Next key and fingers"
+    },
+    "uiFontOptions": {
+      "default": "Default",
+      "dyslexic": "OpenDyslexic"
+    }
   },
   "commands": {
     "title": "Command line",
@@ -177,7 +186,13 @@
     "customiseTheme": "Customise theme…",
     "codeLanguage": "Code language",
     "layout": "Keyboard layout",
-    "ghost": "Ghost caret"
+    "ghost": "Ghost caret",
+    "funbox": "Funbox",
+    "funboxOff": "No funbox",
+    "keyboardHints": "Keyboard hints",
+    "showKeyboard": "Show on-screen keyboard",
+    "uiFont": "Interface font",
+    "uiScale": "Interface size"
   },
   "replay": {
     "title": "Replay",

@@ -1,8 +1,9 @@
 import type { LucideIcon } from 'lucide-react';
-import { Crown, Flag, GraduationCap, Keyboard, LogIn, Shield, User } from 'lucide-react';
+import { CalendarDays, Crown, Flag, GraduationCap, Keyboard, LogIn, Shield, User } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link, NavLink } from 'react-router';
 import { useAuth } from '@/features/auth/useAuth';
+import { NotificationBell } from '@/features/notifications/NotificationBell';
 import { cn } from './cn';
 import { ParrotHead } from './ParrotHead';
 
@@ -43,7 +44,9 @@ export function Header() {
         <NavIcon to="/leaderboard" label={t('nav:leaderboard')} icon={Crown} />
         <NavIcon to="/race" label={t('race:navLabel')} icon={Flag} />
         <NavIcon to="/learn" label={t('learn:navLabel')} icon={GraduationCap} />
+        <NavIcon to="/events" label={t('events:navLabel')} icon={CalendarDays} />
         {canAdmin && <NavIcon to="/admin" label={t('admin:navLabel')} icon={Shield} />}
+        {user && <NotificationBell />}
         {user ? (
           <NavIcon to="/account" label={t('nav:account')} icon={User} />
         ) : (

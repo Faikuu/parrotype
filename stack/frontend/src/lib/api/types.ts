@@ -12,10 +12,22 @@ export type PublicUser = {
   /** Sorted. Empty for ordinary users. Any permission grants admin.access. */
   permissions: string[];
   createdAt: string;
+  /** True once the user has followed the link in the verification email. */
+  emailVerified: boolean;
+  /** True when two-factor sign-in is switched on. */
+  twoFactorEnabled: boolean;
 };
 
+/** POST /auth/login: a session with the user, or a ticket for the second step when two-factor is on. */
+export type LoginResponse = { user: PublicUser } | { twoFactorRequired: true; ticket: string };
+
+export type RecoveryCodesResponse = { recoveryCodes: string[] };
+
+export type TwoFactorSetupResponse = { secret: string; otpauthUrl: string };
+
 export type ResultInput = {
-  mode: Mode;
+  /** 'event' is a typing event result: mode2 is the event slug and a replay is required (docs/SPEC-2.5.md). */
+  mode: Mode | 'event';
   mode2: string; // max 16 chars
   language: Language;
   wpm: number; // 0..350
@@ -26,6 +38,29 @@ export type ResultInput = {
   charStats: { correct: number; incorrect: number; extra: number; missed: number };
   punctuation: boolean;
   numbers: boolean;
+  /** The keystroke replay. Required for event results; the server verifies it. */
+  replay?: Replay;
+};
+
+/** The keystroke replay a result is verified with (src/results/results.schemas.ts). */
+export type ReplayEvent = { t: number; k: 'c' | 's' | 'b' | 'B' | 'n'; ch?: string };
+export type Replay = { v: 1; words: string[]; events: ReplayEvent[]; code?: { breaks: boolean[]; indent: number[] } };
+/** A verified result's summary and replay (GET /api/results/:id/replay). */
+export type ReplayDto = {
+  result: {
+    id: number;
+    name: string;
+    mode: string;
+    mode2: string;
+    language: string;
+    wpm: number;
+    rawWpm: number;
+    accuracy: number;
+    consistency: number;
+    durationMs: number;
+    createdAt: string;
+  };
+  replay: Replay;
 };
 
 export interface Quote {
@@ -38,6 +73,8 @@ export interface Quote {
 
 export interface Result {
   id: number;
+  /** Whether the replay was checked. Results saved without one are unverified. */
+  verified?: boolean;
   mode: string;
   mode2: string;
   language: string;
@@ -76,6 +113,9 @@ export type LeaderboardEntry = {
   rawWpm: number;
   accuracy: number;
   createdAt: string;
+  /** Whether the entry's replay was checked (event boards are verified only). */
+  verified?: boolean;
+  resultId?: number;
 };
 
 export type RecentResult = {
@@ -140,7 +180,14 @@ export type Insights = {
 export type ExportFormat = 'csv' | 'json';
 
 export type LeaderboardScope = 'all' | 'following';
-export type LeaderboardQuery = { mode: string; mode2: string; language: Language; scope?: LeaderboardScope };
+export type LeaderboardQuery = {
+  mode: string;
+  mode2: string;
+  language: Language;
+  scope?: LeaderboardScope;
+  /** Only results whose replay was checked. */
+  verified?: boolean;
+};
 
 // Friends and moderation (docs/SPEC-2.3.md).
 export type ReportReason = 'name' | 'cheating' | 'other';
@@ -207,6 +254,8 @@ export type AdminUserReportRef = {
 };
 export type AdminUserDetail = AdminUserRow & {
   banReason: string | null;
+  emailVerified: boolean;
+  twoFactorEnabled: boolean;
   effectivePermissions: string[];
   /** What the user's groups grant, ignoring a suspension: decides who may manage them. */
   heldPermissions: string[];
@@ -252,3 +301,44 @@ export type AdminAuditEntry = {
   note: string | null;
   createdAt: string;
 };
+
+// Social UI (docs/SPEC-2.5.md): notifications, announcements, events and their admin pages.
+export type NotificationKind = 'follow' | 'report_outcome' | 'pb_beaten' | 'announcement' | 'event_start';
+export type AppNotification = {
+  id: number;
+  kind: NotificationKind | string;
+  /** follow {by}, report_outcome {target}, pb_beaten {by, mode, mode2, language, wpm}. */
+  data: Record<string, string | number>;
+  readAt: string | null;
+  createdAt: string;
+};
+export type UnreadCount = { count: number };
+export type MarkReadResult = { updated: number };
+
+export type AnnouncementLevel = 'info' | 'warning';
+export type Announcement = {
+  id: number;
+  message: string;
+  level: AnnouncementLevel | string;
+  startsAt: string;
+  endsAt: string | null;
+  createdAt: string;
+};
+
+export type EventState = 'upcoming' | 'active' | 'past';
+export type EventSummary = {
+  slug: string;
+  title: string;
+  description: string;
+  language: Language;
+  startsAt: string;
+  endsAt: string;
+  state: EventState;
+};
+/** `text` is null until the event starts. */
+export type EventDetail = EventSummary & { text: string | null };
+export type EventListing = { upcoming: EventSummary[]; active: EventSummary[]; past: EventSummary[] };
+
+/** The admin view of an event (the text is always included). */
+export type AdminEvent = EventSummary & { id: number; text: string; createdAt: string };
+export type AdminAnnouncement = Announcement;

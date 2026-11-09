@@ -8,9 +8,10 @@ export type ThemeId =
   | 'galah'
   | 'lorikeet'
   | 'budgie'
-  | 'cacatua-noir';
+  | 'cacatua-noir'
+  | 'high-contrast';
 
-export type FontId = 'spline' | 'redhat' | 'atkinson' | 'fragment' | 'sometype';
+export type FontId = 'spline' | 'redhat' | 'atkinson' | 'fragment' | 'sometype' | 'opendyslexic';
 
 export interface ThemeTokens {
   bg: string;
@@ -71,6 +72,11 @@ export const THEMES: readonly BuiltinTheme[] = [
     id: 'cacatua-noir', name: 'Black Cockatoo', light: false,
     tokens: { bg: '#121212', surface: '#1d1b1b', text: '#e8e2e2', sub: '#625b5b', main: '#d33a3a', caret: '#f2c14e', error: '#ff6060', errorExtra: '#8a3030' },
   },
+  {
+    // Pure black and white for low vision. Text is 21:1 and sub text 10:1 on the background (see themes/contrast.test.ts).
+    id: 'high-contrast', name: 'High contrast', light: false,
+    tokens: { bg: '#000000', surface: '#1a1a1a', text: '#ffffff', sub: '#b3b3b3', main: '#ffe000', caret: '#00e5ff', error: '#ff7a7a', errorExtra: '#ff9ecf' },
+  },
 ];
 
 export const THEME_IDS: readonly ThemeId[] = THEMES.map((t) => t.id);
@@ -128,7 +134,26 @@ export const FONTS: Record<FontId, { name: string; family: string }> = {
   atkinson: { name: 'Atkinson Hyperlegible Mono', family: "'Atkinson Hyperlegible Mono', ui-monospace, monospace" },
   fragment: { name: 'Fragment Mono', family: "'Fragment Mono', ui-monospace, monospace" },
   sometype: { name: 'Sometype Mono', family: "'Sometype Mono', ui-monospace, monospace" },
+  opendyslexic: { name: 'OpenDyslexic', family: "'OpenDyslexic', ui-monospace, monospace" },
 };
+
+/** The UI font families for the uiFont setting. The default is Familjen Grotesk (see index.css). */
+export const UI_FONT_FAMILY = {
+  default: "'Familjen Grotesk', system-ui, sans-serif",
+  dyslexic: "'OpenDyslexic', system-ui, sans-serif",
+} as const;
+
+/** Sets the UI font family (--font-ui) for the uiFont setting. */
+export function applyUiFont(font: 'default' | 'dyslexic'): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.style.setProperty('--font-ui', UI_FONT_FAMILY[font]);
+}
+
+/** Sets the root font size multiplier (--ui-scale). html's font size follows it, so every rem size scales. */
+export function applyUiScale(scale: number): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.style.setProperty('--ui-scale', String(scale));
+}
 
 export const FONT_IDS: readonly FontId[] = Object.keys(FONTS) as FontId[];
 

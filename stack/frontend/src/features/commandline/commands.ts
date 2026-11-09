@@ -27,6 +27,7 @@ import type { CodeLanguage, Language, Mode, PangramCount, QuoteLength, TestConfi
 import { LANGUAGES as LANGUAGE_LIST } from '@/lib/text/languages';
 import { LAYOUT_IDS, LAYOUTS } from '@/lib/text/layouts';
 import { FONT_IDS, FONTS, THEMES, type ThemeChoice } from '@/themes/themes';
+import { FUNBOX_IDS, KEYBOARD_HINTS, UI_SCALES, type FunboxId, type KeyboardHints, type UiFont, type UiScale } from '@/store/settings';
 import type {
   CaretStyle,
   FontSize,
@@ -80,7 +81,8 @@ type BooleanKey =
   | 'tapeMode'
   | 'noBackspace'
   | 'suddenDeath'
-  | 'ghost';
+  | 'ghost'
+  | 'showKeyboard';
 
 interface Option<V> {
   value: V;
@@ -157,6 +159,7 @@ const LIVE_STATS: LiveStats[] = ['wpm', 'acc', 'both', 'off'];
 const STOP_ON_ERROR: TestConfig['stopOnError'][] = ['off', 'letter', 'word'];
 const QUICK_RESTART: QuickRestart[] = ['tab', 'esc', 'off'];
 const UI_LANGUAGES: UiLanguage[] = ['en', 'pl', 'de', 'es'];
+const UI_FONTS: UiFont[] = ['default', 'dyslexic'];
 
 /** Builds the palette's command tree for the current state. Pure apart from calling the ctx functions. */
 export function buildCommands(ctx: CommandContext): Command[] {
@@ -344,7 +347,60 @@ export function buildCommands(ctx: CommandContext): Command[] {
     toggle(ctx, 'blindMode', 'blindMode', t('commands:blindMode'), g.appearance),
     toggle(ctx, 'focusMode', 'focusMode', t('commands:focusMode'), g.appearance),
     toggle(ctx, 'tapeMode', 'tapeMode', t('commands:tapeMode'), g.appearance),
+    toggle(ctx, 'showKeyboard', 'showKeyboard', t('commands:showKeyboard'), g.appearance),
+    choice(ctx, {
+      id: 'keyboardHints',
+      key: 'keyboardHints',
+      label: t('commands:keyboardHints'),
+      group: g.appearance,
+      options: KEYBOARD_HINTS.map((h: KeyboardHints) => ({ value: h, label: t(`settings:keyboardHintsOptions.${h}`) })),
+    }),
+    choice(ctx, {
+      id: 'uiFont',
+      key: 'uiFont',
+      label: t('commands:uiFont'),
+      group: g.appearance,
+      options: UI_FONTS.map((f) => ({ value: f, label: t(`settings:uiFontOptions.${f}`) })),
+    }),
+    choice(ctx, {
+      id: 'uiScale',
+      key: 'uiScale',
+      label: t('commands:uiScale'),
+      group: g.appearance,
+      icon: ZoomIn,
+      options: UI_SCALES.map((v: UiScale) => ({ value: v, label: `${Math.round(v * 100)}%` })),
+    }),
     toggle(ctx, 'ghost', 'ghost', t('commands:ghost'), g.test),
+    {
+      id: 'funbox',
+      label: t('commands:funbox'),
+      group: g.test,
+      icon: Sparkles,
+      hint: s.funbox.length > 0 ? s.funbox.map((id) => t(`funbox:${id}`)).join(', ') : t('commands:funboxOff'),
+      keywords: ['fun', 'mirror', 'reverse', 'memory', 'caps'],
+      children: () => [
+        ...FUNBOX_IDS.map((id: FunboxId) => {
+          const on = s.funbox.includes(id);
+          return {
+            id: `funbox.${id}`,
+            label: t(`funbox:${id}`),
+            hint: t(`funbox:${id}Title`),
+            active: on,
+            keepOpen: true,
+            run: () => {
+              // Keep the ids in their fixed order, so the stored list is the same whichever was picked first.
+              ctx.settings.set('funbox', FUNBOX_IDS.filter((f) => (f === id ? !on : s.funbox.includes(f))));
+            },
+          };
+        }),
+        {
+          id: 'funbox.off',
+          label: t('commands:funboxOff'),
+          active: s.funbox.length === 0,
+          run: () => ctx.settings.set('funbox', []),
+        },
+      ],
+    },
     {
       id: 'paceCaret',
       label: t('commands:paceCaret'),

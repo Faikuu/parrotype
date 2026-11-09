@@ -14,7 +14,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useAuth } from '@/features/auth/useAuth';
 import type { QueryClient } from '@tanstack/react-query';
 import { ApiError, quotesApi, resultsApi } from '@/lib/api';
-import type { Quote, ResultInput, Summary } from '@/lib/api/types';
+import type { Quote, Summary } from '@/lib/api/types';
 import { createInitialState, engineReducer, needsMoreWords } from '@/lib/engine/engine';
 import { computeResult } from '@/lib/engine/stats';
 import { computeBigrams } from '@/lib/engine/bigrams';
@@ -32,12 +32,16 @@ import {
   serverBestComparable,
   useLocalBests,
 } from '@/store/localBests';
-import { selectTestConfig, useSettings, type PaceCaret } from '@/store/settings';
+import { selectTestConfig, useSettings, type FunboxId, type PaceCaret } from '@/store/settings';
 import { useUi } from '@/store/ui';
 import { pickBuiltinQuote } from './builtinQuotes';
 import type { GhostRun } from './GhostCaret';
+import { applyFunboxWords } from './funbox';
+import { buildReplay, mode2Of, toResultInput } from './resultPayload';
 import { playKeySound } from './sound';
 import { useLayoutKeydown } from './useLayoutInput';
+
+export { mode2Of } from './resultPayload';
 
 /** Tab then Enter within this window restarts the test. */
 const TAB_WINDOW_MS = 1000;
@@ -49,16 +53,25 @@ const MIN_SAVE_MS = 2000;
 /** Tests below this accuracy are not saved. */
 const MIN_SAVE_ACCURACY = 50;
 
-/** Why a finished test is not saved. 'failed' is sudden death ending the test on a wrong letter. */
-export type SkipReason = 'short' | 'accuracy' | 'failed';
+/**
+ * Why a finished test is not saved. 'failed' is sudden death ending the test on a wrong letter; 'funbox' is a
+ * test played with a funbox (shown locally only).
+ */
+export type SkipReason = 'short' | 'accuracy' | 'failed' | 'funbox';
 
 export type SaveState =
   | { status: 'idle' }
   | { status: 'saving' }
-  | { status: 'saved' }
+  /** Saved. `verified` is what the server said about the replay. */
+  | { status: 'saved'; verified: boolean }
+  /** The server refused the result (a 400): the replay did not match the stats, or the text did not check out. */
+  | { status: 'rejected'; message: string }
   | { status: 'error'; message: string }
   | { status: 'anonymous' }
   | { status: 'skipped'; reason: SkipReason };
+
+/** The server's message when a replay does not reproduce the submitted stats. */
+export const MISMATCH_MESSAGE = "The result doesn't match its keystrokes";
 
 export interface QuoteInfo {
   loading: boolean;
@@ -91,34 +104,6 @@ export interface TypingTest {
   /** Title of the code snippet being typed (code mode), or null. */
   snippetTitle: string | null;
   focusInput: () => void;
-}
-
-/**
- * mode2 for the saved result: time seconds, word count, quote length, pangram count, the date for
- * daily, or the mode name. `date` is the UTC date the test's words were generated for, stored with the
- * words, so a test that runs past midnight keeps its own day.
- */
-export function mode2Of(cfg: TestConfig, date: string): string {
-  switch (cfg.mode) {
-    case 'time':
-      return String(cfg.time);
-    case 'words':
-      return String(cfg.words);
-    case 'quote':
-      return cfg.quoteLength;
-    case 'pangram':
-      return String(cfg.pangramCount);
-    case 'custom':
-      return 'custom';
-    case 'zen':
-      return 'zen';
-    case 'daily':
-      return date;
-    case 'weak':
-      return 'weak';
-    case 'code':
-      return cfg.codeLanguage;
-  }
 }
 
 export interface PaceInput {
@@ -161,29 +146,12 @@ function serverBestWpm(qc: QueryClient, cfg: TestConfig, date: string): number |
   return summary?.bests.find((b) => b.mode === cfg.mode && b.mode2 === mode2 && b.language === cfg.language)?.wpm;
 }
 
-function skipReason(r: TestResult): SkipReason | null {
+function skipReason(r: TestResult, funboxed: boolean): SkipReason | null {
+  if (funboxed) return 'funbox';
   if (r.failed) return 'failed';
   if (r.durationMs < MIN_SAVE_MS) return 'short';
   if (r.accuracy < MIN_SAVE_ACCURACY) return 'accuracy';
   return null;
-}
-
-function toInput(cfg: TestConfig, r: TestResult, date: string): ResultInput {
-  // Daily text is always punctuated and has no numbers, whatever the user's flags say.
-  const daily = cfg.mode === 'daily';
-  return {
-    mode: cfg.mode,
-    mode2: mode2Of(cfg, date),
-    language: cfg.language,
-    wpm: r.wpm,
-    rawWpm: r.rawWpm,
-    accuracy: r.accuracy,
-    consistency: r.consistency,
-    durationMs: Math.round(r.durationMs),
-    charStats: r.charStats,
-    punctuation: daily ? true : cfg.punctuation,
-    numbers: daily ? false : cfg.numbers,
-  };
 }
 
 /**
@@ -238,6 +206,8 @@ export function useTypingTest(): TypingTest {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const runRef = useRef(0);
+  // The funboxes of the current run: their words are transformed when the run's words are made, and a funboxed run is not saved.
+  const runFunboxRef = useRef<FunboxId[]>([]);
   const initialWordsRef = useRef<string[]>([]);
   const tabAtRef = useRef(0);
   const composingRef = useRef(false);
@@ -261,6 +231,7 @@ export function useTypingTest(): TypingTest {
     setSaveState({ status: 'idle' });
     setSnippetTitle(null);
     extrasRef.current = {};
+    runFunboxRef.current = useSettings.getState().funbox;
 
     if (cfg.mode !== 'quote') {
       const now = Date.now();
@@ -274,7 +245,7 @@ export function useTypingTest(): TypingTest {
         setSnippetTitle(sel.snippet.title);
       } else {
         const weakKeys = cfg.mode === 'weak' ? weakLetters(useKeyStats.getState().byLanguage[cfg.language], cfg.language) : [];
-        words = wordsForConfig(cfg, Math.random, { weakKeys, now });
+        words = applyFunboxWords(wordsForConfig(cfg, Math.random, { weakKeys, now }), runFunboxRef.current);
       }
       initialWordsRef.current = words;
       extrasRef.current = extras;
@@ -295,6 +266,7 @@ export function useTypingTest(): TypingTest {
     setQuote({ loading: true, source: null, fallback: false });
 
     const apply = (words: string[], info: QuoteInfo) => {
+      words = applyFunboxWords(words, runFunboxRef.current);
       initialWordsRef.current = words;
       dispatch({ type: 'reset', words, config: cfg });
       setQuote(info);
@@ -326,7 +298,8 @@ export function useTypingTest(): TypingTest {
   // Time mode: keep enough words ahead of the caret.
   useEffect(() => {
     if (status === 'running' && needsMoreWords(state)) {
-      dispatch({ type: 'append', words: generateWords(selectTestConfig(useSettings.getState()), APPEND_CHUNK) });
+      const more = generateWords(selectTestConfig(useSettings.getState()), APPEND_CHUNK);
+      dispatch({ type: 'append', words: applyFunboxWords(more, runFunboxRef.current) });
     }
   }, [status, state]);
 
@@ -344,7 +317,7 @@ export function useTypingTest(): TypingTest {
     if (status !== 'finished' || pbSnapshot?.state === state) return;
     const r = computeResult(state);
     let isPb = false;
-    if (!skipReason(r)) {
+    if (!skipReason(r, runFunboxRef.current.length > 0)) {
       const key = bestKey(state.config, mode2Of(state.config, runDate));
       const local = useLocalBests.getState().bests[key]?.wpm;
       const server = user ? serverBestWpm(qc, state.config, runDate) : undefined;
@@ -367,7 +340,8 @@ export function useTypingTest(): TypingTest {
     if (recordedRun.current === run) return;
     recordedRun.current = run;
     useKeyStats.getState().record(result.keyStats, state.config.language);
-    if (!skipReason(result)) {
+    const funboxed = runFunboxRef.current.length > 0;
+    if (!skipReason(result, funboxed)) {
       useLocalBests.getState().record(bestKey(state.config, mode2Of(state.config, runDate)), result);
     }
     // Code snippets are not English text, so their pairs stay out of the letter statistics.
@@ -375,7 +349,7 @@ export function useTypingTest(): TypingTest {
       useBigramStats.getState().record(computeBigrams(state), state.config.language);
     }
     // The first attempt at today's daily text is kept as the ghost for the later attempts.
-    if (state.config.mode === 'daily' && state.events.length > 0) {
+    if (state.config.mode === 'daily' && state.events.length > 0 && !funboxed) {
       saveDailyGhost(runDate, state.config.language, { words: state.words, events: state.events });
     }
   }, [status, result, state, runDate]);
@@ -390,7 +364,7 @@ export function useTypingTest(): TypingTest {
     submittedRun.current = run;
 
     const cfg = state.config;
-    const reason = skipReason(result);
+    const reason = skipReason(result, runFunboxRef.current.length > 0);
     if (reason) {
       setSaveState({ status: 'skipped', reason });
       return;
@@ -400,21 +374,27 @@ export function useTypingTest(): TypingTest {
       return;
     }
     setSaveState({ status: 'saving' });
-    resultsApi.submit(toInput(cfg, result, runDate)).then(
-      () => {
+    // The replay is what the server re-runs to verify the stats. Null past its caps: the result is saved unverified.
+    const input = toResultInput(cfg, result, runDate, buildReplay(state));
+    resultsApi.submit(input).then(
+      (saved) => {
         if (runRef.current !== run) return;
-        setSaveState({ status: 'saved' });
+        setSaveState({ status: 'saved', verified: saved.verified === true });
         void qc.invalidateQueries({ queryKey: ['results'] });
         void qc.invalidateQueries({ queryKey: ['summary'] });
         void qc.invalidateQueries({ queryKey: ['insights'] });
       },
       (err: unknown) => {
         if (runRef.current !== run) return;
+        if (err instanceof ApiError && err.status === 400) {
+          setSaveState({ status: 'rejected', message: err.message });
+          return;
+        }
         const message = err instanceof Error ? err.message : 'unknown error';
         setSaveState({ status: 'error', message });
       },
     );
-  }, [status, result, state.config, runDate, user, authLoading, qc]);
+  }, [status, result, state, runDate, user, authLoading, qc]);
 
   const pace = paceTarget({
     caret: paceCaret,

@@ -117,7 +117,16 @@
       "soft": "Leise",
       "typewriter": "Schreibmaschine"
     },
-    "soundVolume": "Lautstärke"
+    "soundVolume": "Lautstärke",
+    "keyboardHintsOptions": {
+      "off": "Aus",
+      "next": "Nächste Taste",
+      "fingers": "Nächste Taste und Finger"
+    },
+    "uiFontOptions": {
+      "default": "Standard",
+      "dyslexic": "OpenDyslexic"
+    }
   },
   "commands": {
     "title": "Befehlszeile",
@@ -177,7 +186,13 @@
     "customiseTheme": "Design anpassen…",
     "codeLanguage": "Programmiersprache",
     "layout": "Tastaturlayout",
-    "ghost": "Geister-Cursor"
+    "ghost": "Geister-Cursor",
+    "funbox": "Funbox",
+    "funboxOff": "Keine Funbox",
+    "keyboardHints": "Tastatur-Hinweise",
+    "showKeyboard": "Bildschirmtastatur anzeigen",
+    "uiFont": "Oberflächenschrift",
+    "uiScale": "Oberflächengröße"
   },
   "replay": {
     "title": "Wiederholung",

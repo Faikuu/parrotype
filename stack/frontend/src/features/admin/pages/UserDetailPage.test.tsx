@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import '@/i18n';
@@ -136,5 +136,53 @@ describe('User detail groups', () => {
     await screen.findByRole('heading', { name: 'cuckoo' });
     expect(screen.getByRole('button', { name: 'Delete account' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Suspend' })).toBeEnabled();
+  });
+});
+
+describe('User detail two-factor', () => {
+  const TF_USER = { ...USER, emailVerified: false, twoFactorEnabled: true };
+  const WITH_SECURITY = [...ACTOR, 'users.security'];
+
+  it('shows the email verified status and whether two-factor is on', async () => {
+    api(ACTOR, TF_USER);
+    renderUser();
+
+    expect(await screen.findByText('Email not verified')).toBeInTheDocument();
+    expect(screen.getByText('On', { exact: true })).toBeInTheDocument();
+  });
+
+  it('shows "Turn off two-factor" only to a user with users.security', async () => {
+    api(ACTOR, TF_USER);
+    renderUser();
+    await screen.findByRole('heading', { name: 'cuckoo' });
+
+    expect(screen.queryByRole('button', { name: 'Turn off two-factor' })).not.toBeInTheDocument();
+  });
+
+  it('turns two-factor off after confirmation, through the admin reset', async () => {
+    const fetchMock = installApi({ id: 2, name: 'kea', permissions: WITH_SECURITY }, [
+      (req) => (req.method === 'GET' && req.path === '/admin/users/5' ? { body: TF_USER } : undefined),
+      (req) => (req.method === 'GET' && req.path === '/admin/groups' ? { body: groupsPage(GROUPS) } : undefined),
+      (req) =>
+        req.method === 'POST' && req.path === '/admin/users/5/2fa/reset' ? { body: { ok: true } } : undefined,
+    ]);
+    renderUser();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Turn off two-factor' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn off two-factor for cuckoo?' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Turn off' }));
+
+    await waitFor(() =>
+      expect(writes(fetchMock)).toEqual([{ method: 'POST', path: '/admin/users/5/2fa/reset', body: undefined }]),
+    );
+  });
+
+  it('disables the button, with the reason, when two-factor is already off', async () => {
+    api(ACTOR.concat('users.security'), { ...TF_USER, twoFactorEnabled: false });
+    renderUser();
+
+    const button = await screen.findByRole('button', { name: 'Turn off two-factor' });
+    expect(button).toBeDisabled();
+    expect(screen.getByText('Off', { exact: true })).toBeInTheDocument();
   });
 });

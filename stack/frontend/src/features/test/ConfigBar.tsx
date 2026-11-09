@@ -85,6 +85,7 @@ export function ConfigBar() {
     })),
   );
   const set = useSettings((s) => s.set);
+  const funbox = useSettings((s) => s.funbox);
   const typing = useUi((s) => s.isTyping);
   const openCustomText = useUi((s) => s.openCustomText);
   const langStats = useKeyStats((s) => s.byLanguage[cfg.language]);
@@ -218,6 +219,15 @@ export function ConfigBar() {
               {t('test:suddenDeath')}
             </Opt>
           </div>
+        </>
+      )}
+
+      {funbox.length > 0 && (
+        <>
+          <Divider />
+          <span className="px-2 py-1 text-main" title={funbox.map((id) => t(`funbox:${id}`)).join(', ')}>
+            {t('funbox:label')}: {funbox.map((id) => t(`funbox:${id}`)).join(', ')}
+          </span>
         </>
       )}
 

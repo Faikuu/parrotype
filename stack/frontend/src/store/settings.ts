@@ -13,6 +13,17 @@ export type QuickRestart = 'tab' | 'esc' | 'off';
 export type UiLanguage = 'en' | 'pl' | 'de' | 'es';
 export type PaceCaret = 'off' | 'pb' | 'average' | 'custom';
 export type SoundProfile = 'off' | 'click' | 'soft' | 'typewriter';
+/** Funboxes change the words or how they are shown. Their tests are not saved. */
+export type FunboxId = 'mirror' | 'reverse' | 'memory' | 'caps';
+export const FUNBOX_IDS: readonly FunboxId[] = ['mirror', 'reverse', 'memory', 'caps'];
+/** On-screen keyboard: no highlight, the next key only, or the next key with finger colours. */
+export type KeyboardHints = 'off' | 'next' | 'fingers';
+export const KEYBOARD_HINTS: readonly KeyboardHints[] = ['off', 'next', 'fingers'];
+/** The interface font: the default sans, or OpenDyslexic for the whole UI. */
+export type UiFont = 'default' | 'dyslexic';
+/** The root font size multiplier (UI and test text). */
+export type UiScale = 0.9 | 1 | 1.1 | 1.25;
+export const UI_SCALES: readonly UiScale[] = [0.9, 1, 1.1, 1.25];
 
 export interface SettingsData extends TestConfig {
   theme: ThemeChoice;
@@ -36,6 +47,14 @@ export interface SettingsData extends TestConfig {
   layout: LayoutId;
   /** Ghost carets: the daily ghost and "Race your ghost". */
   ghost: boolean;
+  /** Active funboxes. Any of them makes the test unsaved. */
+  funbox: FunboxId[];
+  /** The on-screen keyboard's highlights (see OnScreenKeyboard). */
+  keyboardHints: KeyboardHints;
+  /** Shows the on-screen keyboard under the test (Learn always shows it). */
+  showKeyboard: boolean;
+  uiFont: UiFont;
+  uiScale: UiScale;
 }
 
 export interface Settings extends SettingsData {
@@ -93,6 +112,11 @@ export const DEFAULT_SETTINGS: SettingsData = {
   soundVolume: 0.5,
   layout: 'qwerty',
   ghost: true,
+  funbox: [],
+  keyboardHints: 'next',
+  showKeyboard: false,
+  uiFont: 'default',
+  uiScale: 1,
 };
 
 const DATA_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof SettingsData)[];
@@ -120,6 +144,9 @@ const ALLOWED: Partial<Record<keyof SettingsData, readonly unknown[]>> = {
   paceCaret: ['off', 'pb', 'average', 'custom'],
   sound: ['off', 'click', 'soft', 'typewriter'],
   layout: LAYOUT_IDS,
+  keyboardHints: KEYBOARD_HINTS,
+  uiFont: ['default', 'dyslexic'] satisfies UiFont[],
+  uiScale: UI_SCALES,
 };
 
 /** Numeric keys and their allowed range. */
@@ -127,6 +154,12 @@ const RANGE: Partial<Record<keyof SettingsData, readonly [number, number]>> = {
   paceWpm: [10, 300],
   soundVolume: [0, 1],
 };
+
+/** The funboxes in a stored or passed list, in FUNBOX_IDS order, without unknown or repeated ids. */
+export function sanitizeFunbox(value: unknown): FunboxId[] {
+  if (!Array.isArray(value)) return [];
+  return FUNBOX_IDS.filter((id) => value.includes(id));
+}
 
 /**
  * Keeps only known keys with the right type, clamped to range where there is one, so stale or corrupt
@@ -141,6 +174,11 @@ export function sanitizeSettings(input: unknown): SettingsData {
     const value = src[key];
     // Validated as a whole below: an object, so the generic type check does not cover it.
     if (key === 'customTheme') continue;
+    // A list of funbox ids: unknown and repeated ids are dropped.
+    if (key === 'funbox') {
+      if (Array.isArray(value)) out.funbox = sanitizeFunbox(value);
+      continue;
+    }
     if (value === undefined || typeof value !== typeof DEFAULT_SETTINGS[key]) continue;
     const allowed = ALLOWED[key];
     if (allowed && !allowed.includes(value)) continue;

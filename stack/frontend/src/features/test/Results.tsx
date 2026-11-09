@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import { CategoryScale, Chart as ChartJS, LineController, LineElement, LinearScale, PointElement, ScatterController, Tooltip, type ChartData, type ChartOptions } from 'chart.js';
 import { Chart } from 'react-chartjs-2';
-import { ChevronRight, Copy, Ghost, PlayCircle, RotateCcw, Share2 } from 'lucide-react';
+import { ChevronRight, CircleCheck, Copy, Ghost, PlayCircle, RotateCcw, Share2 } from 'lucide-react';
 import { bigramWords, slowestBigrams } from '@/lib/engine/bigrams';
 import { slowestWords } from '@/lib/engine/timings';
 import type { EngineState, TestConfig } from '@/lib/engine/types';
@@ -17,8 +17,9 @@ import { SlowestPairs } from './SlowestPairs';
 import { SlowestWords } from './SlowestWords';
 import { copyText, summaryText } from './copySummary';
 import { practiceText } from './practice';
+import { testLabel } from './testLabel';
 import { shareResultCard } from './shareCard';
-import type { FinishedResult, SaveState } from './useTypingTest';
+import { MISMATCH_MESSAGE, type FinishedResult, type SaveState } from './useTypingTest';
 
 ChartJS.register(CategoryScale, LinearScale, LineController, LineElement, PointElement, ScatterController, Tooltip);
 
@@ -64,44 +65,6 @@ function usePalette(): Palette {
     return () => cancelAnimationFrame(id);
   }, [theme, customTheme, preview, draft]);
   return palette;
-}
-
-/** Snippet language names, as they are written (not translated). */
-const CODE_NAMES: Record<TestConfig['codeLanguage'], string> = { js: 'JavaScript', py: 'Python', rs: 'Rust', go: 'Go' };
-
-function testLabel(cfg: TestConfig, t: (key: string, opts?: Record<string, unknown>) => string): string {
-  const mode = t(`settings:modes.${cfg.mode}`).toLowerCase();
-  let value = '';
-  switch (cfg.mode) {
-    case 'code':
-      value = CODE_NAMES[cfg.codeLanguage];
-      break;
-    case 'time':
-      value = String(cfg.time);
-      break;
-    case 'words':
-      value = String(cfg.words);
-      break;
-    case 'quote':
-      value = t(`settings:quoteLengths.${cfg.quoteLength}`).toLowerCase();
-      break;
-    case 'pangram':
-      value = String(cfg.pangramCount);
-      break;
-    default:
-      break;
-  }
-  // Code snippets are not in a spoken language, so the language is left out of their label.
-  const code = cfg.mode === 'code';
-  return [
-    mode,
-    value,
-    code ? '' : cfg.language,
-    !code && cfg.punctuation ? t('results:punctuationOn') : '',
-    !code && cfg.numbers ? t('results:numbersOn') : '',
-  ]
-    .filter((p) => p.length > 0)
-    .join(' ');
 }
 
 function Stat({ label, value, title, muted }: { label: string; value: string; title?: string; muted?: boolean }) {
@@ -437,6 +400,24 @@ export function Results({ config, result, state, date, saveState, onNext, onRepe
   );
 }
 
+/** The verification result of a saved test: a check mark when the server verified the replay. */
+function VerifiedMark({ verified }: { verified: boolean }) {
+  const { t } = useTranslation();
+  if (!verified) {
+    return (
+      <span title={t('verify:notVerifiedTitle')} className="text-[0.9rem] text-sub">
+        {t('verify:notVerified')}
+      </span>
+    );
+  }
+  return (
+    <span title={t('verify:verifiedTitle')} className="inline-flex items-center gap-1.5 text-[0.9rem] text-main">
+      <CircleCheck size={16} aria-hidden="true" />
+      {t('verify:verified')}
+    </span>
+  );
+}
+
 function SaveStatus({ saveState }: { saveState: SaveState }) {
   const { t } = useTranslation();
   switch (saveState.status) {
@@ -445,18 +426,33 @@ function SaveStatus({ saveState }: { saveState: SaveState }) {
     case 'saving':
       return <span className="text-[0.9rem] text-sub">{t('results:saving')}</span>;
     case 'saved':
-      return <span className="text-[0.9rem] text-main">{t('results:saved')}</span>;
+      return (
+        <span className="inline-flex flex-wrap items-center gap-3">
+          <span className="text-[0.9rem] text-main">{t('results:saved')}</span>
+          <VerifiedMark verified={saveState.verified} />
+        </span>
+      );
     case 'anonymous':
       return (
         <Link to="/login" className="text-[0.9rem] text-sub underline underline-offset-4 hover:text-text">
           {t('results:loginToSave')}
         </Link>
       );
+    case 'rejected':
+      // The server refused it (a 400): the replay did not reproduce the stats, or the text did not check out.
+      return (
+        <span role="alert" className="text-[0.9rem] text-error">
+          {saveState.message === MISMATCH_MESSAGE
+            ? t('verify:notSavedMismatch')
+            : t('verify:notSaved', { message: saveState.message })}
+        </span>
+      );
     case 'error':
       return (
         <span className="text-[0.9rem] text-error">{t('results:saveError', { message: saveState.message })}</span>
       );
     case 'skipped': {
+      if (saveState.reason === 'funbox') return <span className="text-[0.9rem] text-sub">{t('verify:funboxNotSaved')}</span>;
       const key =
         saveState.reason === 'short'
           ? 'results:skippedShort'

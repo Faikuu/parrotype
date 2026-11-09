@@ -123,7 +123,16 @@
       "soft": "Miękki",
       "typewriter": "Maszyna do pisania"
     },
-    "soundVolume": "Głośność dźwięku"
+    "soundVolume": "Głośność dźwięku",
+    "keyboardHintsOptions": {
+      "off": "Wyłączone",
+      "next": "Następny klawisz",
+      "fingers": "Następny klawisz i palce"
+    },
+    "uiFontOptions": {
+      "default": "Domyślna",
+      "dyslexic": "OpenDyslexic"
+    }
   },
   "commands": {
     "title": "Polecenia",
@@ -183,7 +192,13 @@
     "customiseTheme": "Dostosuj motyw…",
     "codeLanguage": "Język kodu",
     "layout": "Układ klawiatury",
-    "ghost": "Kursor ducha"
+    "ghost": "Kursor ducha",
+    "funbox": "Funbox",
+    "funboxOff": "Bez funbox",
+    "keyboardHints": "Podpowiedzi klawiatury",
+    "showKeyboard": "Pokaż klawiaturę ekranową",
+    "uiFont": "Czcionka interfejsu",
+    "uiScale": "Rozmiar interfejsu"
   },
   "replay": {
     "title": "Powtórka",

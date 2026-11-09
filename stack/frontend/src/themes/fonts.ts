@@ -11,3 +11,4 @@ import '@fontsource/atkinson-hyperlegible-mono/500.css';
 import '@fontsource/fragment-mono/400.css';
 import '@fontsource/sometype-mono/400.css';
 import '@fontsource/sometype-mono/500.css';
+import '@fontsource/opendyslexic/400.css';

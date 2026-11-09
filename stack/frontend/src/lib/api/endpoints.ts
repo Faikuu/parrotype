@@ -1,6 +1,8 @@
 import type { Language, QuoteLength } from '@/lib/engine/types';
 import { api, apiBlob } from './client';
 import type {
+  AdminAnnouncement,
+  AdminEvent,
   AdminAuditEntry,
   AdminGroup,
   AdminGroupDetail,
@@ -20,26 +22,59 @@ import type {
   LeaderboardEntry,
   LeaderboardQuery,
   PublicProfile,
+  LoginResponse,
   PublicUser,
   Quote,
+  RecoveryCodesResponse,
+  ReplayDto,
   Result,
   ResultInput,
   SortOrder,
   Summary,
   ReportStatus,
+  AppNotification,
+  Announcement,
+  EventDetail,
+  EventListing,
+  MarkReadResult,
+  UnreadCount,
+  TwoFactorSetupResponse,
 } from './types';
 
 export const authApi = {
   register: (input: { name: string; email: string; password: string }) =>
     api<{ user: PublicUser }>('/auth/register', { method: 'POST', body: input }),
+  /** { user } with a session cookie, or { twoFactorRequired, ticket } for the second step. */
   login: (input: { email: string; password: string }) =>
-    api<{ user: PublicUser }>('/auth/login', { method: 'POST', body: input }),
+    api<LoginResponse>('/auth/login', { method: 'POST', body: input }),
   logout: () => api<{ ok: true }>('/auth/logout', { method: 'POST' }),
   me: (signal?: AbortSignal) => api<{ user: PublicUser }>('/auth/me', { signal }),
   changePassword: (input: { currentPassword: string; newPassword: string }) =>
     api<{ ok: true }>('/auth/password', { method: 'PATCH', body: input }),
   deleteAccount: (input: { password: string }) =>
     api<{ ok: true }>('/auth/account', { method: 'DELETE', body: input }),
+
+  // Password reset and email verification (the links in the emails).
+  /** Always { ok: true }, whether or not the email has an account. */
+  forgotPassword: (input: { email: string }) =>
+    api<{ ok: true }>('/auth/password/forgot', { method: 'POST', body: input }),
+  resetPassword: (input: { token: string; newPassword: string }) =>
+    api<{ ok: true }>('/auth/password/reset', { method: 'POST', body: input }),
+  verifyEmail: (input: { token: string }) =>
+    api<{ ok: true }>('/auth/email/verify', { method: 'POST', body: input }),
+  resendVerification: () => api<{ ok: true }>('/auth/email/resend', { method: 'POST' }),
+
+  // Two-factor sign-in
+  /** The second login step: the ticket from login, and a 6-digit code or a recovery code. */
+  verifyTwoFactor: (input: { ticket: string; code: string }) =>
+    api<{ user: PublicUser }>('/auth/2fa/verify', { method: 'POST', body: input }),
+  setupTwoFactor: () => api<TwoFactorSetupResponse>('/auth/2fa/setup', { method: 'POST' }),
+  enableTwoFactor: (input: { code: string }) =>
+    api<RecoveryCodesResponse>('/auth/2fa/enable', { method: 'POST', body: input }),
+  disableTwoFactor: (input: { password: string; code: string }) =>
+    api<{ ok: true }>('/auth/2fa/disable', { method: 'POST', body: input }),
+  regenerateRecoveryCodes: (input: { password: string; code: string }) =>
+    api<RecoveryCodesResponse>('/auth/2fa/recovery-codes', { method: 'POST', body: input }),
 };
 
 export const quotesApi = {
@@ -52,6 +87,8 @@ export const resultsApi = {
   mine: (limit = 50, signal?: AbortSignal) =>
     api<Result[]>(`/results/me?limit=${limit}`, { signal }),
   summary: (signal?: AbortSignal) => api<Summary>('/results/me/summary', { signal }),
+  /** A verified result's summary and replay. 404 for unverified, unknown or banned-user results. */
+  replay: (id: number, signal?: AbortSignal) => api<ReplayDto>(`/results/${id}/replay`, { signal }),
   insights: (signal?: AbortSignal) => api<Insights>('/results/me/insights', { signal }),
   /** Throttled to 5 a minute by the server: a 429 ApiError means too many downloads. */
   export: (format: ExportFormat, signal?: AbortSignal) =>
@@ -63,8 +100,30 @@ export const leaderboardApi = {
     // `scope` is only sent when it is set, so the default request is unchanged.
     const params: Record<string, string> = { mode: query.mode, mode2: query.mode2, language: query.language };
     if (query.scope) params.scope = query.scope;
+    if (query.verified) params.verified = 'true';
     return api<LeaderboardEntry[]>(`/leaderboard?${new URLSearchParams(params).toString()}`, { signal });
   },
+};
+
+// Notifications, announcements and events (docs/SPEC-2.5.md). The notification routes need a session.
+export const notificationsApi = {
+  list: (params: { page?: number; pageSize?: number; unread?: boolean }, signal?: AbortSignal) =>
+    api<Paged<AppNotification>>(`/notifications${query({ page: params.page, pageSize: params.pageSize, unread: params.unread ? 'true' : undefined })}`, { signal }),
+  unreadCount: (signal?: AbortSignal) => api<UnreadCount>('/notifications/unread-count', { signal }),
+  /** Without ids, every unread notification of the signed-in user is marked read. */
+  markRead: (ids?: number[]) =>
+    api<MarkReadResult>('/notifications/read', { method: 'POST', body: ids ? { ids } : {} }),
+};
+
+export const announcementsApi = {
+  active: (signal?: AbortSignal) => api<Announcement[]>('/announcements/active', { signal }),
+};
+
+export const eventsApi = {
+  list: (signal?: AbortSignal) => api<EventListing>('/events', { signal }),
+  detail: (slug: string, signal?: AbortSignal) => api<EventDetail>(`/events/${encodeURIComponent(slug)}`, { signal }),
+  leaderboard: (slug: string, signal?: AbortSignal) =>
+    api<LeaderboardEntry[]>(`/events/${encodeURIComponent(slug)}/leaderboard`, { signal }),
 };
 
 const userPath = (name: string) => `/users/${encodeURIComponent(name)}`;
@@ -127,6 +186,26 @@ export interface AuditListParams extends PageParams {
   target?: string;
 }
 
+export interface AnnouncementInput {
+  message: string;
+  level: 'info' | 'warning';
+  startsAt: string;
+  /** null for no end. */
+  endsAt: string | null;
+}
+
+export interface EventCreateInput {
+  slug: string;
+  title: string;
+  description: string;
+  language: string;
+  text: string;
+  startsAt: string;
+  endsAt: string;
+}
+
+export type EventUpdateInput = Partial<Omit<EventCreateInput, 'slug'>>;
+
 export interface QuoteInput {
   language: string;
   text: string;
@@ -167,6 +246,8 @@ export const adminApi = {
   renameUser: (id: number, name: string) =>
     api<AdminUserRow>(adminPath(`/users/${id}`), { method: 'PATCH', ...json({ name }) }),
   revokeSessions: (id: number) => api<{ ok: true }>(adminPath(`/users/${id}/revoke-sessions`), { method: 'POST' }),
+  /** Turns off the user's two-factor sign-in (users.security). Their sessions end. */
+  reset2fa: (id: number) => api<{ ok: true }>(adminPath(`/users/${id}/2fa/reset`), { method: 'POST' }),
   ban: (id: number, reason: string) =>
     api<AdminUserRow>(adminPath(`/users/${id}/ban`), { method: 'POST', ...json({ reason }) }),
   unban: (id: number) => api<AdminUserRow>(adminPath(`/users/${id}/unban`), { method: 'POST' }),
@@ -197,6 +278,24 @@ export const adminApi = {
   // Races
   races: (signal?: AbortSignal) => api<AdminRace[]>(adminPath('/races'), { signal }),
   closeRace: (id: string) => api<{ ok: true }>(adminPath(`/races/${encodeURIComponent(id)}`), { method: 'DELETE' }),
+
+  // Announcements (announcements.manage)
+  announcements: (params: PageParams, signal?: AbortSignal) =>
+    api<Paged<AdminAnnouncement>>(adminPath(`/announcements${query({ ...params })}`), { signal }),
+  createAnnouncement: (input: AnnouncementInput) =>
+    api<AdminAnnouncement>(adminPath('/announcements'), { method: 'POST', ...json(input) }),
+  updateAnnouncement: (id: number, input: Partial<AnnouncementInput>) =>
+    api<AdminAnnouncement>(adminPath(`/announcements/${id}`), { method: 'PATCH', ...json(input) }),
+  deleteAnnouncement: (id: number) => api<{ ok: true }>(adminPath(`/announcements/${id}`), { method: 'DELETE' }),
+
+  // Events (events.manage)
+  events: (params: PageParams, signal?: AbortSignal) =>
+    api<Paged<AdminEvent>>(adminPath(`/events${query({ ...params })}`), { signal }),
+  createEvent: (input: EventCreateInput) => api<AdminEvent>(adminPath('/events'), { method: 'POST', ...json(input) }),
+  /** The slug is fixed once created, so it is not sent. Text and language are refused once the event has started. */
+  updateEvent: (id: number, input: EventUpdateInput) =>
+    api<AdminEvent>(adminPath(`/events/${id}`), { method: 'PATCH', ...json(input) }),
+  deleteEvent: (id: number) => api<{ ok: true }>(adminPath(`/events/${id}`), { method: 'DELETE' }),
 
   // Audit log
   actions: (params: AuditListParams, signal?: AbortSignal) =>

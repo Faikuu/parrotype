@@ -1,4 +1,5 @@
 import { Outlet } from 'react-router';
+import { AnnouncementBanner } from '@/features/announcements/AnnouncementBanner';
 import { CommandLine } from '@/features/commandline/CommandLine';
 import { CustomTextModal } from '@/features/commandline/CustomTextModal';
 import { useCommandLineShortcuts } from '@/features/commandline/useCommandLine';
@@ -25,6 +26,7 @@ export function Layout() {
           )}
         >
           <Header />
+          <AnnouncementBanner />
         </div>
       </div>
       <main className="mx-auto flex w-full max-w-[1080px] flex-1 flex-col px-4">

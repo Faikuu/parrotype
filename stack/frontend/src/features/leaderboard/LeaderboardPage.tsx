@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router';
+import { CircleCheck } from 'lucide-react';
 import { Button } from '@/components/Button';
 import { cn } from '@/components/cn';
 import { formatDate } from '@/features/account/format';
@@ -54,7 +55,7 @@ export default function LeaderboardPage() {
   const board = apiMode2(filters, now);
 
   const query = useQuery({
-    queryKey: ['leaderboard', filters.scope, filters.mode, board, filters.language],
+    queryKey: ['leaderboard', filters.scope, filters.mode, board, filters.language, filters.verified],
     queryFn: ({ signal }) =>
       leaderboardApi.get(
         {
@@ -62,6 +63,7 @@ export default function LeaderboardPage() {
           mode2: board,
           language: filters.language,
           scope: filters.scope === 'following' ? 'following' : undefined,
+          verified: filters.verified,
         },
         signal,
       ),
@@ -75,6 +77,7 @@ export default function LeaderboardPage() {
         mode2: next.mode2,
         language: next.language,
         ...(next.scope === 'following' ? { scope: 'following' } : {}),
+        ...(next.verified ? { verified: 'true' } : {}),
       },
       { replace: true },
     );
@@ -158,6 +161,15 @@ export default function LeaderboardPage() {
             </Pill>
           ))}
         </PillGroup>
+        <PillGroup label={t('verify:verifiedOnly')}>
+          <Pill
+            active={filters.verified}
+            title={t('verify:verifiedOnlyTitle')}
+            onClick={() => update({ ...filters, verified: !filters.verified })}
+          >
+            {t('verify:verifiedOnly')}
+          </Pill>
+        </PillGroup>
       </div>
 
       <div className="mt-8">
@@ -198,15 +210,18 @@ function Pill({
   active,
   onClick,
   children,
+  title,
 }: {
   active: boolean;
   onClick: () => void;
   children: ReactNode;
+  title?: string;
 }) {
   return (
     <button
       type="button"
       aria-pressed={active}
+      title={title}
       onClick={onClick}
       className={cn(
         'rounded-[6px] px-3 py-1 text-[0.95rem] transition-colors',
@@ -242,7 +257,10 @@ function Table({
             <th scope="col" className="py-2 pr-4 text-right font-normal">{t('account:colWpm')}</th>
             <th scope="col" className="py-2 pr-4 text-right font-normal">{t('account:recent.raw')}</th>
             <th scope="col" className="py-2 pr-4 text-right font-normal">{t('account:colAcc')}</th>
-            <th scope="col" className="py-2 font-normal">{t('leaderboard:cols.date')}</th>
+            <th scope="col" className="py-2 pr-4 font-normal">{t('leaderboard:cols.date')}</th>
+            <th scope="col" className="py-2 font-normal">
+              <span className="sr-only">{t('verify:replayTitle')}</span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -260,23 +278,46 @@ function Table({
                   {e.rank}
                 </td>
                 <td className={cell}>
-                  <Link
-                    to={`/u/${encodeURIComponent(e.name)}`}
-                    className={cn(
-                      'underline-offset-4 hover:underline',
-                      mine ? 'text-main' : 'text-text',
+                  <span className="inline-flex items-center gap-1.5">
+                    <Link
+                      to={`/u/${encodeURIComponent(e.name)}`}
+                      className={cn(
+                        'underline-offset-4 hover:underline',
+                        mine ? 'text-main' : 'text-text',
+                      )}
+                    >
+                      {e.name}
+                    </Link>
+                    {e.verified && (
+                      <CircleCheck
+                        size={15}
+                        aria-label={t('verify:checkTitle')}
+                        role="img"
+                        className="shrink-0 text-main"
+                      >
+                        <title>{t('verify:checkTitle')}</title>
+                      </CircleCheck>
                     )}
-                  >
-                    {e.name}
-                  </Link>
+                  </span>
                 </td>
                 <td className={cn('tabular text-right', cell)}>{fmt(e.wpm)}</td>
                 <td className={cn('tabular text-right', mine ? 'text-main' : 'text-sub', 'py-2 pr-4')}>
                   {fmt(e.rawWpm)}
                 </td>
                 <td className={cn('tabular text-right', cell)}>{fmt(e.accuracy, 1)}%</td>
-                <td className={cn('py-2', mine ? 'text-main' : 'text-sub')}>
+                <td className={cn('py-2 pr-4', mine ? 'text-main' : 'text-sub')}>
                   {formatDate(e.createdAt, lang)}
+                </td>
+                <td className="py-2 text-right">
+                  {e.verified && e.resultId !== undefined && (
+                    <Link
+                      to={`/replay/${e.resultId}`}
+                      title={t('verify:watchTitle')}
+                      className="text-[0.95rem] text-sub underline-offset-4 hover:text-text hover:underline"
+                    >
+                      {t('verify:watch')}
+                    </Link>
+                  )}
                 </td>
               </tr>
             );
