@@ -63,6 +63,15 @@ PostgreSQL and MariaDB are not started by this project. Run them yourself, or us
 ## Daily board
 Each user is ranked on the daily board by their first result for the UTC date and language. Retries are saved but do not change the rank. The other modes rank each user by their best result.
 
+## Verification and boards
+A result saved with its keystroke replay is checked by the server: the replay is run through the engine and must reproduce the stats (400 if not). A checked result is verified and its replay is stored.
+
+- Boards list verified results only, by default. `GET /api/leaderboard` takes `verified=false` to include unverified results too (`verified=true`, or no parameter, is the verified-only board). The daily board is verified-only. Event boards are always verified-only.
+- A replay is stored once, under its hash (sha256 of its words, events and code layout). A copy of a stored replay, from the same user or another, is refused with 409 `This replay has already been submitted`; two copies at the same moment give one 201 and one 409.
+- A replay with implausible timing is saved unverified, with no replay stored, and the response says `verificationNote: "implausible_timing"`. The checks are in `src/results/replay-verify.ts` (`verdictOf`): an average above 40 keys a second, more than a fifth of the gaps under 8 ms, a steady rhythm (coefficient of variation under 0.15 over 100 or more gaps, pauses over 2 s left out), and a long test (15 s or more) with consistency 99 or more.
+- An event result's replay is served by `GET /api/results/:id/replay` only once the event has ended.
+- Known limit: a slightly altered copy of a real run can still pass. The duplicate check, the timing checks and hiding event replays make that costlier; they do not rule it out.
+
 ## Code mode
 `mode: "code"` saves a result for a code snippet. `mode2` is the language (`js`, `py`, `rs` or `go`) and `language` must be `en`. Code results are saved and listed on the owner's history, but they are never ranked: `GET /api/leaderboard?mode=code` is a 400, and the public profile's bests leave them out. The `lesson` mode is not accepted (lessons are local only).
 

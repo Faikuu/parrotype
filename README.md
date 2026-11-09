@@ -69,7 +69,7 @@ npm run setup
 npm run dev
 ```
 
-`setup` installs dependencies, creates `stack/backend/.env` with a random JWT secret, creates the SQLite database and seeds public-domain quotes. `dev` starts the API on http://localhost:3000 and the app on http://localhost:5173. Vite proxies `/api`, so cookies stay same-origin in development.
+`setup` installs dependencies, builds the shared engine, creates `stack/backend/.env` with a random JWT secret and two-factor encryption key, creates the SQLite database and seeds public-domain quotes. In development, emails (verification, password reset) are printed to the API's console instead of being sent. `dev` starts the API on http://localhost:3000 and the app on http://localhost:5173. Vite proxies `/api`, so cookies stay same-origin in development.
 
 Other scripts:
 
@@ -118,6 +118,9 @@ The app is served at http://localhost:8080. Only the web container is exposed. I
 - Permissions come from groups in the database and are checked on every request, so removing someone from a group takes effect immediately. Admin rights can't be obtained over HTTP, nobody can grant a permission they don't hold, and the Administrators group can't lose its last member. Suspended accounts lose their sessions immediately and disappear from leaderboards, profiles and badges. Badges are rendered with every value XML-escaped and served with a locked-down content policy.
 - Races: WebSocket connections must come from an allowed origin. Room ids are random, rooms hold at most eight players and expire when idle, messages are size- and rate-limited, and progress and finishes are checked against server time.
 - Exports escape spreadsheet formulas. Public profiles never include email addresses. Changing your password signs out your other devices, and deleting your account removes all your results.
+- Two-factor authentication uses standard TOTP codes (RFC 6238) with secrets encrypted at rest (AES-256-GCM). After 8 wrong codes the second factor locks for 15 minutes, and the account owner gets an email. Login tickets are single-use, and a used code can't be replayed, even across restarts. Recovery codes are stored as keyed hashes.
+- Password reset links expire after 30 minutes, work once, sign out every session and never bypass two-factor. "Forgot password" answers the same way, in the same time, whether or not the email has an account. Reset and verification emails are never written to production logs: set `MAIL_TRANSPORT=smtp` and `SMTP_URL` to deliver email.
+- Result verification replays the keystrokes with the shared engine. A replay can be submitted only once, event replays stay private until the event ends, and keystroke rhythms that look automated (too even, too fast or too many keys per second) are saved as unverified. Leaderboards show verified results by default. This raises the cost of cheating a lot but can't make it impossible, since the keystrokes come from the browser.
 - helmet headers, a CORS allowlist (`CORS_ORIGINS`), a 50 kB body limit, and the configuration is validated at startup (the API refuses to start with a JWT secret shorter than 32 characters).
 
 ## License

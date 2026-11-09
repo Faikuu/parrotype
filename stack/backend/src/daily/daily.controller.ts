@@ -29,6 +29,8 @@ export class DailyController {
       mode: 'daily',
       mode2: date,
       language: query.language,
+      // Verified results only: an unverified retry must not take a place on the board.
+      verified: true,
     });
     return { date, language: query.language, entries };
   }

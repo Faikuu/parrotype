@@ -121,15 +121,15 @@ describe('friends, the following scope, badges and code results (e2e)', () => {
     });
 
     it('scope=following needs a session, and covers the viewer and the people they follow', async () => {
-      await request(server).get('/api/leaderboard?mode=words&mode2=100&language=es&scope=following').expect(401);
+      await request(server).get('/api/leaderboard?mode=words&mode2=100&language=es&scope=following&verified=false').expect(401);
 
-      const everyone = await request(server).get('/api/leaderboard?mode=words&mode2=100&language=es').expect(200);
+      const everyone = await request(server).get('/api/leaderboard?mode=words&mode2=100&language=es&verified=false').expect(200);
       expect(everyone.body.map((e: { name: string }) => e.name)).toEqual(
         expect.arrayContaining(['fr_alice', 'fr_bob', 'fr_carol']),
       );
 
       const friends = await request(server)
-        .get('/api/leaderboard?mode=words&mode2=100&language=es&scope=following')
+        .get('/api/leaderboard?mode=words&mode2=100&language=es&scope=following&verified=false')
         .set('Cookie', alice)
         .expect(200);
       expect(friends.body).toEqual([
@@ -144,7 +144,7 @@ describe('friends, the following scope, badges and code results (e2e)', () => {
       await request(server).delete('/api/users/fr_bob/follow').expect(401);
 
       const friends = await request(server)
-        .get('/api/leaderboard?mode=words&mode2=100&language=es&scope=following')
+        .get('/api/leaderboard?mode=words&mode2=100&language=es&scope=following&verified=false')
         .set('Cookie', alice)
         .expect(200);
       expect(friends.body.map((e: { name: string }) => e.name)).toEqual(['fr_alice']);

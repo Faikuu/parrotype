@@ -122,7 +122,7 @@ model ResultReplay {
   - event: must equal the event's text, and the submission must be within the event window (+60s grace).
   - Other modes: the text is client-chosen and can't be checked, but the timing is.
 - A result without a replay stays unverified (allowed, as before).
-- Leaderboard: the query param `verified=true` filters to verified results; each entry includes `verified` and `resultId`.
+- Leaderboard: boards list verified results only by default; the query param `verified=false` includes unverified ones (see stack/backend/README.md, Verification and boards). Each entry includes `verified` and `resultId`.
 - `GET /api/results/:id/replay` (public, only for verified results of non-banned users): `{ result: {…summary, name}, replay }`. 404 otherwise.
 - Events: `POST /api/results` with `mode: 'event'` requires a verified replay. One ranked result per user per event (the best), using the same best-per-user logic.
 
@@ -192,7 +192,7 @@ model ResultReplay {
 - An announcement banner under the header (info: --surface bg; warning: a --caret left border), dismissible per announcement id (localStorage).
 - Events: `/events` (upcoming/active/past lists; the active one highlighted) and `/events/:slug` (the description, a countdown to the start, "Start" when active, which runs the event text in a typing view built like the race TypingArea with the replay recorded, submitting `mode: 'event'` with the replay; the event leaderboard below).
 - Admin: Announcements and Events sections (CRUD tables + modals, with datetime-local inputs shown in local time and sent as ISO UTC), and the 3 new permissions in the matrix (automatic from the catalog).
-- Leaderboard: a "Verified only" toggle, a ✓ mark (a small CheckCircle icon with a "Verified by keystroke replay" tooltip) next to verified entries, and a "Watch" link on entries with replays → `/replay/:resultId` (a full-page replay player reusing ReplayPlayer).
+- Leaderboard: an "Include unverified" toggle (off by default), a ✓ mark (a small CheckCircle icon with a "Verified by keystroke replay" tooltip) next to verified entries, and a "Watch" link on entries with replays → `/replay/:resultId` (a full-page replay player reusing ReplayPlayer).
 
 ### Typing test UI
 - Submit the replay with every saved result (words + events + code extras).

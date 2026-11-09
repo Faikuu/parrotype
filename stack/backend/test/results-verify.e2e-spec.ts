@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ThrottlerStorage } from '@nestjs/throttler';
-import { dailyWords, quoteToWords, type TestConfig } from '@parrotype/engine';
+import { createRng, dailyWords, quoteToWords, type TestConfig } from '@parrotype/engine';
 import * as bcrypt from 'bcrypt';
 import request from 'supertest';
 import type { App } from 'supertest/types';
@@ -9,11 +9,12 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { utcDate } from '../src/common/dates';
 import { LeaderboardService } from '../src/leaderboard/leaderboard.service';
+import { replayHash } from '../src/results/replay-hash';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ResultEvents, type ResultSavedEvent } from '../src/results/result-events';
 import { applyE2eEnv } from './e2e.env';
 import { sessionFor } from './e2e.helpers';
-import { base, liveRun, POOL, replayOf, resultFields, typeWords, type Key } from './replay.fixtures';
+import { base, humanGap, liveRun, POOL, replayOf, resultFields, typeWords, type Key } from './replay.fixtures';
 
 // Config is read lazily (getEnv), so setting it here, before the app is built, is enough.
 applyE2eEnv();
@@ -156,7 +157,7 @@ describe('results verification (e2e)', () => {
       unverifiedUser = await makeUser('vf_unverified', false);
     });
 
-    it('lists an unverified result on the default board, and only verified ones with verified=true', async () => {
+    it('leaves unverified results off the default board, and lists them only with verified=false', async () => {
       // vf_second's result is faster, but it has no replay, so it is not verified.
       const fastBody = {
         mode: 'words', mode2: '10', language: 'de', wpm: 200, rawWpm: 210, accuracy: 99, consistency: 90,
@@ -166,18 +167,29 @@ describe('results verification (e2e)', () => {
       await submit(fast, fastBody).expect(201);
       const honest = await submit(await makeUser('vf_honest'), wordsBody(14)).expect(201);
       verifiedRunId = honest.body.id;
+      const defaults = await request(server()).get('/api/leaderboard?mode=words&mode2=10&language=de').expect(200);
+      expect(defaults.body.map((e: { name: string }) => e.name)).not.toContain('vf_second');
+      expect(defaults.body.every((e: { verified: boolean }) => e.verified)).toBe(true);
+      expect(defaults.body.map((e: { resultId: number }) => e.resultId)).toContain(verifiedRunId);
 
-      const all = await request(server()).get('/api/leaderboard?mode=words&mode2=10&language=de').expect(200);
+      const explicit = await request(server())
+        .get('/api/leaderboard?mode=words&mode2=10&language=de&verified=true')
+        .expect(200);
+      expect(explicit.body).toEqual(defaults.body);
+
+      const all = await request(server()).get('/api/leaderboard?mode=words&mode2=10&language=de&verified=false').expect(200);
       const second = all.body.find((e: { name: string }) => e.name === 'vf_second');
       expect(second).toMatchObject({ verified: false });
       expect(second.resultId).toEqual(expect.any(Number));
+      // The unverified result's replay does not exist: the board's link to it would 404.
+      await request(server()).get(`/api/results/${second.resultId}/replay`).expect(404);
+    });
 
-      const onlyVerified = await request(server())
-        .get('/api/leaderboard?mode=words&mode2=10&language=de&verified=true')
-        .expect(200);
-      expect(onlyVerified.body.map((e: { name: string }) => e.name)).not.toContain('vf_second');
-      expect(onlyVerified.body.every((e: { verified: boolean }) => e.verified)).toBe(true);
-      expect(onlyVerified.body.map((e: { resultId: number }) => e.resultId)).toContain(verifiedRunId);
+    it('the daily board is verified-only: an unverified result there is left out', async () => {
+      const cookie = await makeUser('vf_dailyplain');
+      await submit(cookie, { ...wordsBody(60), mode: 'daily', mode2: utcDate(0), language: 'en', replay: undefined }).expect(201);
+      const board = await request(server()).get(`/api/daily?language=en`).expect(200);
+      expect(board.body.entries.map((e: { name: string }) => e.name)).not.toContain('vf_dailyplain');
     });
 
     it('leaves out users whose email is not verified, even with a verified replay', async () => {
@@ -267,6 +279,9 @@ describe('results verification (e2e)', () => {
 
       const board = await app.get(LeaderboardService).eventLeaderboard(event.id);
       expect(board).toEqual([expect.objectContaining({ name: 'vf_eventer', verified: true, resultId: res.body.id })]);
+
+      // The event is still running, so its replay is not served (a top run could be copied otherwise).
+      await request(server()).get(`/api/results/${res.body.id}/replay`).expect(404);
     });
 
     it('leaves a user with an unverified email off the event board', async () => {
@@ -276,8 +291,10 @@ describe('results verification (e2e)', () => {
       expect(board.map((e) => e.name)).not.toContain('vf_eventless');
     });
 
-    it('accepts a result up to 60 seconds after the event ends', async () => {
-      await submit(eventCookie, eventBody('vf-grace', TEXT, 22)).expect(201);
+    it('accepts a result up to 60 seconds after the event ends, and serves its replay once the event has ended', async () => {
+      const late = await submit(eventCookie, eventBody('vf-grace', TEXT, 22)).expect(201);
+      expect(late.body.verified).toBe(true);
+      await request(server()).get(`/api/results/${late.body.id}/replay`).expect(200);
     });
 
     it('refuses an event that is over, and an unknown event', async () => {
@@ -335,18 +352,111 @@ describe('results verification (e2e)', () => {
     });
   });
 
+  describe('copies and bots', () => {
+    const DUPLICATE = 'This replay has already been submitted';
+
+    it('refuses a copy of a stored replay with 409, from the same user and from another', async () => {
+      const original = await makeUser('vf_original');
+      const body = wordsBody(70);
+      await submit(original, body).expect(201);
+
+      const again = await submit(original, body).expect(409);
+      expect(again.body.message).toBe(DUPLICATE);
+      const other = await submit(await makeUser('vf_copier'), body).expect(409);
+      expect(other.body.message).toBe(DUPLICATE);
+      expect(await prisma.result.count({ where: { user: { nameLower: 'vf_copier' } } })).toBe(0);
+    });
+
+    it('two copies submitted at the same moment: one is saved, the other gets 409', async () => {
+      const [a, b] = await Promise.all([makeUser('vf_racea'), makeUser('vf_raceb')]);
+      const body = wordsBody(71);
+      const [first, second] = await Promise.all([submit(a, body), submit(b, body)]);
+      expect([first.status, second.status].sort()).toEqual([201, 409]);
+      const loser = first.status === 409 ? first : second;
+      expect(loser.body.message).toBe(DUPLICATE);
+      // The replay is stored once, under the winner's result.
+      expect(await prisma.resultReplay.count({ where: { hash: replayHash(body.replay) } })).toBe(1);
+    });
+
+    /** A 50-word test typed at a steady `gap` ms: every key, spaces included, is `gap` ms after the one before. */
+    function steadyWords(gap: number) {
+      const words = Array.from({ length: 50 }, (_, i) => POOL[(i * 5) % POOL.length] ?? 'the');
+      const config: TestConfig = { ...base, mode: 'words', words: 50, language: 'en' };
+      const keys: Key[] = [];
+      let at = 0;
+      words.forEach((word, i) => {
+        for (const ch of word) {
+          keys.push({ at, kind: 'c', ch });
+          at += gap;
+        }
+        if (i < words.length - 1) {
+          keys.push({ at, kind: 's' });
+          at += gap;
+        }
+      });
+      const state = liveRun(config, words, {}, keys);
+      expect(state.status).toBe('finished');
+      return { ...resultFields(config, state, 'words', '50'), replay: replayOf(state) };
+    }
+
+    /**
+     * A 50-word test typed in bursts: each word's keys 5 ms apart, then a 1 s pause before the next word. (Typed
+     * flat out for the whole test, its raw speed would be past the 400 wpm the schema allows.)
+     */
+    function burstWords() {
+      const words = Array.from({ length: 50 }, (_, i) => POOL[(i * 5) % POOL.length] ?? 'the');
+      const config: TestConfig = { ...base, mode: 'words', words: 50, language: 'en' };
+      const keys: Key[] = [];
+      let at = 0;
+      words.forEach((word, i) => {
+        for (const ch of word) {
+          keys.push({ at, kind: 'c', ch });
+          at += 5;
+        }
+        if (i < words.length - 1) {
+          keys.push({ at, kind: 's' });
+          at += 1000;
+        }
+      });
+      const state = liveRun(config, words, {}, keys);
+      expect(state.status).toBe('finished');
+      return { ...resultFields(config, state, 'words', '50'), replay: replayOf(state) };
+    }
+
+    it('a steady 36 ms bot is saved unverified with implausible_timing, and its replay is not stored', async () => {
+      const cookie = await makeUser('vf_steadybot');
+      const res = await submit(cookie, steadyWords(36)).expect(201);
+      expect(res.body).toMatchObject({ verified: false, verificationNote: 'implausible_timing' });
+      await request(server()).get(`/api/results/${res.body.id}/replay`).expect(404);
+    });
+
+    it('a burst bot (5 ms keys, a pause between words) is saved unverified with implausible_timing', async () => {
+      const cookie = await makeUser('vf_burstbot');
+      const res = await submit(cookie, burstWords()).expect(201);
+      expect(res.body).toMatchObject({ verified: false, verificationNote: 'implausible_timing' });
+    });
+
+    it('a human run carries no verificationNote and is verified', async () => {
+      const cookie = await makeUser('vf_humanrun');
+      const res = await submit(cookie, wordsBody(72)).expect(201);
+      expect(res.body.verified).toBe(true);
+      expect(res.body).not.toHaveProperty('verificationNote');
+    });
+  });
+
   describe('body limits', () => {
     it('accepts a 200 KB replay on POST /api/results, and refuses a 300 KB body there', async () => {
       const cookie = await makeUser('vf_big');
       // Zen: the typed text is the target, so a long run is a valid replay with no text check.
       const zen: TestConfig = { ...base, mode: 'zen', language: 'en' };
       const keys: Key[] = [];
+      const rng = createRng(40);
       let at = 0;
       for (const ch of 'lorem ipsum dolor sit amet '.repeat(230)) {
-        at += 100;
+        at += humanGap(rng);
         keys.push(ch === ' ' ? { at, kind: 's' } : { at, kind: 'c', ch });
       }
-      keys.push({ at: at + 100, kind: 'n' });
+      keys.push({ at: at + humanGap(rng), kind: 'n' });
       const state = liveRun(zen, [], {}, keys);
       expect(state.status).toBe('finished');
       const body = { ...resultFields(zen, state, 'zen', 'zen'), replay: replayOf(state) };

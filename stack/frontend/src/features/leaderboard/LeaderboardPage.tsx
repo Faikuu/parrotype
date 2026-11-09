@@ -55,7 +55,7 @@ export default function LeaderboardPage() {
   const board = apiMode2(filters, now);
 
   const query = useQuery({
-    queryKey: ['leaderboard', filters.scope, filters.mode, board, filters.language, filters.verified],
+    queryKey: ['leaderboard', filters.scope, filters.mode, board, filters.language, filters.includeUnverified],
     queryFn: ({ signal }) =>
       leaderboardApi.get(
         {
@@ -63,7 +63,7 @@ export default function LeaderboardPage() {
           mode2: board,
           language: filters.language,
           scope: filters.scope === 'following' ? 'following' : undefined,
-          verified: filters.verified,
+          includeUnverified: filters.includeUnverified,
         },
         signal,
       ),
@@ -77,7 +77,7 @@ export default function LeaderboardPage() {
         mode2: next.mode2,
         language: next.language,
         ...(next.scope === 'following' ? { scope: 'following' } : {}),
-        ...(next.verified ? { verified: 'true' } : {}),
+        ...(next.includeUnverified ? { verified: 'false' } : {}),
       },
       { replace: true },
     );
@@ -161,13 +161,13 @@ export default function LeaderboardPage() {
             </Pill>
           ))}
         </PillGroup>
-        <PillGroup label={t('verify:verifiedOnly')}>
+        <PillGroup label={t('leaderboard:includeUnverified')}>
           <Pill
-            active={filters.verified}
-            title={t('verify:verifiedOnlyTitle')}
-            onClick={() => update({ ...filters, verified: !filters.verified })}
+            active={filters.includeUnverified}
+            title={t('leaderboard:includeUnverifiedTitle')}
+            onClick={() => update({ ...filters, includeUnverified: !filters.includeUnverified })}
           >
-            {t('verify:verifiedOnly')}
+            {t('leaderboard:includeUnverified')}
           </Pill>
         </PillGroup>
       </div>

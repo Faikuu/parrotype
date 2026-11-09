@@ -209,6 +209,12 @@ describe('LeaderboardService visibility and verified filter', () => {
     return { service: new LeaderboardService(prisma as unknown as PrismaService), groupBy };
   }
 
+  function buildDaily() {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = { result: { findMany }, user: { findMany: jest.fn().mockResolvedValue([]) } };
+    return { service: new LeaderboardService(prisma as unknown as PrismaService), findMany };
+  }
+
   it('leaves out users whose email is not verified, and banned users', async () => {
     const { service, groupBy } = build();
     await service.top(query);
@@ -217,14 +223,24 @@ describe('LeaderboardService visibility and verified filter', () => {
     });
   });
 
-  it('keeps only verified results with verified=true, and does not filter on it otherwise', async () => {
+  it('keeps only verified results by default and with verified=true, and includes unverified ones with verified=false', async () => {
     const { service, groupBy } = build();
     await service.top({ ...query, verified: true });
     expect(groupBy.mock.calls[0][0].where).toHaveProperty('verified', true);
 
-    const plain = build();
-    await plain.service.top(query);
-    expect(plain.groupBy.mock.calls[0][0].where).not.toHaveProperty('verified');
+    const implicit = build();
+    await implicit.service.top(query);
+    expect(implicit.groupBy.mock.calls[0][0].where).toHaveProperty('verified', true);
+
+    const including = build();
+    await including.service.top({ ...query, verified: false });
+    expect(including.groupBy.mock.calls[0][0].where).not.toHaveProperty('verified');
+  });
+
+  it('the daily board is verified-only too: its first result per user is the first verified one', async () => {
+    const { service, findMany } = buildDaily();
+    await service.top({ mode: 'daily', mode2: '2026-11-09', language: 'en' });
+    expect(findMany.mock.calls[0][0].where).toHaveProperty('verified', true);
   });
 
   it('builds the event board from verified results of one event, with the same visibility rules', async () => {

@@ -226,6 +226,8 @@ export const pagesLocale = {
       loadError: "Couldn't load the leaderboard.",
       scope: { label: 'Scope', everyone: 'Everyone', following: 'Following' },
       followingEmpty: 'None of the people you follow has a result in this mode yet.',
+      includeUnverified: 'Include unverified',
+      includeUnverifiedTitle: 'Also list results whose keystrokes the server did not check',
     },
     profile: {
       documentTitle: '{{name}} on ParroType',
@@ -551,6 +553,8 @@ export const pagesLocale = {
       loadError: 'Die Rangliste konnte nicht geladen werden.',
       scope: { label: 'Umfang', everyone: 'Alle', following: 'Gefolgt' },
       followingEmpty: 'Keine der Personen, denen du folgst, hat in diesem Modus schon ein Ergebnis.',
+      includeUnverified: 'Unverifizierte einbeziehen',
+      includeUnverifiedTitle: 'Auch Ergebnisse anzeigen, deren Tastenanschläge der Server nicht geprüft hat',
     },
     profile: {
       documentTitle: '{{name}} auf ParroType',
@@ -876,6 +880,8 @@ export const pagesLocale = {
       loadError: 'No se pudo cargar la clasificación.',
       scope: { label: 'Alcance', everyone: 'Todos', following: 'Seguidos' },
       followingEmpty: 'Ninguna de las personas que sigues tiene todavía un resultado en este modo.',
+      includeUnverified: 'Incluir no verificados',
+      includeUnverifiedTitle: 'Mostrar también los resultados cuyas pulsaciones el servidor no comprobó',
     },
     profile: {
       documentTitle: '{{name}} en ParroType',
@@ -1201,6 +1207,8 @@ export const pagesLocale = {
       loadError: 'Nie udało się wczytać rankingu.',
       scope: { label: 'Zakres', everyone: 'Wszyscy', following: 'Obserwowani' },
       followingEmpty: 'Nikt, kogo obserwujesz, nie ma jeszcze wyniku w tym trybie.',
+      includeUnverified: 'Uwzględnij niezweryfikowane',
+      includeUnverifiedTitle: 'Pokaż także wyniki, których naciśnięcia serwer nie sprawdził',
     },
     profile: {
       documentTitle: '{{name}} na ParroType',

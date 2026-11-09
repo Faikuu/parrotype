@@ -8,6 +8,7 @@ import { utcDate } from '../src/common/dates';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { applyE2eEnv } from './e2e.env';
 import { verifyEmail } from './e2e.helpers';
+import { dailyRun } from './replay.fixtures';
 
 applyE2eEnv();
 
@@ -17,6 +18,7 @@ const cookieFrom = (res: request.Response): string => {
   return String(first).split(';')[0];
 };
 
+/** A result with no replay: saved unverified, so it stays off the boards. Used where only validation matters. */
 const result = (mode: string, mode2: string) => ({
   mode,
   mode2,
@@ -33,6 +35,8 @@ const result = (mode: string, mode2: string) => ({
 
 describe('daily challenge (e2e)', () => {
   let app: INestApplication<App>;
+  /** daily_racer's first daily result, as posted (a slow run). */
+  let racerFirst: { wpm: number };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -55,11 +59,10 @@ describe('daily challenge (e2e)', () => {
     await verifyEmail(app.get(PrismaService), 'daily_racer');
 
     const today = utcDate(0);
-    await request(server)
-      .post('/api/results')
-      .set('Cookie', cookie)
-      .send(result('daily', today))
-      .expect(201);
+    const first = dailyRun(utcDate(0), 101, 1.0);
+    const posted = await request(server).post('/api/results').set('Cookie', cookie).send(first).expect(201);
+    expect(posted.body).toMatchObject({ verified: true, mode: 'daily', mode2: today });
+    racerFirst = { wpm: first.wpm };
 
     const stale = await request(server)
       .post('/api/results')
@@ -75,7 +78,7 @@ describe('daily challenge (e2e)', () => {
     expect(board.body).toEqual({
       date: today,
       language: 'en',
-      entries: [expect.objectContaining({ rank: 1, name: 'daily_racer', wpm: 80 })],
+      entries: [expect.objectContaining({ rank: 1, name: 'daily_racer', wpm: first.wpm })],
     });
 
     // Defaults to English, and each language has its own board.
@@ -98,41 +101,44 @@ describe('daily challenge (e2e)', () => {
       .post('/api/auth/login')
       .send({ email: 'daily@example.com', password: 'a-good-password' })
       .expect(200);
-    // A retry at 95 wpm. It is saved (201), but daily_racer keeps the 80 from the first attempt.
-    await request(server)
-      .post('/api/results')
-      .set('Cookie', cookieFrom(login))
-      .send({
-        ...result('daily', today),
-        wpm: 95,
-        rawWpm: 100,
-        accuracy: 99,
-        charStats: { correct: 480, incorrect: 20, extra: 0, missed: 0 },
-      })
-      .expect(201);
+    // A retry, typed faster. It is verified and saved (201), but daily_racer keeps the first attempt.
+    const retry = dailyRun(utcDate(0), 102, 0.6);
+    const saved = await request(server).post('/api/results').set('Cookie', cookieFrom(login)).send(retry).expect(201);
+    expect(saved.body.verified).toBe(true);
+    expect(retry.wpm).toBeGreaterThan(racerFirst.wpm);
 
-    // daily_second's first attempt is 85 wpm, so it ranks above daily_racer (80).
+    // daily_second's first attempt is faster than daily_racer's first, so it ranks above.
     const reg = await request(server)
       .post('/api/auth/register')
       .send({ name: 'daily_second', email: 'daily2@example.com', password: 'a-good-password' })
       .expect(201);
     await verifyEmail(app.get(PrismaService), 'daily_second');
-    await request(server)
-      .post('/api/results')
-      .set('Cookie', cookieFrom(reg))
-      .send({
-        ...result('daily', today),
-        wpm: 85,
-        rawWpm: 87,
-        charStats: { correct: 420, incorrect: 15, extra: 0, missed: 0 },
-      })
-      .expect(201);
+    const second = dailyRun(utcDate(0), 103, 0.7);
+    await request(server).post('/api/results').set('Cookie', cookieFrom(reg)).send(second).expect(201);
+    expect(second.wpm).toBeGreaterThan(racerFirst.wpm);
 
     const board = await request(server).get('/api/daily?language=en').expect(200);
     expect(board.body.entries).toEqual([
-      expect.objectContaining({ rank: 1, name: 'daily_second', wpm: 85 }),
-      expect.objectContaining({ rank: 2, name: 'daily_racer', wpm: 80 }),
+      expect.objectContaining({ rank: 1, name: 'daily_second', wpm: second.wpm }),
+      expect.objectContaining({ rank: 2, name: 'daily_racer', wpm: racerFirst.wpm }),
     ]);
+    const viaLeaderboard = await request(server)
+      .get(`/api/leaderboard?mode=daily&mode2=${today}&language=en`)
+      .expect(200);
+    expect(viaLeaderboard.body.map((e: { name: string }) => e.name)).toEqual(['daily_second', 'daily_racer']);
+  });
+
+  it('leaves an unverified daily result off the board', async () => {
+    const server = app.getHttpServer();
+    const reg = await request(server)
+      .post('/api/auth/register')
+      .send({ name: 'daily_plain', email: 'daily3@example.com', password: 'a-good-password' })
+      .expect(201);
+    await verifyEmail(app.get(PrismaService), 'daily_plain');
+    // No replay: saved unverified, and the daily board (verified results only) does not list it.
+    await request(server).post('/api/results').set('Cookie', cookieFrom(reg)).send(result('daily', utcDate(0))).expect(201);
+    const board = await request(server).get('/api/daily?language=en').expect(200);
+    expect(board.body.entries.map((e: { name: string }) => e.name)).not.toContain('daily_plain');
   });
 
   it('accepts weak results but never ranks them', async () => {

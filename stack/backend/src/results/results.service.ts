@@ -1,17 +1,22 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import type { Result } from '@prisma/client';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma, type Result } from '@prisma/client';
 import { isRankedMode } from '../common/domain';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildInsights, type InsightRow, type Insights } from './insights';
 import { EXPORT_BATCH_SIZE, exportChunks, type ExportFormat } from './export';
+import { replayHash } from './replay-hash';
 import type { Replay, ResultInput } from './results.schemas';
 import { ResultEvents, type ResultSavedEvent } from './result-events';
 import {
   dailyTextMatches,
   eventTextWords,
-  matchReplay,
+  IMPLAUSIBLE_TIMING,
   sameWords,
+  verdictOf,
 } from './replay-verify';
+
+/** Sent with 409 when a replay was already stored under a result (by anyone, the same user included). */
+export const REPLAY_SUBMITTED = 'This replay has already been submitted';
 
 /** An event result is accepted this long after the event's end. */
 export const EVENT_GRACE_MS = 60_000;
@@ -40,6 +45,28 @@ export interface ResultDto {
 export interface ReplayDto {
   result: Omit<ResultDto, 'punctuation' | 'numbers' | 'charStats' | 'verified'> & { name: string };
   replay: Replay;
+}
+
+/** What a save returns: the result, and `verificationNote` when a replay was refused for its timing. */
+export interface SavedResultDto extends ResultDto {
+  verificationNote?: typeof IMPLAUSIBLE_TIMING;
+}
+
+/** The outcome of the replay checks: whether the result is verified, the event (if any), and what to store. */
+interface Check {
+  verified: boolean;
+  eventId: number | null;
+  note: typeof IMPLAUSIBLE_TIMING | null;
+  stored: { data: string; hash: string } | null;
+}
+
+/** True when the insert failed on the unique replay hash (Prisma P2002 naming the hash column). */
+function isReplayHashConflict(err: unknown): boolean {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError &&
+    err.code === 'P2002' &&
+    JSON.stringify(err.meta ?? {}).includes('hash')
+  );
 }
 
 export interface Summary {
@@ -172,36 +199,45 @@ export class ResultsService {
   ) {}
 
   /**
-   * Saves a result. With a replay, the text is checked and the replay must reproduce the stats; then the result
-   * is verified and the replay is stored. Without one, the result is saved unverified.
+   * Saves a result. Without a replay it is saved unverified. With one, the text is checked, the replay must not
+   * have been stored before (409), and then verdictOf decides: a replay that reproduces the stats is verified and
+   * stored with its hash; a replay with implausible timing is saved unverified, with no replay, and the response
+   * says so (verificationNote); one that does not reproduce the stats is rejected (400).
    */
-  async create(userId: number, input: ResultInput, now: Date = new Date()): Promise<ResultDto> {
+  async create(userId: number, input: ResultInput, now: Date = new Date()): Promise<SavedResultDto> {
     const check = await this.checkReplay(input, now);
     const isNewBest = await this.isNewBest(userId, input, check.verified);
-    const row = await this.prisma.result.create({
-      data: {
-        userId,
-        mode: input.mode,
-        mode2: input.mode2,
-        language: input.language,
-        wpm: input.wpm,
-        rawWpm: input.rawWpm,
-        accuracy: input.accuracy,
-        consistency: input.consistency,
-        durationMs: input.durationMs,
-        correctChars: input.charStats.correct,
-        incorrectChars: input.charStats.incorrect,
-        extraChars: input.charStats.extra,
-        missedChars: input.charStats.missed,
-        punctuation: input.punctuation,
-        numbers: input.numbers,
-        verified: check.verified,
-        eventId: check.eventId,
-        ...(check.verified && input.replay
-          ? { replay: { create: { data: JSON.stringify(input.replay) } } }
-          : {}),
-      },
-    });
+    let row: Result;
+    try {
+      row = await this.prisma.result.create({
+        data: {
+          userId,
+          mode: input.mode,
+          mode2: input.mode2,
+          language: input.language,
+          wpm: input.wpm,
+          rawWpm: input.rawWpm,
+          accuracy: input.accuracy,
+          consistency: input.consistency,
+          durationMs: input.durationMs,
+          correctChars: input.charStats.correct,
+          incorrectChars: input.charStats.incorrect,
+          extraChars: input.charStats.extra,
+          missedChars: input.charStats.missed,
+          punctuation: input.punctuation,
+          numbers: input.numbers,
+          verified: check.verified,
+          eventId: check.eventId,
+          ...(check.stored
+            ? { replay: { create: { data: check.stored.data, hash: check.stored.hash } } }
+            : {}),
+        },
+      });
+    } catch (err) {
+      // The pre-check in checkReplay can lose a race with a concurrent copy: the unique hash decides.
+      if (isReplayHashConflict(err)) throw new ConflictException(REPLAY_SUBMITTED);
+      throw err;
+    }
     this.emitSaved({
       resultId: row.id,
       userId,
@@ -212,14 +248,14 @@ export class ResultsService {
       verified: check.verified,
       isNewBest,
     });
-    return toResultDto(row);
+    return { ...toResultDto(row), ...(check.note ? { verificationNote: check.note } : {}) };
   }
 
   /**
-   * The text and the keystrokes. Throws 400 (or 404 for an unknown event) when the replay does not hold.
-   * Returns whether the result is verified and, for an event, the event's id.
+   * The text checks, then the replay checks (see verify). Throws 400 (or 404 for an unknown event) when the text
+   * does not match, and 409 when the replay was stored before.
    */
-  private async checkReplay(input: ResultInput, now: Date): Promise<{ verified: boolean; eventId: number | null }> {
+  private async checkReplay(input: ResultInput, now: Date): Promise<Check> {
     if (input.mode === 'event') {
       // The schema requires a replay for an event result.
       const replay = input.replay as Replay;
@@ -235,11 +271,10 @@ export class ResultsService {
       if (!sameWords(replay.words, eventTextWords(event.text))) {
         throw new BadRequestException("The text doesn't match this event");
       }
-      this.requireMatch(input, replay);
-      return { verified: true, eventId: event.id };
+      return this.verify(input, replay, event.id);
     }
 
-    if (!input.replay) return { verified: false, eventId: null };
+    if (!input.replay) return { verified: false, eventId: null, note: null, stored: null };
     const replay = input.replay;
     if (input.mode === 'daily' && !dailyTextMatches(replay.words, input.mode2, input.language)) {
       throw new BadRequestException("The text doesn't match today's daily challenge");
@@ -251,14 +286,24 @@ export class ResultsService {
       });
       if (!quote) throw new BadRequestException("The text doesn't match a known quote");
     }
-    this.requireMatch(input, replay);
-    return { verified: true, eventId: null };
+    return this.verify(input, replay, null);
   }
 
-  private requireMatch(input: ResultInput, replay: Replay): void {
-    if (!matchReplay(input, replay).matched) {
-      throw new BadRequestException("The result doesn't match its keystrokes");
+  /**
+   * The replay checks. The hash is looked up first, so a copy is refused before the engine runs. Then verdictOf.
+   * Only a verified replay is stored, so an implausible one can be submitted again (it stays unverified).
+   */
+  private async verify(input: ResultInput, replay: Replay, eventId: number | null): Promise<Check> {
+    const hash = replayHash(replay);
+    const copy = await this.prisma.resultReplay.findUnique({ where: { hash }, select: { resultId: true } });
+    if (copy) throw new ConflictException(REPLAY_SUBMITTED);
+
+    const verdict = verdictOf(input, replay);
+    if (verdict.status === 'mismatch') throw new BadRequestException("The result doesn't match its keystrokes");
+    if (verdict.status === 'implausible_timing') {
+      return { verified: false, eventId, note: IMPLAUSIBLE_TIMING, stored: null };
     }
+    return { verified: true, eventId, note: null, stored: { data: JSON.stringify(replay), hash } };
   }
 
   /** True when a verified result beats the user's best verified result for the same ranked filter. */
@@ -280,10 +325,18 @@ export class ResultsService {
     }
   }
 
-  /** A verified result's summary and replay. Only for results of users who are not banned. */
-  async replayOf(id: number): Promise<ReplayDto> {
+  /**
+   * A verified result's summary and replay. Only for results of users who are not banned. An event result's
+   * replay is served once the event has ended, so a top run cannot be copied while the event is still going.
+   */
+  async replayOf(id: number, now: Date = new Date()): Promise<ReplayDto> {
     const row = await this.prisma.result.findFirst({
-      where: { id, verified: true, user: { bannedAt: null } },
+      where: {
+        id,
+        verified: true,
+        user: { bannedAt: null },
+        OR: [{ eventId: null }, { event: { endsAt: { lte: now } } }],
+      },
       select: {
         id: true,
         mode: true,

@@ -100,7 +100,8 @@ export const leaderboardApi = {
     // `scope` is only sent when it is set, so the default request is unchanged.
     const params: Record<string, string> = { mode: query.mode, mode2: query.mode2, language: query.language };
     if (query.scope) params.scope = query.scope;
-    if (query.verified) params.verified = 'true';
+    // The server lists only verified results unless verified=false is sent.
+    if (query.includeUnverified) params.verified = 'false';
     return api<LeaderboardEntry[]>(`/leaderboard?${new URLSearchParams(params).toString()}`, { signal });
   },
 };

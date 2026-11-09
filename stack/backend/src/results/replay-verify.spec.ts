@@ -3,6 +3,7 @@ import {
   codeToWords,
   computeResult,
   createInitialState,
+  createRng,
   dailyWords,
   engineReducer,
   eventAction,
@@ -10,15 +11,20 @@ import {
   type EngineState,
   type TestConfig,
 } from '@parrotype/engine';
-import { base, liveRun, POOL, replayOf, resultFields, typeWords, type Key } from '../../test/replay.fixtures';
+import { base, humanGap, liveRun, POOL, replayOf, resultFields, typeWords, type Key } from '../../test/replay.fixtures';
 import type { Replay } from './results.schemas';
 import {
   configFor,
+  coefficientOfVariation,
   dailyTextMatches,
   eventTextWords,
+  implausibleConsistency,
+  implausibleRhythm,
+  keyIntervals,
   matchReplay,
   playReplay,
   statMismatches,
+  verdictOf,
   type VerifyInput,
 } from './replay-verify';
 
@@ -53,14 +59,15 @@ describe('replay verification: runs the frontend would save', () => {
     const extras: EngineExtras = { code: { breaks, indent } };
     const config: TestConfig = { ...base, mode: 'code', language: 'en', codeLanguage: 'js' };
     const keys: Key[] = [];
+    const rng = createRng(5);
     let at = 0;
     words.forEach((word, i) => {
       for (const ch of word) {
-        at += 150;
+        at += humanGap(rng);
         keys.push({ at, kind: 'c', ch });
       }
       if (i < words.length - 1) {
-        at += 150;
+        at += humanGap(rng);
         keys.push(breaks[i] ? { at, kind: 'n' } : { at, kind: 's' });
       }
     });
@@ -75,9 +82,10 @@ describe('replay verification: runs the frontend would save', () => {
     const config: TestConfig = { ...base, mode: 'zen' };
     const text = 'hello there friend';
     const keys: Key[] = [];
+    const rng = createRng(6);
     let at = 0;
     for (const ch of text) {
-      at += 140;
+      at += humanGap(rng);
       keys.push(ch === ' ' ? { at, kind: 's' } : { at, kind: 'c', ch });
     }
     at += 300;
@@ -277,5 +285,119 @@ describe('text checks', () => {
 
   it('event text is split the way quotes are', () => {
     expect(eventTextWords('  one   two\nthree ')).toEqual(['one', 'two', 'three']);
+  });
+});
+
+/** Typed characters at the given times (ms), all 'c' events, as a replay's events. */
+const typedAt = (times: number[]): Replay['events'] => times.map((t) => ({ t, k: 'c' as const, ch: 'a' }));
+
+/** A run of `count` keys, `gap` ms apart, starting at 0. */
+const steady = (count: number, gap: number): number[] => Array.from({ length: count }, (_, i) => i * gap);
+
+describe('timing plausibility', () => {
+  it('keyIntervals: the gaps between consecutive keystrokes, spaces included, leaving out pauses over 2000 ms', () => {
+    const events: Replay['events'] = [
+      { t: 0, k: 'c', ch: 'a' },
+      { t: 100, k: 's' },
+      { t: 200, k: 'c', ch: 'b' },
+      { t: 4200, k: 'c', ch: 'c' },
+      { t: 4300, k: 'c', ch: 'd' },
+    ];
+    // 200 -> 4200 is a 4000 ms pause: dropped.
+    expect(keyIntervals(events)).toEqual([100, 100, 100]);
+  });
+
+  it('a steady 36 ms bot is implausible: its intervals do not vary', () => {
+    expect(implausibleRhythm(typedAt(steady(200, 36)))).toBe(true);
+    expect(coefficientOfVariation(Array.from({ length: 150 }, () => 36))).toBe(0);
+  });
+
+  it('a 5 ms burst bot is implausible, on the rate and the burst share alike', () => {
+    expect(implausibleRhythm(typedAt(steady(200, 5)))).toBe(true);
+    // Slow overall (about 3 keys a second), but a third of the gaps are bursts: the burst share catches it.
+    const bursts: number[] = [];
+    let t = 0;
+    for (let i = 0; i < 120; i++) {
+      bursts.push(t);
+      t += i % 3 === 0 ? 5 : 300;
+    }
+    expect(implausibleRhythm(typedAt(bursts))).toBe(true);
+  });
+
+  it('human typing is plausible: a log-normal spread around 110 ms with CV about 0.4 passes', () => {
+    const rng = createRng(77);
+    let t = 0;
+    const times: number[] = [];
+    for (let i = 0; i < 400; i++) {
+      times.push(t);
+      t += humanGap(rng);
+    }
+    const intervals = keyIntervals(typedAt(times));
+    const cv = coefficientOfVariation(intervals);
+    expect(cv).toBeGreaterThan(0.3);
+    expect(cv).toBeLessThan(0.5);
+    expect(implausibleRhythm(typedAt(times))).toBe(false);
+  });
+
+  it('the CV check needs 100 intervals: a short regular run is not judged on its spread', () => {
+    expect(implausibleRhythm(typedAt(steady(60, 200)))).toBe(false);
+    expect(implausibleRhythm(typedAt(steady(120, 200)))).toBe(true);
+  });
+
+  it('the rate check needs 50 events, and flags more than 40 events a second', () => {
+    expect(implausibleRhythm(typedAt(steady(40, 10)))).toBe(false);
+    expect(implausibleRhythm(typedAt(steady(60, 10)))).toBe(true);
+    expect(implausibleRhythm(typedAt(steady(60, 1000)))).toBe(false);
+  });
+
+  it('a long pause between typing does not make a human run implausible', () => {
+    const times = [...steady(40, 150), ...steady(40, 150).map((t) => t + 60_000)];
+    expect(implausibleRhythm(typedAt(times))).toBe(false);
+  });
+
+  it('implausibleConsistency: consistency 99 or more on a test of 15 s or more', () => {
+    expect(implausibleConsistency(99.5, 20_000)).toBe(true);
+    expect(implausibleConsistency(99, 15_000)).toBe(true);
+    expect(implausibleConsistency(99.5, 14_000)).toBe(false);
+    expect(implausibleConsistency(98, 20_000)).toBe(false);
+  });
+});
+
+describe('verdictOf', () => {
+  const config: TestConfig = { ...base, mode: 'words', words: 50 };
+  const words = Array.from({ length: 50 }, (_, i) => POOL[i % POOL.length] ?? 'the');
+
+  /** The honest result of a run, and its replay. */
+  function runOf(keys: Key[]) {
+    const state = liveRun(config, words, {}, keys);
+    expect(state.status).toBe('finished');
+    return { input: inputFor(config, state, 'words', '50'), replay: replayOf(state) };
+  }
+
+  it('a person typing with mistakes is verified', () => {
+    const { input, replay } = runOf(typeWords(words, 61, { mistakeRate: 0.05, startAt: 0 }));
+    expect(verdictOf(input, replay)).toEqual({ status: 'verified' });
+  });
+
+  it('a bot pressing every key, spaces included, 36 ms apart is implausible timing: no engine verdict is needed', () => {
+    const keys: Key[] = [];
+    let at = 0;
+    for (const word of words) {
+      for (const ch of word) {
+        keys.push({ at, kind: 'c', ch });
+        at += 36;
+      }
+      keys.push({ at, kind: 's' });
+      at += 36;
+    }
+    keys.pop();
+    const state = liveRun(config, words, {}, keys);
+    expect(state.status).toBe('finished');
+    expect(verdictOf(inputFor(config, state, 'words', '50'), replayOf(state))).toEqual({ status: 'implausible_timing' });
+  });
+
+  it('a bot whose stats do not match its replay is a mismatch, when its timing is plausible', () => {
+    const { input, replay } = runOf(typeWords(words, 62, { startAt: 0 }));
+    expect(verdictOf({ ...input, wpm: input.wpm + 9 }, replay)).toEqual({ status: 'mismatch', fields: ['wpm'] });
   });
 });

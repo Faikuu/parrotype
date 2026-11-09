@@ -211,8 +211,9 @@ function checkRankedFilter(q: { mode: ResultMode; mode2: string }, ctx: z.Refine
 }
 
 /**
- * Zen, custom, weak and code tests can be saved but are never ranked. `verified=true` keeps only results
- * whose replay was checked; the default board also lists unverified results.
+ * Zen, custom, weak and code tests can be saved but are never ranked. Boards list only verified results (whose
+ * replay the server checked) by default. `verified=false` includes unverified results too; `verified=true` (or
+ * no parameter) is the verified-only board. The parsed `verified` is true unless the parameter is `false`.
  */
 export const leaderboardQuerySchema = z
   .object({
@@ -223,7 +224,7 @@ export const leaderboardQuerySchema = z
     verified: z
       .enum(['true', 'false'])
       .optional()
-      .transform((v) => v === 'true'),
+      .transform((v) => v !== 'false'),
   })
   .superRefine(checkRankedFilter);
 

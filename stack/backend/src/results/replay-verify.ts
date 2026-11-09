@@ -184,12 +184,20 @@ export interface ReplayMatch {
   fields: string[];
 }
 
+/** The replayed state that reproduces the stats, or null with the first attempt's mismatched fields. */
+interface Reproduction {
+  state: EngineState | null;
+  fields: string[];
+}
+
 /**
- * Checks the submitted stats against the replay. The engine settings the result does not record are tried
- * in turn: stopOnError (letter and word only differ from off after an incorrect keystroke, so they are skipped
- * when there was none), and the last sample's second for non-time modes (see candidateSkips).
+ * Searches the engine settings the result does not record for one that reproduces the stats. They are tried in
+ * turn: stopOnError (letter and word only differ from off after an incorrect keystroke, so they are tried only
+ * when the off run had one: `hadError`), and the last sample's second for non-time modes (candidateSkips). The
+ * skipped sample only changes consistency, so its variant is tried only when the run with every sample misses on
+ * consistency alone.
  */
-export function matchReplay(input: VerifyInput, replay: Replay): ReplayMatch {
+function reproduce(input: VerifyInput, replay: Replay): Reproduction {
   let first: string[] | null = null;
   for (const stopOnError of STOP_ON_ERROR) {
     const config = configFor(input, stopOnError);
@@ -201,12 +209,119 @@ export function matchReplay(input: VerifyInput, replay: Replay): ReplayMatch {
       const fields = state.status === 'finished' && state.startedAt !== null
         ? statMismatches(input, computeResult(state))
         : ['end'];
-      if (fields.length === 0) return { matched: true, fields: [] };
+      if (fields.length === 0) return { state, fields: [] };
       first ??= fields;
+      // In a non-time mode a sample tick only adds a sample, and only consistency reads the samples (computeResult).
+      // So a run that misses on anything else cannot be fixed by the skipped sample: its skip variant is not run.
+      if (skip === null && fields.some((f) => f !== 'consistency')) break;
     }
     if (!hadError) break;
   }
-  return { matched: false, fields: first ?? ['end'] };
+  return { state: null, fields: first ?? ['end'] };
+}
+
+/** Checks the submitted stats against the replay (see reproduce). */
+export function matchReplay(input: VerifyInput, replay: Replay): ReplayMatch {
+  const found = reproduce(input, replay);
+  return found.state ? { matched: true, fields: [] } : { matched: false, fields: found.fields };
+}
+
+/*
+ * Timing plausibility. A person's keys are spread out and vary from one to the next. A script's are regular, or
+ * come in bursts. None of these checks rejects a submission: an implausible replay is saved unverified, with no
+ * replay stored (see verdictOf). The thresholds are deliberately loose, so a real typist is not caught by them.
+ */
+
+/** A gap between two keystrokes longer than this is a pause, not typing: it is left out of the intervals. */
+export const TIMING_MAX_GAP_MS = 2000;
+/** Fewer keystroke intervals than this are too few to judge how much they vary. */
+export const TIMING_MIN_INTERVALS = 100;
+/** Intervals whose coefficient of variation (stddev / mean) is below this are too regular for typing. */
+export const TIMING_MIN_CV = 0.15;
+/** Keystrokes closer together than this are a double fire, not two presses. */
+export const TIMING_BURST_MS = 8;
+/** Implausible when more than this share of the intervals are bursts. */
+export const TIMING_BURST_SHARE = 0.2;
+/** Implausible when the average events per second, first to last, is above this. */
+export const TIMING_MAX_EVENTS_PER_SECOND = 40;
+/** The events-per-second check needs at least this many events. */
+export const TIMING_MIN_EVENTS_FOR_RATE = 50;
+/** Implausible when the replayed consistency is at least this, on a test at least TIMING_CONSISTENCY_MIN_MS long. */
+export const TIMING_CONSISTENCY_MIN = 99;
+export const TIMING_CONSISTENCY_MIN_MS = 15_000;
+
+/** The `verificationNote` of a result saved unverified because its timing is implausible. */
+export const IMPLAUSIBLE_TIMING = 'implausible_timing';
+
+/**
+ * The gaps between consecutive keystrokes, in ms: every event, a character, a space, a backspace or a newline,
+ * without the pauses over TIMING_MAX_GAP_MS. Spaces are keystrokes too: a bot that presses space at its own
+ * cadence would otherwise show a rhythm of its own between the characters (a 36 ms bot's character gaps alternate
+ * between 36 and 72 ms across a space).
+ */
+export function keyIntervals(events: Replay['events']): number[] {
+  const out: number[] = [];
+  for (let i = 1; i < events.length; i++) {
+    const gap = (events[i]?.t ?? 0) - (events[i - 1]?.t ?? 0);
+    if (gap <= TIMING_MAX_GAP_MS) out.push(gap);
+  }
+  return out;
+}
+
+/** Coefficient of variation (population stddev over mean). 0 when the mean is 0, which is as regular as it gets. */
+export function coefficientOfVariation(xs: readonly number[]): number {
+  if (xs.length === 0) return 0;
+  const m = xs.reduce((a, b) => a + b, 0) / xs.length;
+  if (m <= 0) return 0;
+  const variance = xs.reduce((a, x) => a + (x - m) ** 2, 0) / xs.length;
+  return Math.sqrt(variance) / m;
+}
+
+/**
+ * The checks that need no engine run: the average rate, the burst share and the spread of the intervals.
+ * True when the timing is implausible.
+ */
+export function implausibleRhythm(events: Replay['events']): boolean {
+  const n = events.length;
+  if (n >= TIMING_MIN_EVENTS_FOR_RATE) {
+    const span = (events[n - 1]?.t ?? 0) - (events[0]?.t ?? 0);
+    if (span <= 0 || ((n - 1) * 1000) / span > TIMING_MAX_EVENTS_PER_SECOND) return true;
+  }
+  const intervals = keyIntervals(events);
+  if (intervals.length === 0) return false;
+  const bursts = intervals.filter((g) => g < TIMING_BURST_MS).length;
+  if (bursts > TIMING_BURST_SHARE * intervals.length) return true;
+  return intervals.length >= TIMING_MIN_INTERVALS && coefficientOfVariation(intervals) < TIMING_MIN_CV;
+}
+
+/** The check on the replayed consistency and duration. True when the timing is implausible. */
+export function implausibleConsistency(consistency: number, durationMs: number): boolean {
+  return consistency >= TIMING_CONSISTENCY_MIN && durationMs >= TIMING_CONSISTENCY_MIN_MS;
+}
+
+export type ReplayVerdict =
+  | { status: 'verified' }
+  /** The replay does not reproduce the stats: the submission is rejected (400). */
+  | { status: 'mismatch'; fields: string[] }
+  /** The replay is fine but its timing is not human: the result is saved unverified, with no replay. */
+  | { status: 'implausible_timing' };
+
+/**
+ * The verdict on a submitted result and its replay, checked in this order:
+ * 1. the rhythm, which needs no engine run (so a bot's flood is rejected cheaply);
+ * 2. the replay must reproduce the stats;
+ * 3. the replayed consistency and duration.
+ *
+ * Known limitation: a copy of a real run with its timings slightly altered still passes. The duplicate check on
+ * the replay hash, the timing checks and hiding event replays make that more costly; they do not rule it out.
+ */
+export function verdictOf(input: VerifyInput, replay: Replay): ReplayVerdict {
+  if (implausibleRhythm(replay.events)) return { status: 'implausible_timing' };
+  const found = reproduce(input, replay);
+  if (!found.state) return { status: 'mismatch', fields: found.fields };
+  const result = computeResult(found.state);
+  if (implausibleConsistency(result.consistency, result.durationMs)) return { status: 'implausible_timing' };
+  return { status: 'verified' };
 }
 
 /** True when two word lists are the same, in order. */

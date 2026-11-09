@@ -8,13 +8,15 @@ import { utcDate } from '../src/common/dates';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { applyE2eEnv } from './e2e.env';
 import { makeAdministrator, revokeAdministrator, verifyEmail } from './e2e.helpers';
+import { dailyRun } from './replay.fixtures';
 
 applyE2eEnv();
 
 // A fresh app per file. Throttles to keep in mind: the report route allows 5 requests a minute (every
 // request counts, including refused ones), register and login 10 a minute, everything else 100 a minute.
 const PASSWORD = 'moderation-password-1';
-const BOARD = '/api/leaderboard?mode=words&mode2=100&language=es';
+// Unverified results are included (verified=false): this file checks who is hidden, not what is verified.
+const BOARD = '/api/leaderboard?mode=words&mode2=100&language=es&verified=false';
 
 const cookieFrom = (res: request.Response): string => {
   const header = res.headers['set-cookie'];
@@ -205,7 +207,7 @@ describe('reports, admin moderation and suspensions (e2e)', () => {
       await request(server)
         .post('/api/results')
         .set('Cookie', target)
-        .send({ ...wordsResult(50), mode: 'daily', mode2: utcDate(0), language: 'en' })
+        .send(dailyRun(utcDate(0), 201))
         .expect(201);
       const dailyBefore = await request(server).get('/api/daily?language=en').expect(200);
       expect(dailyBefore.body.entries.map((e: { name: string }) => e.name)).toContain('mod_target');

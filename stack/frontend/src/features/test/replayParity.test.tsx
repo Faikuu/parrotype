@@ -1,7 +1,8 @@
 /**
  * Frontend/backend parity: a test typed through the real hook at a human pace (with typos and backspaces) must
- * come out verified. The submit request is answered by the backend's own verifier (replay-verify.ts, imported
- * only here), so a payload the server would reject fails this test.
+ * come out verified. The submit request is answered by the backend's own verdict (replay-verify.ts, imported
+ * only here: the same verdictOf the server runs), so a payload the server would reject, or would save unverified
+ * for its timing, fails this test.
  */
 import type { ReactNode } from 'react';
 import { act, renderHook } from '@testing-library/react';
@@ -14,8 +15,9 @@ import { useTypingTest, type TypingTest } from './useTypingTest';
 
 type Body = { mode: string; mode2: string; language: string; replay?: BackendReplay } & Record<string, unknown>;
 type BackendReplay = { v: 1; words: string[]; events: Array<{ t: number; k: string; ch?: string }>; code?: { breaks: boolean[]; indent: number[] } };
+type BackendVerdict = { status: 'verified' } | { status: 'mismatch'; fields: string[] } | { status: 'implausible_timing' };
 interface BackendVerify {
-  matchReplay: (input: Record<string, unknown>, replay: BackendReplay) => { matched: boolean; fields: string[] };
+  verdictOf: (input: Record<string, unknown>, replay: BackendReplay) => BackendVerdict;
 }
 
 /**
@@ -45,7 +47,7 @@ interface Server {
   fetch: ReturnType<typeof vi.fn>;
 }
 
-/** The API stub: the signed-in user, and POST /results verified by the backend's matchReplay. */
+/** The API stub: the signed-in user, and POST /results answered the way the backend answers (verdictOf). */
 function serverWith(tamper?: (body: Body) => void): Server {
   const bodies: Body[] = [];
   const fetch = vi.fn(async (url: string, init?: RequestInit) => {
@@ -57,8 +59,13 @@ function serverWith(tamper?: (body: Body) => void): Server {
       bodies.push(body);
       if (!body.replay) return json(201, { id: 1, verified: false });
       // The server's own check: the same function the backend runs on submit.
-      const verdict = backendVerify.matchReplay(body, body.replay!);
-      if (!verdict.matched) return json(400, { statusCode: 400, message: "The result doesn't match its keystrokes" });
+      const verdict = backendVerify.verdictOf(body, body.replay!);
+      if (verdict.status === 'mismatch') {
+        return json(400, { statusCode: 400, message: "The result doesn't match its keystrokes" });
+      }
+      if (verdict.status === 'implausible_timing') {
+        return json(201, { id: 1, verified: false, verificationNote: 'implausible_timing' });
+      }
       return json(201, { id: 1, verified: true, mode: body.mode, mode2: body.mode2, createdAt: new Date().toISOString() });
     }
     return json(404, { statusCode: 404, message: 'Not Found' });
@@ -87,14 +94,27 @@ interface TypeOptions {
 }
 
 /**
- * Types the test the way a person would: a key every 90 to 240 ms, with typos corrected by backspace. Runs until the
- * test has finished (its own rules: the last word, or the timer). The timers are fake, so the ticks run on time too.
+ * The gap a person leaves between two keys: log-normal around 110 ms, with a coefficient of variation of about 0.4.
+ * The same model as the backend's humanGap (test/replay.fixtures.ts), so a run typed with it looks human to the server.
+ */
+function humanPause(rng: () => number): number {
+  const sigma = Math.sqrt(Math.log(1 + 0.4 * 0.4));
+  const u1 = Math.max(rng(), 1e-12);
+  const u2 = rng();
+  const normal = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  return Math.max(30, Math.round(110 * Math.exp(sigma * normal)));
+}
+
+/**
+ * Types the test the way a person would: a key about every 110 ms (humanPause), with typos corrected by backspace.
+ * Runs until the test has finished (its own rules: the last word, or the timer). The timers are fake, so the ticks
+ * run on time too.
  */
 async function typeUntilFinished(result: { current: TypingTest }, { seed, typoRate }: TypeOptions) {
   const rng = createRng(seed);
   const pause = async () => {
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(90 + Math.floor(rng() * 150));
+      await vi.advanceTimersByTimeAsync(humanPause(rng));
     });
   };
   const type = (ch: string) => act(() => result.current.typeText(ch));

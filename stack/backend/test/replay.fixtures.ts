@@ -8,6 +8,7 @@ import {
   type EngineState,
   type TestConfig,
 } from '@parrotype/engine';
+import { dailyWords } from '@parrotype/engine';
 import type { Replay } from '../src/results/results.schemas';
 
 /**
@@ -28,6 +29,18 @@ export const base: TestConfig = {
   punctuation: false, numbers: false, language: 'en', customText: '', stopOnError: 'off',
   noBackspace: false, suddenDeath: false, codeLanguage: 'js',
 };
+
+/**
+ * The gap a person leaves between two keys: log-normal around 110 ms, with a coefficient of variation of about 0.4.
+ * Human typing varies like this; a script's gaps do not (see replay-verify.ts, implausibleRhythm).
+ */
+export function humanGap(rng: () => number): number {
+  const sigma = Math.sqrt(Math.log(1 + 0.4 * 0.4));
+  const u1 = Math.max(rng(), 1e-12);
+  const u2 = rng();
+  const normal = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  return Math.max(30, Math.round(110 * Math.exp(sigma * normal)));
+}
 
 export const POOL = ['the', 'quick', 'brown', 'fox', 'jumps', 'over', 'lazy', 'dog', 'pack', 'my', 'box', 'with', 'five', 'dozen', 'liquor', 'jugs'];
 
@@ -74,16 +87,17 @@ export function replayOf(state: EngineState, extras: EngineExtras = {}): Replay 
   };
 }
 
-/** Types `targets` one after another, with a wrong letter and a backspace now and then. */
+/** Types `targets` one after another, with a wrong letter and a backspace now and then (human-paced, see humanGap). */
 export function typeWords(
   targets: string[],
   seed: number,
-  opts: { mistakeRate?: number; startAt?: number; backspace?: boolean } = {},
+  opts: { mistakeRate?: number; startAt?: number; backspace?: boolean; pace?: number } = {},
 ): Key[] {
   const rng = createRng(seed);
   const keys: Key[] = [];
   let at = opts.startAt ?? 0;
-  const gap = (): number => 120 + Math.floor(rng() * 260);
+  // `pace` scales every gap: below 1 types faster (the same human model, a shorter median).
+  const gap = (): number => Math.round(humanGap(rng) * (opts.pace ?? 1));
   targets.forEach((word, i) => {
     for (let c = 0; c < word.length; c++) {
       if (rng() < (opts.mistakeRate ?? 0)) {
@@ -123,4 +137,16 @@ export function resultFields(config: TestConfig, state: EngineState, mode: strin
     durationMs: Math.round(r.durationMs),
     charStats: r.charStats,
   };
+}
+
+/**
+ * A daily result for `date`, typed for real: the day's words, a replay and the stats of that run, so the server
+ * verifies it. `pace` scales the gaps (below 1 is faster). Each run needs its own seed: an identical replay is 409.
+ */
+export function dailyRun(date: string, seed: number, pace = 1) {
+  const words = dailyWords(date, 'en');
+  const config: TestConfig = { ...base, mode: 'daily', language: 'en', punctuation: true, numbers: false };
+  const state = liveRun(config, words, {}, typeWords(words, seed, { mistakeRate: 0.03, startAt: 0, pace }));
+  if (state.status !== 'finished') throw new Error('the daily run did not finish');
+  return { ...resultFields(config, state, 'daily', date), punctuation: true, replay: replayOf(state) };
 }

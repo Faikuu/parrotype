@@ -185,8 +185,8 @@ export type LeaderboardQuery = {
   mode2: string;
   language: Language;
   scope?: LeaderboardScope;
-  /** Only results whose replay was checked. */
-  verified?: boolean;
+  /** Unverified results are listed too. Off by default: a board shows only results whose replay was checked. */
+  includeUnverified?: boolean;
 };
 
 // Friends and moderation (docs/SPEC-2.3.md).

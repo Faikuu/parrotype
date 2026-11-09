@@ -147,7 +147,8 @@ describe('ParroType API (e2e)', () => {
   });
 
   it('lists the saved ranked result on the leaderboard', async () => {
-    const board = await request(app.getHttpServer()).get('/api/leaderboard?mode=time&mode2=60&language=en').expect(200);
+    // The result has no replay, so it is unverified: the board includes unverified results with verified=false.
+    const board = await request(app.getHttpServer()).get('/api/leaderboard?mode=time&mode2=60&language=en&verified=false').expect(200);
     expect(board.body).toEqual([
       expect.objectContaining({ rank: 1, name: 'e2e_typist', wpm: 80 }),
     ]);

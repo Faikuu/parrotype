@@ -33,7 +33,10 @@ export interface LeaderboardRow {
 /** The filter of one board. Banned users and users with an unverified email never appear: see userVisible. */
 type Where = Prisma.ResultWhereInput;
 
-/** What the board is for: a ranked mode, a date, and optionally the viewer's friends and verified results only. */
+/**
+ * What the board is for: a ranked mode, a date, the viewer's friends (scope), and whether unverified results count.
+ * `verified` defaults to true: only results whose replay the server checked rank. `verified: false` includes the rest.
+ */
 export interface LeaderboardInput {
   mode: LeaderboardQuery['mode'];
   mode2: string;
@@ -154,7 +157,7 @@ export class LeaderboardService {
       language: query.language,
       user: { ...userVisible },
     };
-    if (query.verified) where.verified = true;
+    if (query.verified !== false) where.verified = true;
     if (query.scope === 'following') {
       if (viewerId === undefined) throw new Error('scope=following needs a viewer');
       const follows = await this.prisma.follow.findMany({

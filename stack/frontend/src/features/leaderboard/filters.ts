@@ -15,8 +15,8 @@ export interface BoardFilters {
   language: BoardLanguage;
   /** `following` needs a session. The page falls back to `all` when signed out. */
   scope: BoardScope;
-  /** Only results whose keystroke replay the server checked (the `verified=true` URL param). */
-  verified: boolean;
+  /** Unverified results are listed too (the `verified=false` URL param). Off: only verified results rank. */
+  includeUnverified: boolean;
 }
 
 const DEFAULT_OPTION: Record<BoardMode, string> = { time: '60', words: '25', daily: 'today' };
@@ -38,8 +38,8 @@ export function parseFilters(params: URLSearchParams): BoardFilters {
     ? (rawLang as BoardLanguage)
     : 'en';
   const scope: BoardScope = params.get('scope') === 'following' ? 'following' : 'all';
-  const verified = params.get('verified') === 'true';
-  return { mode, mode2, language, scope, verified };
+  const includeUnverified = params.get('verified') === 'false';
+  return { mode, mode2, language, scope, includeUnverified };
 }
 
 /** The UTC calendar date (YYYY-MM-DD) `daysAgo` days before `now`. */
