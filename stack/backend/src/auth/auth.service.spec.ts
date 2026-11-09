@@ -20,13 +20,16 @@ type UserRow = {
   tokenVersion: number;
   bannedAt: Date | null;
   createdAt: Date;
+  totpEnabledAt?: Date | null;
 };
 
 function setup() {
   const prisma = {
     user: {
-      findFirst: jest.fn<Promise<unknown>, [unknown]>().mockResolvedValue(null),
+      findMany: jest.fn<Promise<unknown[]>, [unknown]>().mockResolvedValue([]),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       findUnique: jest.fn<Promise<UserRow | null>, [unknown]>().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({}),
       create: jest.fn(),
     },
   };
@@ -39,6 +42,22 @@ function setup() {
   );
   return { service, prisma, jwt, permissions };
 }
+
+/** A user row as the stale-account check reads it: unverified, no results, no groups, created now unless overridden. */
+function staleRow(id: number, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    email: `user${id}@example.com`,
+    nameLower: `user${id}`,
+    emailVerifiedAt: null,
+    bannedAt: null,
+    createdAt: new Date(),
+    _count: { results: 0, groups: 0 },
+    ...overrides,
+  };
+}
+
+const verifiedRow = (id: number) => staleRow(id, { emailVerifiedAt: new Date(), createdAt: new Date(0) });
 
 describe('AuthService', () => {
   describe('register', () => {
@@ -101,10 +120,10 @@ describe('AuthService', () => {
 
     it('rejects a name that differs only by case from an existing one (ALICE after alice) with 409', async () => {
       const { service, prisma } = setup();
-      // Behaves like the database: a row exists with nameLower 'alice'.
-      prisma.user.findFirst.mockImplementation(async (args: unknown) => {
+      // Behaves like the database: a verified row exists with nameLower 'alice'.
+      prisma.user.findMany.mockImplementation(async (args: unknown) => {
         const { where } = args as { where: { OR: Array<{ nameLower?: string }> } };
-        return where.OR.some((c) => c.nameLower === 'alice') ? { id: 1 } : null;
+        return where.OR.some((c) => c.nameLower === 'alice') ? [verifiedRow(1)] : [];
       });
 
       await expect(
@@ -115,16 +134,118 @@ describe('AuthService', () => {
 
     it('rejects a duplicate name or email with 409', async () => {
       const { service, prisma } = setup();
-      prisma.user.findFirst.mockResolvedValue({ id: 1 });
+      prisma.user.findMany.mockResolvedValue([{ ...staleRow(1), createdAt: new Date() }]);
 
       await expect(
         service.register({ name: 'taken', email: 'a@example.com', password: 'password123' }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.user.deleteMany).not.toHaveBeenCalled();
+    });
+
+    describe('stale accounts (name or email takeover)', () => {
+      const input = { name: 'Squatted', email: 'squat@example.com', password: 'password123' };
+      const hours = (h: number) => new Date(Date.now() - h * 60 * 60 * 1000);
+
+      function registerAfter(prisma: ReturnType<typeof setup>['prisma'], rows: unknown[]) {
+        prisma.user.findMany.mockResolvedValue(rows);
+        prisma.user.deleteMany.mockResolvedValue({ count: rows.length });
+        prisma.user.create.mockImplementation(async ({ data }: { data: UserRow }) => ({
+          id: 99, name: data.name, nameLower: data.nameLower, email: data.email, passwordHash: data.passwordHash,
+          tokenVersion: 0, bannedAt: null, createdAt: new Date(),
+        }));
+      }
+
+      it('deletes an unverified account older than 72 hours with no results or groups, and registers', async () => {
+        const { service, prisma } = setup();
+        registerAfter(prisma, [staleRow(5, { createdAt: hours(73) })]);
+
+        const result = await service.register(input);
+
+        expect(result.user.id).toBe(99);
+        expect(prisma.user.deleteMany).toHaveBeenCalledTimes(1);
+        const where = prisma.user.deleteMany.mock.calls[0][0].where;
+        expect(where).toMatchObject({
+          id: { in: [5] },
+          emailVerifiedAt: null,
+          bannedAt: null,
+          results: { none: {} },
+          groups: { none: {} },
+        });
+        expect(where.createdAt.lt.getTime()).toBeLessThanOrEqual(hours(72).getTime());
+        expect(prisma.user.create).toHaveBeenCalledTimes(1);
+      });
+
+      it('takes the name of a stale account even when the email is free', async () => {
+        const { service, prisma } = setup();
+        registerAfter(prisma, [staleRow(5, { createdAt: hours(100), email: 'other@example.com' })]);
+        await service.register(input);
+        expect(prisma.user.deleteMany).toHaveBeenCalledTimes(1);
+      });
+
+      it('refuses (409, nothing deleted) when the account is younger than 72 hours', async () => {
+        const { service, prisma } = setup();
+        registerAfter(prisma, [staleRow(5, { createdAt: hours(71) })]);
+        await expect(service.register(input)).rejects.toBeInstanceOf(ConflictException);
+        expect(prisma.user.deleteMany).not.toHaveBeenCalled();
+        expect(prisma.user.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses when the account has results, is in a group, is verified or is suspended', async () => {
+        for (const override of [
+          { _count: { results: 1, groups: 0 } },
+          { _count: { results: 0, groups: 1 } },
+          { emailVerifiedAt: new Date() },
+          { bannedAt: new Date() },
+        ]) {
+          const { service, prisma } = setup();
+          registerAfter(prisma, [staleRow(5, { createdAt: hours(200), ...override })]);
+          await expect(service.register(input)).rejects.toBeInstanceOf(ConflictException);
+          expect(prisma.user.deleteMany).not.toHaveBeenCalled();
+        }
+      });
+
+      it('refuses when the name is held by a stale account but the email by a fresh one', async () => {
+        const { service, prisma } = setup();
+        registerAfter(prisma, [
+          staleRow(5, { createdAt: hours(200) }),
+          { ...staleRow(6, { createdAt: hours(1) }), email: 'squat@example.com', nameLower: 'someone-else' },
+        ]);
+        await expect(service.register(input)).rejects.toBeInstanceOf(ConflictException);
+        expect(prisma.user.deleteMany).not.toHaveBeenCalled();
+      });
+
+      it('refuses when the delete finds the account changed (verified or used in the meantime)', async () => {
+        const { service, prisma } = setup();
+        registerAfter(prisma, [staleRow(5, { createdAt: hours(200) })]);
+        prisma.user.deleteMany.mockResolvedValue({ count: 0 });
+        await expect(service.register(input)).rejects.toBeInstanceOf(ConflictException);
+        expect(prisma.user.create).not.toHaveBeenCalled();
+      });
     });
   });
 
   describe('login', () => {
+    it('with two-factor on, stores a fresh login nonce and returns a ticket carrying it', async () => {
+      const { service, prisma, jwt } = setup();
+      const passwordHash = await bcrypt.hash('secret-password', 4);
+      prisma.user.findUnique.mockResolvedValue({
+        id: 3, name: 'alice', nameLower: 'alice', email: 'alice@example.com', passwordHash,
+        tokenVersion: 2, bannedAt: null, createdAt: new Date(0), totpEnabledAt: new Date(0),
+      });
+
+      const result = await service.login({ email: 'alice@example.com', password: 'secret-password' });
+
+      expect(result).toEqual({ kind: 'twoFactor', ticket: 'signed.token.value' });
+      const nonce = prisma.user.update.mock.calls[0][0].data.loginTicketNonce as string;
+      expect(nonce).toMatch(/^[0-9a-f]{32}$/);
+      expect(prisma.user.update).toHaveBeenCalledWith({ where: { id: 3 }, data: { loginTicketNonce: nonce } });
+      expect(jwt.signAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ sub: 3, v: 2, purpose: '2fa', n: nonce }),
+        expect.anything(),
+      );
+    });
+
     it('returns a public user and token for correct credentials', async () => {
       const { service, prisma } = setup();
       const passwordHash = await bcrypt.hash('secret-password', 4);

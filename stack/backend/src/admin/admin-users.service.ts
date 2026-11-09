@@ -298,7 +298,15 @@ export class AdminUsersService {
       }
       await tx.user.update({
         where: { id },
-        data: { totpSecret: null, totpEnabledAt: null, tokenVersion: { increment: 1 } },
+        data: {
+          totpSecret: null,
+          totpEnabledAt: null,
+          totpLastStep: null,
+          loginTicketNonce: null,
+          twoFactorFailures: 0,
+          twoFactorLockedUntil: null,
+          tokenVersion: { increment: 1 },
+        },
       });
       await tx.recoveryCode.deleteMany({ where: { userId: id } });
       await tx.adminAction.create({

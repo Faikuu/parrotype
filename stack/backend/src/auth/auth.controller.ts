@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { AuthService, SESSION_COOKIE, sessionCookieOptions } from './auth.service';
+import { padResponse } from './response-timing';
 import {
   changePasswordSchema,
   deleteAccountSchema,
@@ -39,6 +40,10 @@ import { pickMailLanguage } from '../mail/locale';
 const AUTH_THROTTLE = { default: { limit: 10, ttl: 60_000 } };
 /** Reset requests per client address: 5 in 15 minutes. The per-email limit is in the service. */
 const FORGOT_THROTTLE = { default: { limit: 5, ttl: 15 * 60_000 } };
+/** Reset attempts per client address: 10 in 15 minutes. A reset costs a bcrypt hash only for a valid link. */
+const RESET_THROTTLE = { default: { limit: 10, ttl: 15 * 60_000 } };
+/** Verification attempts per client address: 20 in 15 minutes. */
+const VERIFY_THROTTLE = { default: { limit: 20, ttl: 15 * 60_000 } };
 
 @Controller('auth')
 export class AuthController {
@@ -131,6 +136,7 @@ export class AuthController {
   }
 
   /** Always { ok: true }, whether or not the email has an account. */
+  /** Always { ok: true }. Takes at least 400 ms plus up to 100 ms of jitter, so the timing does not reveal the account. */
   @Post('password/forgot')
   @HttpCode(200)
   @Throttle(FORGOT_THROTTLE)
@@ -138,12 +144,18 @@ export class AuthController {
     @Body(new ZodValidationPipe(forgotPasswordSchema)) body: ForgotPasswordInput,
     @Req() req: Request,
   ) {
-    await this.passwordReset.forgot(body.email, pickMailLanguage(req.headers['accept-language']));
+    const started = Date.now();
+    try {
+      await this.passwordReset.forgot(body.email, pickMailLanguage(req.headers['accept-language']));
+    } finally {
+      await padResponse(started);
+    }
     return { ok: true };
   }
 
   @Post('password/reset')
   @HttpCode(200)
+  @Throttle(RESET_THROTTLE)
   async resetPassword(@Body(new ZodValidationPipe(resetPasswordSchema)) body: ResetPasswordInput) {
     await this.passwordReset.reset(body.token, body.newPassword);
     return { ok: true };
@@ -151,6 +163,7 @@ export class AuthController {
 
   @Post('email/verify')
   @HttpCode(200)
+  @Throttle(VERIFY_THROTTLE)
   async verifyEmail(@Body(new ZodValidationPipe(tokenSchema)) body: TokenInput) {
     await this.verification.verify(body.token);
     return { ok: true };
@@ -189,9 +202,11 @@ export class AuthController {
   async disableTwoFactor(
     @CurrentUser() current: AuthUser,
     @Body(new ZodValidationPipe(twoFactorPasswordCodeSchema)) body: TwoFactorPasswordCodeInput,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { token } = await this.twoFactor.disable(current.id, body.password, body.code);
+    const lang = pickMailLanguage(req.headers['accept-language']);
+    const { token } = await this.twoFactor.disable(current.id, body.password, body.code, lang);
     res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
     return { ok: true };
   }
@@ -203,8 +218,14 @@ export class AuthController {
   regenerateRecoveryCodes(
     @CurrentUser() current: AuthUser,
     @Body(new ZodValidationPipe(twoFactorPasswordCodeSchema)) body: TwoFactorPasswordCodeInput,
+    @Req() req: Request,
   ) {
-    return this.twoFactor.regenerateRecoveryCodes(current.id, body.password, body.code);
+    return this.twoFactor.regenerateRecoveryCodes(
+      current.id,
+      body.password,
+      body.code,
+      pickMailLanguage(req.headers['accept-language']),
+    );
   }
 
   /** Second login step: the ticket and a code. Sets the session cookie and returns { user }. */
@@ -215,7 +236,8 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { user, token } = await this.twoFactor.verifyLogin(body.ticket, body.code, req.ip ?? 'unknown');
+    const lang = pickMailLanguage(req.headers['accept-language']);
+    const { user, token } = await this.twoFactor.verifyLogin(body.ticket, body.code, req.ip ?? 'unknown', lang);
     res.cookie(SESSION_COOKIE, token, sessionCookieOptions());
     return { user };
   }

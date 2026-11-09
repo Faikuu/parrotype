@@ -31,6 +31,14 @@ model User {
   totpSecret      String?
   /// Set when two-factor sign-in is switched on. A pending secret (set up but not confirmed) has this null.
   totpEnabledAt   DateTime?
+  /// Failed second-factor checks (TOTP, recovery code) since the last success or lockout. Reaching 8 locks the second factor.
+  twoFactorFailures    Int       @default(0)
+  /// While in the future, two-factor checks are refused with 429 without reading the code.
+  twoFactorLockedUntil DateTime?
+  /// The TOTP step (unix seconds / 30) of the last accepted code. A code at or below it is refused (replay).
+  totpLastStep         Int?
+  /// Random nonce of the newest login ticket (16 bytes, hex). Only the ticket carrying it can be spent; spending clears it.
+  loginTicketNonce     String?
   /// Permission groups this user belongs to. Effective permissions are read on every request; see src/permissions.
   groups       UserGroup[]
   results      Result[]
@@ -164,6 +172,8 @@ model ResultReplay {
   resultId Int    @id
   /// JSON: { v: 1, words: string[], events: EngineEvent[], code?: {...} }. Can be large, hence the MySQL MEDIUMTEXT.
   data     String @db.MediumText
+  /// sha256 hex of the canonical replay. Unique, so one replay cannot be stored under two results.
+  hash     String? @unique
   result   Result @relation(fields: [resultId], references: [id], onDelete: Cascade)
 }
 

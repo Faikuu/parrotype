@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -14,7 +15,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { Permission } from '../permissions/catalog';
 import { PermissionsService } from '../permissions/permissions.service';
 import type { ChangePasswordInput, LoginInput, RegisterInput } from './auth.schemas';
-import { signTicket } from './ticket';
+import { newLoginNonce, signTicket } from './ticket';
 
 export const SESSION_COOKIE = 'pt_session';
 export const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -25,6 +26,12 @@ const WRONG_CURRENT_PASSWORD = 'Current password is incorrect';
 const WRONG_PASSWORD = 'Password is incorrect';
 const SAME_PASSWORD = 'New password must be different from the current one';
 export const SUSPENDED = 'This account has been suspended';
+/**
+ * An unverified account this old, with no results and no permission group, is treated as abandoned: a new
+ * registration may take its name or email. Such an account cannot be on a leaderboard or hold any power.
+ */
+export const STALE_UNVERIFIED_HOURS = 72;
+const HOUR_MS = 60 * 60 * 1000;
 
 /**
  * bcrypt hash of a throwaway string. Compared against when the email is unknown,
@@ -81,6 +88,8 @@ export function sessionCookieOptions(): CookieOptions {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
@@ -89,11 +98,7 @@ export class AuthService {
 
   async register(input: RegisterInput): Promise<{ user: PublicUser; token: string }> {
     const nameLower = input.name.toLowerCase();
-    const taken = await this.prisma.user.findFirst({
-      where: { OR: [{ nameLower }, { email: input.email }] },
-      select: { id: true },
-    });
-    if (taken) throw new ConflictException(TAKEN);
+    await this.releaseStaleAccounts(nameLower, input.email);
 
     const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
     let user: User;
@@ -112,6 +117,51 @@ export class AuthService {
     return { user: toPublicUser(user, []), token: await this.issueSession(user) };
   }
 
+  /**
+   * Frees the name or email for a registration when every account holding one of them is stale: unverified,
+   * older than STALE_UNVERIFIED_HOURS, not suspended, with no results and no permission group. Such accounts
+   * are deleted (their rows go with them). If any account holding them is not stale, the answer is 409.
+   * The delete repeats the conditions, so an account that changed in the meantime is not deleted.
+   */
+  private async releaseStaleAccounts(nameLower: string, email: string): Promise<void> {
+    const taken = await this.prisma.user.findMany({
+      where: { OR: [{ nameLower }, { email }] },
+      select: {
+        id: true,
+        emailVerifiedAt: true,
+        bannedAt: true,
+        createdAt: true,
+        _count: { select: { results: true, groups: true } },
+      },
+    });
+    if (taken.length === 0) return;
+
+    const cutoff = new Date(Date.now() - STALE_UNVERIFIED_HOURS * HOUR_MS);
+    const stale = taken.every(
+      (u) =>
+        u.emailVerifiedAt === null &&
+        u.bannedAt === null &&
+        u.createdAt.getTime() < cutoff.getTime() &&
+        u._count.results === 0 &&
+        u._count.groups === 0,
+    );
+    if (!stale) throw new ConflictException(TAKEN);
+
+    const ids = taken.map((u) => u.id);
+    const { count } = await this.prisma.user.deleteMany({
+      where: {
+        id: { in: ids },
+        emailVerifiedAt: null,
+        bannedAt: null,
+        createdAt: { lt: cutoff },
+        results: { none: {} },
+        groups: { none: {} },
+      },
+    });
+    if (count !== ids.length) throw new ConflictException(TAKEN);
+    for (const id of ids) this.logger.log(`Released stale unverified account ${id} for a new registration`);
+  }
+
   async login(input: LoginInput): Promise<LoginResult> {
     const user = await this.prisma.user.findUnique({ where: { email: input.email } });
     const matches = await bcrypt.compare(input.password, user?.passwordHash ?? DUMMY_HASH);
@@ -119,7 +169,10 @@ export class AuthService {
     // Checked after the password, so only someone who knows it learns the account is suspended.
     if (user.bannedAt) throw new ForbiddenException(SUSPENDED);
     if (user.totpEnabledAt) {
-      return { kind: 'twoFactor', ticket: await signTicket(this.jwt, user) };
+      // Replaces the nonce of any earlier ticket: only this login's ticket can complete now.
+      const nonce = newLoginNonce();
+      await this.prisma.user.update({ where: { id: user.id }, data: { loginTicketNonce: nonce } });
+      return { kind: 'twoFactor', ticket: await signTicket(this.jwt, user, nonce) };
     }
     return { kind: 'session', ...(await this.completeLogin(user)) };
   }

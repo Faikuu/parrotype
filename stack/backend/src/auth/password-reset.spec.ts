@@ -1,5 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+
+// Count the hashes, without changing them: a bad link must never reach bcrypt.
+jest.mock('bcrypt', () => {
+  const actual = jest.requireActual<typeof import('bcrypt')>('bcrypt');
+  return { ...actual, hash: jest.fn(actual.hash) };
+});
 import type { PrismaService } from '../prisma/prisma.service';
 import type { MailService } from '../mail/mail.service';
 import { PasswordResetService, INVALID_RESET } from './password-reset.service';
@@ -228,5 +234,52 @@ describe('password reset (stub clock)', () => {
     const token = tokenFromMail(mail);
     users[0].bannedAt = new Date();
     await expect(service.reset(token, 'some-password-1')).rejects.toThrow(INVALID_RESET);
+  });
+
+  it('refuses an unknown, used or expired link before any bcrypt work', async () => {
+    const { service, mail } = await setup();
+    const hash = bcrypt.hash as unknown as jest.Mock;
+
+    hash.mockClear();
+    await expect(service.reset('not-a-real-token', 'some-password-1')).rejects.toThrow(INVALID_RESET);
+    expect(hash).not.toHaveBeenCalled();
+
+    await service.forgot('typist@example.com', 'en');
+    const used = tokenFromMail(mail);
+    await service.reset(used, 'first-new-pass-1');
+    hash.mockClear();
+    await expect(service.reset(used, 'second-new-pass-2')).rejects.toThrow(INVALID_RESET);
+    expect(hash).not.toHaveBeenCalled();
+
+    await service.forgot('typist@example.com', 'en');
+    const expired = tokenFromMail(mail);
+    clock.advanceMinutes(31);
+    hash.mockClear();
+    await expect(service.reset(expired, 'third-new-pass-3')).rejects.toThrow(INVALID_RESET);
+    expect(hash).not.toHaveBeenCalled();
+  });
+
+  it('hashes exactly once for a valid link', async () => {
+    const { service, mail } = await setup();
+    await service.forgot('typist@example.com', 'en');
+    const token = tokenFromMail(mail);
+    const hash = bcrypt.hash as unknown as jest.Mock;
+    hash.mockClear();
+    await service.reset(token, 'valid-new-pass-1');
+    expect(hash).toHaveBeenCalledTimes(1);
+  });
+
+  it('does the same database work for an unknown email as for a known one', async () => {
+    const work = async (email: string) => {
+      const { service, db } = await setup();
+      await service.forgot(email, 'en');
+      return {
+        findUnique: db.prisma.user.findUnique.mock.calls.length,
+        count: db.prisma.authToken.count.mock.calls.length,
+        updateMany: db.prisma.authToken.updateMany.mock.calls.length,
+        writeTx: db.prisma.writeTx.mock.calls.length,
+      };
+    };
+    expect(await work('nobody@example.com')).toEqual(await work('typist@example.com'));
   });
 });

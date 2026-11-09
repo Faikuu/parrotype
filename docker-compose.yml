@@ -5,8 +5,9 @@
 #   JWT_SECRET=<at least 32 random characters, e.g. openssl rand -base64 48>
 #   TOTP_ENCRYPTION_KEY=<at least 32 random characters, different from JWT_SECRET; encrypts the two-factor secrets>
 #   POSTGRES_PASSWORD=<database password; use letters and digits only, it goes into a URL>
-# Optional, for the account emails: MAIL_TRANSPORT=smtp and SMTP_URL=smtp://user:password@host:587 (without them the
-# emails are only logged, so password-reset links are not delivered). APP_URL is the public address of the web app.
+# Email delivery needs SMTP. Set MAIL_TRANSPORT=smtp and SMTP_URL=smtp://user:password@host:587 for the account emails
+# (password reset, email verification, lock notices). With the default console transport nothing is delivered: the log
+# records only the recipient and subject, so no reset or verification link can be used. APP_URL is the public address of the web app.
 #
 # Start:  docker compose up -d --build
 # Open:   http://localhost:8080

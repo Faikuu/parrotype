@@ -3,7 +3,7 @@ import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { getEnv } from '../config/env';
 import type { MailLanguage } from './locale';
-import { renderResetMail, renderVerifyMail } from './templates';
+import { renderLockoutMail, renderResetMail, renderVerifyMail } from './templates';
 
 export interface MailMessage {
   to: string;
@@ -19,9 +19,12 @@ export interface SentMail extends MailMessage {
 export const MAIL_OUTBOX_SIZE = 50;
 
 /**
- * Sends the account emails. MAIL_TRANSPORT=console logs them and keeps the last 50 in memory;
+ * Sends the account emails. MAIL_TRANSPORT=console keeps the last 50 in memory and logs each message;
  * MAIL_TRANSPORT=smtp sends them through SMTP_URL. Callers decide what a failed send means: the
  * password and verification flows log it and still answer the request.
+ *
+ * The console transport is for development and tests. In production it delivers nothing, and its log
+ * line carries no body, so the links (reset and verification tokens) never reach the log.
  */
 @Injectable()
 export class MailService {
@@ -32,7 +35,7 @@ export class MailService {
   constructor() {
     const env = getEnv();
     if (env.MAIL_TRANSPORT === 'console' && env.NODE_ENV === 'production') {
-      this.logger.warn('MAIL_TRANSPORT=console in production: account emails (and their links) go to the log, not to users.');
+      this.logger.warn('MAIL_TRANSPORT=console in production: account emails are not delivered. Set MAIL_TRANSPORT=smtp.');
     }
   }
 
@@ -47,6 +50,12 @@ export class MailService {
     return this.send({ to, subject, text });
   }
 
+  /** The notice that two-factor sign-in locked after repeated wrong codes. */
+  sendTwoFactorLockout(to: string, lang: MailLanguage): Promise<void> {
+    const { subject, text } = renderLockoutMail(lang);
+    return this.send({ to, subject, text });
+  }
+
   /**
    * Sends one message. The console transport records it before the first await, so a caller that
    * does not await the promise still finds it in the outbox straight away.
@@ -55,11 +64,7 @@ export class MailService {
     const env = getEnv();
     if (env.MAIL_TRANSPORT === 'console') {
       this.record(message);
-      if (env.NODE_ENV === 'test') {
-        this.logger.debug(`[mail] to=${message.to} subject="${message.subject}"`);
-      } else {
-        this.logger.log(`[mail] to=${message.to} subject="${message.subject}"\n${message.text}`);
-      }
+      this.logLine(message, env.NODE_ENV);
       return;
     }
     await this.smtp().sendMail({ from: env.MAIL_FROM, to: message.to, subject: message.subject, text: message.text });
@@ -77,6 +82,21 @@ export class MailService {
       if (this.outbox[i].to.toLowerCase() === wanted) return this.outbox[i];
     }
     return undefined;
+  }
+
+  /**
+   * The log line for a console message. Production gets the recipient and subject and no body, because the
+   * body carries the one-time links. Development gets the body. Tests get a debug line only.
+   */
+  private logLine(message: MailMessage, nodeEnv: string): void {
+    const head = `[mail] to=${message.to} subject="${message.subject}"`;
+    if (nodeEnv === 'test') {
+      this.logger.debug(head);
+    } else if (nodeEnv === 'production') {
+      this.logger.log(`${head}. Mail is not delivered with MAIL_TRANSPORT=console. Set MAIL_TRANSPORT=smtp.`);
+    } else {
+      this.logger.log(`${head}\n${message.text}`);
+    }
   }
 
   private record(message: MailMessage): void {

@@ -73,3 +73,36 @@ export function renderVerifyMail(lang: MailLanguage, link: string): RenderedMail
   const t = VERIFY[lang];
   return { subject: t.subject, text: t.body(link) };
 }
+
+/** Sent when two-factor sign-in locks after repeated wrong codes. No link: nothing to click. */
+const LOCKOUT: Record<MailLanguage, { subject: string; body: string }> = {
+  en: {
+    subject: 'Two-factor sign-in was locked on your ParroType account',
+    body:
+      'Someone entered your password and several wrong two-factor codes. If this wasn\'t you, change your password.\n\n' +
+      'Two-factor sign-in is locked for 15 minutes.',
+  },
+  pl: {
+    subject: 'Logowanie dwuetapowe zostało zablokowane na Twoim koncie ParroType',
+    body:
+      'Ktoś wpisał Twoje hasło i kilka błędnych kodów dwuetapowych. Jeśli to nie Ty, zmień hasło.\n\n' +
+      'Logowanie dwuetapowe jest zablokowane na 15 minut.',
+  },
+  de: {
+    subject: 'Zwei-Faktor-Anmeldung bei deinem ParroType-Konto gesperrt',
+    body:
+      'Jemand hat dein Passwort und mehrere falsche Codes der Zwei-Faktor-Anmeldung eingegeben. Wenn du das nicht warst, ändere dein Passwort.\n\n' +
+      'Die Zwei-Faktor-Anmeldung ist für 15 Minuten gesperrt.',
+  },
+  es: {
+    subject: 'La verificación en dos pasos se bloqueó en tu cuenta de ParroType',
+    body:
+      'Alguien ha introducido tu contraseña y varios códigos de verificación en dos pasos incorrectos. Si no has sido tú, cambia tu contraseña.\n\n' +
+      'La verificación en dos pasos está bloqueada durante 15 minutos.',
+  },
+};
+
+export function renderLockoutMail(lang: MailLanguage): RenderedMail {
+  const t = LOCKOUT[lang];
+  return { subject: t.subject, text: t.body };
+}

@@ -31,15 +31,27 @@ export function jwtSecretProblem(secret: string): string | null {
   return null;
 }
 
-/** TOTP_ENCRYPTION_KEY uses the same sample and distinct-character rules as JWT_SECRET. */
+/**
+ * TOTP_ENCRYPTION_KEY is the key material for the two-factor secrets and the recovery codes. Beyond the
+ * sample and length rules it must be varied: at least 16 distinct characters, and no character may make up
+ * more than a quarter of it (a key like "aaaa...bbbb" has little entropy however long it is).
+ */
 export const MIN_TOTP_KEY_LENGTH = 32;
+export const MIN_TOTP_KEY_DISTINCT_CHARS = 16;
+export const MAX_TOTP_KEY_CHAR_SHARE = 0.25;
 export const TOTP_SAMPLE_MESSAGE = `TOTP_ENCRYPTION_KEY is still the sample value. ${GENERATE_HINT}`;
 
 export function totpKeyProblem(key: string): string | null {
   if (key.toLowerCase().includes('change-me')) return TOTP_SAMPLE_MESSAGE;
-  const distinct = new Set(Array.from(key)).size;
-  if (distinct < MIN_JWT_SECRET_DISTINCT_CHARS) {
-    return `TOTP_ENCRYPTION_KEY must have at least ${MIN_JWT_SECRET_DISTINCT_CHARS} distinct characters`;
+  const chars = Array.from(key);
+  const counts = new Map<string, number>();
+  for (const c of chars) counts.set(c, (counts.get(c) ?? 0) + 1);
+  if (counts.size < MIN_TOTP_KEY_DISTINCT_CHARS) {
+    return `TOTP_ENCRYPTION_KEY must have at least ${MIN_TOTP_KEY_DISTINCT_CHARS} distinct characters`;
+  }
+  const most = Math.max(...counts.values());
+  if (most > MAX_TOTP_KEY_CHAR_SHARE * chars.length) {
+    return `TOTP_ENCRYPTION_KEY must not use any one character for more than ${MAX_TOTP_KEY_CHAR_SHARE * 100}% of the key`;
   }
   return null;
 }
