@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { HEARTBEAT_MS, JOIN_TIMEOUT_MS, MAX_SOCKETS_PER_IP } from './races.protocol';
 
 export const RACE_OPTIONS = Symbol('RACE_OPTIONS');
 export const RACE_SOCKET_LIMITS = Symbol('RACE_SOCKET_LIMITS');
@@ -50,8 +51,8 @@ function readInt(source: NodeJS.ProcessEnv, name: string, min: number, max: numb
  */
 export function raceSocketLimits(source: NodeJS.ProcessEnv = process.env): RaceSocketLimits {
   return {
-    maxSocketsPerIp: readInt(source, 'RACE_MAX_SOCKETS_PER_IP', 1, 1000, 10),
-    joinTimeoutMs: readInt(source, 'RACE_JOIN_TIMEOUT_MS', 100, 120_000, 10_000),
-    heartbeatMs: readInt(source, 'RACE_HEARTBEAT_MS', 100, 120_000, 25_000),
+    maxSocketsPerIp: readInt(source, 'RACE_MAX_SOCKETS_PER_IP', 1, 1000, MAX_SOCKETS_PER_IP),
+    joinTimeoutMs: readInt(source, 'RACE_JOIN_TIMEOUT_MS', 100, 120_000, JOIN_TIMEOUT_MS),
+    heartbeatMs: readInt(source, 'RACE_HEARTBEAT_MS', 100, 120_000, HEARTBEAT_MS),
   };
 }

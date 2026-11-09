@@ -7,7 +7,9 @@ describe('socket limits', () => {
     });
 
     it('uses the first X-Forwarded-For entry when a proxy is trusted', () => {
-      expect(clientIp({ 'x-forwarded-for': '198.51.100.7, 10.0.0.2' }, '10.1.1.1', 1)).toBe('198.51.100.7');
+      expect(clientIp({ 'x-forwarded-for': '198.51.100.7, 10.0.0.2' }, '10.1.1.1', 1)).toBe('10.0.0.2');
+      // A forged left-most entry is ignored: the trusted proxy's appended entry wins.
+      expect(clientIp({ 'x-forwarded-for': '6.6.6.6, 203.0.113.5' }, '10.1.1.1', 1)).toBe('203.0.113.5');
     });
 
     it('falls back to the socket address when a trusted proxy sent no usable header', () => {

@@ -1,14 +1,19 @@
 import type { IncomingHttpHeaders } from 'node:http';
 
 /**
- * The client IP used for limits. The first X-Forwarded-For entry only when a proxy is trusted
- * (trustProxy > 0); otherwise the socket's own address.
+ * The client IP used for limits, resolved like Express's `trust proxy` hop count: each trusted proxy
+ * appends the address it received the request from, so the client is the entry `trustProxy` places
+ * from the right. Entries further left are client-supplied and can be forged, so they are never used.
+ * With trustProxy = 0 the socket's own address is used.
  */
 export function clientIp(headers: IncomingHttpHeaders, remoteAddress: string | undefined, trustProxy: number): string {
   if (trustProxy > 0) {
     const raw = headers['x-forwarded-for'];
-    const first = (Array.isArray(raw) ? raw[0] : raw)?.split(',')[0]?.trim();
-    if (first) return first;
+    const list = (Array.isArray(raw) ? raw.join(',') : (raw ?? ''))
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    if (list.length > 0) return list[Math.max(0, list.length - trustProxy)]!;
   }
   return remoteAddress ?? 'unknown';
 }
