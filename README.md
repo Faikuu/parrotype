@@ -11,19 +11,25 @@ A minimal typing test, named after the bird that repeats what it hears. You type
 ## What it does
 
 - **Multiplayer races.** Create a race, share the link, and up to eight people type the same quote live. Each player is a parrot moving along a lane. Guests can join with a nickname. The server checks every finish, so nobody can claim a time they didn't type.
-- **Eight modes**: time (15/30/60/120 s), words (10/25/50/100), quote, zen (free typing, finish with Shift+Enter), pangram, custom text, **daily** and **weak keys**. Punctuation and numbers can be mixed into time and words tests.
+- **Nine modes**: time (15/30/60/120 s), words (10/25/50/100), quote, zen (free typing, finish with Shift+Enter), pangram, custom text, **daily**, **weak keys** and **code**. Punctuation and numbers can be mixed into time and words tests.
 - **Dynamic pangrams.** Pangram mode builds a fresh sentence that uses every letter of the alphabet, each time. It runs a randomised greedy set cover over the word list, keeps the shortest candidates and checks every result. Works in all four languages, including Polish ą–ż and German ä ö ü ß.
 - **Daily challenge.** Everyone gets the same text for a given UTC date: a pangram followed by 40 words, generated from a seed. It has its own leaderboard, where your first attempt of the day is the one that counts.
 - **Weak keys practice.** ParroType tracks which letters you miss, per language and stored locally, and builds tests around them. The results screen shows a keyboard heatmap of your misses.
+- **Code mode.** Type short, real snippets in JavaScript, Python, Rust or Go, with line breaks (Enter) and indentation filled in for you.
+- **Learn.** A guided path of 14 lessons that introduces the keys a few at a time, from the home row to punctuation. Each lesson unlocks the next once you reach its speed and accuracy goal.
+- **Keyboard layout emulation.** Practise Dvorak, Colemak, Colemak-DH, Workman, AZERTY or QWERTZ on a physical QWERTY keyboard.
+- **Ghost races.** Race a replay of your previous run of the same text. In daily mode, you automatically race your first attempt of the day.
 - **Pace caret.** A faint second caret runs at your personal best, your recent average or a set speed.
 - **Replays.** Watch any test play back keystroke by keystroke, at half, normal or double speed, with a scrubber.
-- **Slowest words.** The results list the five words that cost you the most time, with one click to practise them.
+- **Slowest words and letter pairs.** The results list the words and letter pairs (bigrams) that cost you the most time, with one click to practise them.
+- **Share cards.** Download your result as an image in your theme, or share it straight from your phone.
 - **Modifiers**: no backspace, and sudden death (the first mistake ends the test).
 - **Tape mode** (one scrolling line), **typing sounds** (three synthesised profiles, no audio files), **copy result**, and a "New personal best" message that works without an account.
 - **Command line.** Press `Esc`, `Ctrl/Cmd+Shift+P` or `Ctrl/Cmd+K` to search every setting and action: mode, time, language, theme (with a live preview), font, caret and pace caret, tape mode, sounds, blind mode, focus mode, stop on error, quick restart key, interface language, custom text and navigation. Searching at the top level also reaches nested options, so typing "cockatoo" finds the theme directly.
 - **Results** with wpm, raw wpm, accuracy, consistency, a per-second chart with error markers, and character counts. Signed-in results are saved automatically.
-- **Accounts**: personal bests per mode, a progress chart with a 10-test moving average, an activity calendar, a wpm histogram, speed by hour of day, streaks, 16 achievements, recent results, CSV/JSON export, password change and account deletion. Each user has a **public profile** at `/u/<name>`, and there's a **leaderboard** per mode and language.
-- **Four languages to type in**: English, Polish, German and Spanish, each with word lists, pangrams and public-domain quotes. The interface is in English or Polish.
+- **Accounts**: personal bests per mode, a progress chart with a 10-test moving average, an activity calendar, a wpm histogram, speed by hour of day, streaks, 16 achievements, recent results, CSV/JSON export, password change and account deletion. Each user has a **public profile** at `/u/<name>`, where others can **follow** them, and there's a **leaderboard** per mode and language, with a friends-only view. You can embed a **badge** with your best speed (for example in a GitHub README): `![ParroType](https://your-host/api/users/<name>/badge.svg)`.
+- **Moderation.** Users can report others. Admins review reports, suspend accounts and remove results from an admin area, and every action goes into an audit log. Admin rights are granted only from the command line: `npm --workspace stack/backend run admin -- grant <name>`.
+- **Four languages to type in**: English, Polish, German and Spanish, each with word lists, pangrams and public-domain quotes. The interface is available in English, Polish, German and Spanish.
 - **Eight themes named after parrots** (Kea, Kākāpō, Macaw, Cockatoo, Galah, Lorikeet, Budgie, Black Cockatoo), five monospace fonts, adjustable text size and caret style. You can also build your own theme with the theme editor (with a contrast check) and share it as a short code.
 - **Works offline.** ParroType installs as an app (PWA), and the typing test keeps working without a connection.
 
@@ -99,6 +105,7 @@ The app is served at http://localhost:8080. Only the web container is exposed. I
 - Passwords are hashed with bcrypt (cost 12). Login gives the same error and takes the same time for an unknown email as for a wrong password.
 - All input is validated with zod. Results also get a plausibility check, and zen, custom and weak-key results are kept out of the leaderboard.
 - Rate limiting runs globally (100/min) and is tighter on login and register (10/min). Behind a reverse proxy, set `TRUST_PROXY` to the number of hops so limits apply per client.
+- Admin rights live in the database, are checked on every request and can't be obtained over HTTP. Suspended accounts lose their sessions immediately and disappear from leaderboards, profiles and badges. Badges are rendered with every value XML-escaped and served with a locked-down content policy.
 - Races: WebSocket connections must come from an allowed origin. Room ids are random, rooms hold at most eight players and expire when idle, messages are size- and rate-limited, and progress and finishes are checked against server time.
 - Exports escape spreadsheet formulas. Public profiles never include email addresses. Changing your password signs out your other devices, and deleting your account removes all your results.
 - helmet headers, a CORS allowlist (`CORS_ORIGINS`), a 50 kB body limit, and the configuration is validated at startup (the API refuses to start with a JWT secret shorter than 32 characters).
