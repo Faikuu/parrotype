@@ -156,7 +156,7 @@ const CARET_STYLES: CaretStyle[] = ['line', 'block', 'underline', 'off'];
 const LIVE_STATS: LiveStats[] = ['wpm', 'acc', 'both', 'off'];
 const STOP_ON_ERROR: TestConfig['stopOnError'][] = ['off', 'letter', 'word'];
 const QUICK_RESTART: QuickRestart[] = ['tab', 'esc', 'off'];
-const UI_LANGUAGES: UiLanguage[] = ['en', 'pl'];
+const UI_LANGUAGES: UiLanguage[] = ['en', 'pl', 'de', 'es'];
 
 /** Builds the palette's command tree for the current state. Pure apart from calling the ctx functions. */
 export function buildCommands(ctx: CommandContext): Command[] {

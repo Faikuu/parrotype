@@ -10,7 +10,7 @@ export type FontSize = 1 | 1.25 | 1.5 | 2 | 2.5 | 3;
 export type CaretStyle = 'line' | 'block' | 'underline' | 'off';
 export type LiveStats = 'wpm' | 'acc' | 'both' | 'off';
 export type QuickRestart = 'tab' | 'esc' | 'off';
-export type UiLanguage = 'en' | 'pl';
+export type UiLanguage = 'en' | 'pl' | 'de' | 'es';
 export type PaceCaret = 'off' | 'pb' | 'average' | 'custom';
 export type SoundProfile = 'off' | 'click' | 'soft' | 'typewriter';
 
@@ -44,11 +44,18 @@ export interface Settings extends SettingsData {
   reset: () => void;
 }
 
+/** The interface language for a browser language tag (e.g. 'de-AT'), or English when it has no translation. */
+export function uiLanguageForTag(tag: string | undefined): UiLanguage {
+  const lower = tag?.toLowerCase() ?? '';
+  if (lower.startsWith('pl')) return 'pl';
+  if (lower.startsWith('de')) return 'de';
+  if (lower.startsWith('es')) return 'es';
+  return 'en';
+}
+
 function detectUiLanguage(): UiLanguage {
   try {
-    return typeof navigator !== 'undefined' && navigator.language?.toLowerCase().startsWith('pl')
-      ? 'pl'
-      : 'en';
+    return typeof navigator !== 'undefined' ? uiLanguageForTag(navigator.language) : 'en';
   } catch {
     return 'en';
   }
@@ -109,7 +116,7 @@ const ALLOWED: Partial<Record<keyof SettingsData, readonly unknown[]>> = {
   caretStyle: ['line', 'block', 'underline', 'off'],
   liveStats: ['wpm', 'acc', 'both', 'off'],
   quickRestart: ['tab', 'esc', 'off'],
-  uiLanguage: ['en', 'pl'],
+  uiLanguage: ['en', 'pl', 'de', 'es'],
   paceCaret: ['off', 'pb', 'average', 'custom'],
   sound: ['off', 'click', 'soft', 'typewriter'],
   layout: LAYOUT_IDS,
