@@ -1,10 +1,21 @@
-import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, HttpException, ServiceUnavailableException } from '@nestjs/common';
 import type { PrismaService } from '../prisma/prisma.service';
-import { MAX_PLAYERS, MAX_ROOMS, RACE_LIMIT_MS, RaceError, ROOM_IDLE_TTL_MS } from './races.protocol';
+import {
+  DISCONNECT_GRACE_MS,
+  MAX_PLAYERS,
+  MAX_ROOMS,
+  MAX_ROOMS_PER_IP,
+  MAX_WPM,
+  RACE_LIMIT_MS,
+  RaceError,
+  ROOM_IDLE_TTL_MS,
+  UNJOINED_ROOM_TTL_MS,
+} from './races.protocol';
 import { RoomService, type RoomClosedEvent } from './room.service';
 
 const HELLO = 'hello world'; // 11 chars
 const LONG = 'x'.repeat(350); // over the 300 limit, must never be picked
+const MAX_LEN = 'y'.repeat(300); // the longest quote the service picks
 
 interface QuoteRow {
   language: string;
@@ -25,6 +36,7 @@ function makePrisma(rows: QuoteRow[]) {
 }
 
 const en = (text: string, source = 'test'): QuoteRow => ({ language: 'en', text, source, length: text.length });
+const TOKEN = /^[0-9a-f]{32}$/;
 
 describe('RoomService', () => {
   let clock: { t: number };
@@ -60,6 +72,14 @@ describe('RoomService', () => {
     service.join(id, connId, { user: null, guestName: `p_${connId}` });
   }
 
+  /** Starts a race with the given connections seated (the first is the host), and moves it to racing. */
+  async function running(...conns: string[]): Promise<string> {
+    const id = await roomWith(...conns);
+    await service.start(conns[0]);
+    clock.t += 3000;
+    return id;
+  }
+
   describe('create', () => {
     it('picks a quote of at most 300 chars in the language and hides the text in the lobby', async () => {
       const id = await service.create('en');
@@ -76,6 +96,40 @@ describe('RoomService', () => {
       for (let i = 0; i < MAX_ROOMS; i++) await service.create('en');
       expect(service.roomCount).toBe(MAX_ROOMS);
       await expect(service.create('en')).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+
+    it('lets one IP hold 20 open rooms, and answers 429 for the 21st', async () => {
+      for (let i = 0; i < MAX_ROOMS_PER_IP; i++) await service.create('en', '10.0.0.1');
+      const refused = service.create('en', '10.0.0.1');
+      await expect(refused).rejects.toBeInstanceOf(HttpException);
+      await expect(refused).rejects.toThrow('You have too many open races');
+      // Another IP is not affected.
+      await expect(service.create('en', '10.0.0.2')).resolves.toEqual(expect.any(String));
+    });
+
+    it('frees an IP slot when one of its rooms is removed', async () => {
+      for (let i = 0; i < MAX_ROOMS_PER_IP; i++) await service.create('en', '10.0.0.1');
+      clock.t += UNJOINED_ROOM_TTL_MS + 1;
+      service.sweep();
+      expect(service.roomCount).toBe(0);
+      await expect(service.create('en', '10.0.0.1')).resolves.toEqual(expect.any(String));
+    });
+
+    it('expires a room nobody joined after 2 minutes', async () => {
+      const id = await service.create('en');
+      clock.t += UNJOINED_ROOM_TTL_MS - 1000;
+      service.sweep();
+      expect(service.view(id)).not.toBeNull();
+      clock.t += 2000;
+      service.sweep();
+      expect(service.view(id)).toBeNull();
+    });
+
+    it('does not apply the 2-minute rule to a room a player has joined', async () => {
+      const id = await roomWith('a');
+      clock.t += UNJOINED_ROOM_TTL_MS + 1000;
+      service.sweep();
+      expect(service.view(id)).not.toBeNull();
     });
   });
 
@@ -120,11 +174,85 @@ describe('RoomService', () => {
       for (let i = 0; i < 7; i++) seat(id, `g${i}`);
       expect(service.view(id)?.players).toHaveLength(8);
 
-      const again = service.join(id, 'u2', { user: { id: 1, name: 'me' } });
+      const again = service.join(id, 'u2', { user: { id: 1, name: 'me' } }).playerId;
       expect(service.view(id)?.players).toHaveLength(8);
       expect(service.view(id)?.players.find((p) => p.id === again)?.connected).toBe(true);
       // The old connection no longer holds the seat.
       expect(() => service.progress('u1', 3, 50)).toThrow(new RaceError('Join a race first'));
+    });
+
+    it('returns a 32-hex token with the seat, and a repeated join on the same socket returns the same seat', async () => {
+      const id = await service.create('en');
+      const first = service.join(id, 'c1', { user: null, guestName: 'alice' });
+      expect(first.token).toMatch(TOKEN);
+      expect(service.join(id, 'c1', { user: null, guestName: 'alice' })).toEqual(first);
+      expect(service.view(id)?.players).toHaveLength(1);
+    });
+
+    it('never puts the token in the room view', async () => {
+      const id = await roomWith('a');
+      const view = JSON.stringify(service.view(id));
+      expect(view).not.toMatch(/"token"/);
+    });
+
+    it('a new player cannot join once the countdown has started, but a seated player can still reclaim by token', async () => {
+      const id = await service.create('en');
+      const host = service.join(id, 'host', { user: null, guestName: 'host' });
+      await service.start('host');
+      expect(() => service.join(id, 'late', { user: null, guestName: 'late' })).toThrow(
+        new RaceError('This race has already started'),
+      );
+      clock.t += 3000;
+      expect(() => service.join(id, 'late', { user: null, guestName: 'late' })).toThrow(
+        'This race has already started',
+      );
+      expect(service.join(id, 'host2', { user: null }, host.token).playerId).toBe(host.playerId);
+    });
+
+    it('a signed-in user can still reclaim their seat by user id once the race has started', async () => {
+      const id = await service.create('en');
+      service.join(id, 'u1', { user: { id: 9, name: 'me' } });
+      service.join(id, 'x', { user: null, guestName: 'other' });
+      await service.start('u1');
+      clock.t += 3000;
+      const back = service.join(id, 'u2', { user: { id: 9, name: 'me' } });
+      expect(service.view(id)?.players.find((p) => p.id === back.playerId)).toMatchObject({ connected: true });
+    });
+
+    it('reclaims a seat by token from a new connection, keeping the progress', async () => {
+      const id = await service.create('en');
+      service.join(id, 'host', { user: null, guestName: 'host' });
+      const guest = service.join(id, 'g1', { user: null, guestName: 'gina' });
+      await service.start('host');
+      clock.t += 3000;
+      service.progress('g1', 5, 60);
+      service.disconnect('g1');
+      expect(service.view(id)?.players.find((p) => p.id === guest.playerId)).toMatchObject({
+        connected: false,
+        progress: 5 / 11,
+      });
+
+      const back = service.join(id, 'g2', { user: null }, guest.token);
+      expect(back).toEqual(guest);
+      const seated = service.view(id)!.players.find((p) => p.id === guest.playerId)!;
+      expect(seated).toMatchObject({ connected: true, progress: 5 / 11 });
+      // The new connection now types for the seat.
+      service.progress('g2', 7, 60);
+      expect(service.view(id)?.players.find((p) => p.id === guest.playerId)?.progress).toBeCloseTo(7 / 11);
+    });
+
+    it('treats a token from another room, or an unknown token, as a new join', async () => {
+      const first = await service.create('en');
+      const other = service.join(first, 'a', { user: null, guestName: 'ann' });
+      const second = await service.create('en');
+      const joined = service.join(second, 'b', { user: null, guestName: 'bob' }, other.token);
+      expect(joined.playerId).not.toBe(other.playerId);
+      expect(service.view(second)?.players).toHaveLength(1);
+      expect(service.view(first)?.players).toHaveLength(1);
+      // An unknown token in the room is also just a new join.
+      const third = service.join(second, 'c', { user: null, guestName: 'cy' }, 'f'.repeat(32));
+      expect(third.playerId).not.toBe(joined.playerId);
+      expect(service.view(second)?.players).toHaveLength(2);
     });
   });
 
@@ -154,7 +282,7 @@ describe('RoomService', () => {
 
     it('keeps a disconnected player during a race, marked as not connected', async () => {
       const id = await roomWith('a', 'b');
-      service.start('a');
+      await service.start('a');
       clock.t += 3000;
       service.disconnect('b');
       const view = service.view(id)!;
@@ -212,53 +340,105 @@ describe('RoomService', () => {
       expect(service.view(id)?.players[1].progress).toBeCloseTo(5 / 11);
     });
 
-    it('does not take wpm above 350, and keeps the last valid value', async () => {
+    /** A service whose only quote is the 300-char text, so the pace cap is what limits the progress. */
+    async function longRace(): Promise<{ id: string }> {
+      service.onModuleDestroy();
+      build([en(MAX_LEN, 'max')]);
+      const id = await service.create('en');
+      service.join(id, 'a', { user: null, guestName: 'ann' });
+      await service.start('a');
+      clock.t += 3000; // racing, at elapsed 0
+      return { id };
+    }
+
+    it('caps the characters at the pace the server clock allows (350 wpm plus 15 chars)', async () => {
+      const { id } = await longRace();
+      // At the start the slack is 15 characters.
+      service.progress('a', 300, 0);
+      expect(service.view(id)?.players[0].progress).toBeCloseTo(15 / 300);
+      // 1 second in: floor(1750 * 1000 / 60000) + 15 = 44.
+      clock.t += 1000;
+      service.progress('a', 300, 0);
+      expect(service.view(id)?.players[0].progress).toBeCloseTo(44 / 300);
+      // 60 seconds in: 1765, more than the text, so the text length is the limit.
+      clock.t += 59_000;
+      service.progress('a', 300, 0);
+      expect(service.view(id)?.players[0].progress).toBe(1);
+    });
+
+    it('caps the live wpm at the server-implied pace, and at 350', async () => {
+      const { id } = await longRace();
+      clock.t += 3000; // elapsed 3000
+
+      // 5 chars in 3 s is 20 wpm, so the client's 300 is brought down to 20.
+      service.progress('a', 5, 300);
+      expect(service.view(id)?.players[0].wpm).toBe(20);
+      // A client claim below the implied pace is kept.
+      service.progress('a', 5, 10);
+      expect(service.view(id)?.players[0].wpm).toBe(10);
+      // 102 chars (the cap at 3 s) in 3 s would be 408 wpm, so the 350 limit applies.
+      service.progress('a', 300, 500);
+      expect(service.view(id)?.players[0]).toMatchObject({ wpm: 350, progress: 102 / 300 });
+    });
+
+    it('does not take a wpm above 350 from the client, and keeps the last valid value', async () => {
       const id = await roomWith('a');
       await service.start('a');
-      clock.t += 3000;
+      clock.t += 6000; // racing, then 3 s in
       service.progress('a', 3, 400);
-      expect(service.view(id)?.players[0].wpm).toBe(0);
+      expect(service.view(id)?.players[0].wpm).toBe(12);
       service.progress('a', 4, 120);
       service.progress('a', 5, 400);
-      expect(service.view(id)?.players[0]).toMatchObject({ wpm: 120, progress: 5 / 11 });
+      expect(service.view(id)?.players[0].wpm).toBeLessThanOrEqual(MAX_WPM);
     });
   });
 
   describe('finish', () => {
-    async function running(...conns: string[]): Promise<string> {
-      const id = await roomWith(...conns);
-      await service.start(conns[0]);
-      clock.t += 3000;
-      return id;
-    }
-
     it('rejects a finish before every character is typed', async () => {
       await running('a');
       service.progress('a', 10, 80);
-      expect(() => service.finish('a', 80, 98, 0)).toThrow(
-        'Finish rejected: not every character is typed',
-      );
+      expect(() => service.finish('a', 98)).toThrow('Finish rejected: not every character is typed');
     });
 
-    it('rejects a finish that claims more time than the server clock allows', async () => {
+    it('rejects a finish whose server-computed wpm is above 350, including an instant finish', async () => {
       await running('a');
       service.progress('a', 11, 80);
-      clock.t += 1000;
-      expect(() => service.finish('a', 80, 98, 5000)).toThrow('Finish rejected: finished too fast');
+      expect(() => service.finish('a', 98)).toThrow('Finish rejected: too fast');
+      // 11 chars in 300 ms is 440 wpm.
+      clock.t += 300;
+      expect(() => service.finish('a', 98)).toThrow('Finish rejected: too fast');
     });
 
-    it('accepts a finish within the 500 ms tolerance', async () => {
-      await running('a');
+    it('accepts the first finish that is within the limit, with the server wpm', async () => {
+      const id = await running('a');
       service.progress('a', 11, 80);
-      clock.t += 4500;
-      expect(() => service.finish('a', 80, 98, 5000)).not.toThrow();
+      clock.t += 300;
+      expect(() => service.finish('a', 98)).toThrow('Finish rejected: too fast');
+      // 2.2 words in 400 ms is exactly 330 wpm.
+      clock.t += 100;
+      service.finish('a', 98);
+      expect(service.view(id)?.players[0]).toMatchObject({ place: 1, wpm: 330, accuracy: 98 });
     });
 
-    it('rejects a wpm above the limit', async () => {
-      await running('a');
+    it('computes the wpm and duration on the server, from its own clock', async () => {
+      const id = await running('a');
       service.progress('a', 11, 80);
+      clock.t += 6000;
+      service.finish('a', 98);
+      // 2.2 words over 0.1 minute.
+      expect(service.view(id)?.players[0]).toMatchObject({ wpm: 22 });
+    });
+
+    it('clamps the accuracy to 0-100 and keeps it', async () => {
+      const id = await roomWith('a', 'b', 'c');
+      await service.start('a');
+      clock.t += 3000;
+      for (const c of ['a', 'b', 'c']) service.progress(c, 11, 80);
       clock.t += 10_000;
-      expect(() => service.finish('a', 400, 98, 9000)).toThrow('Finish rejected: wpm is above the limit');
+      service.finish('a', 150);
+      service.finish('b', -3);
+      service.finish('c', 96.5);
+      expect(service.view(id)?.players.map((p) => p.accuracy)).toEqual([100, 0, 96.5]);
     });
 
     it('records places in finish order and ends a solo race', async () => {
@@ -266,9 +446,9 @@ describe('RoomService', () => {
       service.progress('a', 11, 80);
       service.progress('b', 11, 60);
       clock.t += 10_000;
-      service.finish('a', 80, 98, 9000);
+      service.finish('a', 98);
       expect(service.view(id)).toMatchObject({ status: 'racing' });
-      service.finish('b', 60, 95, 9000);
+      service.finish('b', 95);
       const view = service.view(id)!;
       expect(view.status).toBe('finished');
       expect(view.players.map((p) => [p.place, p.accuracy])).toEqual([
@@ -281,8 +461,8 @@ describe('RoomService', () => {
       await running('a');
       service.progress('a', 11, 80);
       clock.t += 10_000;
-      service.finish('a', 80, 98, 9000);
-      expect(() => service.finish('a', 80, 98, 9000)).toThrow(RaceError);
+      service.finish('a', 98);
+      expect(() => service.finish('a', 98)).toThrow(RaceError);
     });
 
     it('does not wait for a disconnected player', async () => {
@@ -290,7 +470,7 @@ describe('RoomService', () => {
       service.disconnect('b');
       service.progress('a', 11, 80);
       clock.t += 10_000;
-      service.finish('a', 80, 98, 9000);
+      service.finish('a', 98);
       expect(service.view(id)?.status).toBe('finished');
     });
 
@@ -298,11 +478,119 @@ describe('RoomService', () => {
       const id = await running('a', 'b');
       service.progress('a', 11, 80);
       clock.t += 10_000;
-      service.finish('a', 80, 98, 9000);
+      service.finish('a', 98);
       clock.t += RACE_LIMIT_MS;
       const view = service.view(id)!;
       expect(view.status).toBe('finished');
       expect(view.players.map((p) => p.place)).toEqual([1, null]);
+    });
+  });
+
+  describe('disconnected players', () => {
+    it('removes a disconnected player when the race finishes', async () => {
+      const id = await running('a', 'b');
+      service.disconnect('b');
+      expect(service.view(id)?.players).toHaveLength(2);
+      service.progress('a', 11, 80);
+      clock.t += 10_000;
+      service.finish('a', 98);
+      const view = service.view(id)!;
+      expect(view.status).toBe('finished');
+      expect(view.players.map((p) => p.name)).toEqual(['guest player0']);
+    });
+
+    it('removes a disconnected player when the time limit ends the race', async () => {
+      const id = await running('a', 'b');
+      service.disconnect('b');
+      clock.t += RACE_LIMIT_MS;
+      const view = service.view(id)!;
+      expect(view.status).toBe('finished');
+      expect(view.players).toHaveLength(1);
+    });
+
+    it('removes a disconnected host, and hands the host role over', async () => {
+      const id = await running('a', 'b');
+      const bId = service.view(id)!.players[1].id;
+      service.disconnect('a');
+      clock.t += RACE_LIMIT_MS;
+      const view = service.view(id)!;
+      expect(view.players.map((p) => p.id)).toEqual([bId]);
+      expect(view.hostId).toBe(bId);
+    });
+
+    it('removes a player who has not come back within 60 seconds', async () => {
+      jest.useFakeTimers();
+      try {
+        const id = await running('a', 'b');
+        const bId = service.view(id)!.players[1].id;
+        service.disconnect('b');
+
+        clock.t += DISCONNECT_GRACE_MS - 1000;
+        jest.advanceTimersByTime(DISCONNECT_GRACE_MS - 1000);
+        expect(service.view(id)?.players.map((p) => p.id)).toContain(bId);
+
+        clock.t += 1000;
+        jest.advanceTimersByTime(1000);
+        expect(service.view(id)?.players.map((p) => p.id)).not.toContain(bId);
+        expect(service.view(id)?.status).toBe('racing');
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('keeps a player who reconnects within 60 seconds, and cancels the timer', async () => {
+      jest.useFakeTimers();
+      try {
+        const id = await service.create('en');
+        service.join(id, 'a', { user: null, guestName: 'ann' });
+        const b = service.join(id, 'b', { user: null, guestName: 'bea' });
+        await service.start('a');
+        clock.t += 3000;
+
+        service.disconnect('b');
+        clock.t += 30_000;
+        jest.advanceTimersByTime(30_000);
+        service.join(id, 'b2', { user: null }, b.token);
+
+        clock.t += 60_000;
+        jest.advanceTimersByTime(60_000);
+        const view = service.view(id)!;
+        expect(view.players.map((p) => p.id)).toContain(b.playerId);
+        expect(view.players.find((p) => p.id === b.playerId)?.connected).toBe(true);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('a disconnected player in the countdown is removed after the grace period too', async () => {
+      jest.useFakeTimers();
+      try {
+        const id = await roomWith('a', 'b');
+        await service.start('a');
+        service.disconnect('b');
+        clock.t += DISCONNECT_GRACE_MS;
+        jest.advanceTimersByTime(DISCONNECT_GRACE_MS);
+        expect(service.view(id)?.players).toHaveLength(1);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('clears the grace timers when the room is removed', async () => {
+      jest.useFakeTimers();
+      try {
+        await running('a', 'b');
+        const before = jest.getTimerCount();
+        service.disconnect('b');
+        expect(jest.getTimerCount()).toBe(before + 1);
+        // Idle for the whole TTL, so the sweep removes the room, its countdown timer and the grace timer.
+        clock.t += ROOM_IDLE_TTL_MS + 1000;
+        service.sweep();
+        expect(service.roomCount).toBe(0);
+        expect(jest.getTimerCount()).toBeLessThan(before);
+      } finally {
+        jest.useRealTimers();
+      }
     });
   });
 
@@ -313,7 +601,7 @@ describe('RoomService', () => {
       clock.t += 3000;
       service.progress('a', 11, 80);
       clock.t += 10_000;
-      service.finish('a', 80, 98, 9000);
+      service.finish('a', 98);
       service.disconnect('b');
       expect(service.view(id)?.status).toBe('finished');
 
@@ -332,8 +620,8 @@ describe('RoomService', () => {
       service.progress('a', 11, 80);
       service.progress('b', 11, 60);
       clock.t += 10_000;
-      service.finish('a', 80, 98, 9000);
-      service.finish('b', 60, 95, 9000);
+      service.finish('a', 98);
+      service.finish('b', 95);
       expect(service.view(id)?.status).toBe('finished');
       await expect(service.start('b')).rejects.toThrow('Only the host can start the race');
     });

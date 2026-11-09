@@ -18,40 +18,46 @@ SPEC.md and SPEC-2.1.md still hold, and the design rules are unchanged. Packages
 ## Backend
 
 ### Races (new module `src/races`)
-- `POST /api/races` body `{ language: Language }` → `201 { id }`. Auth is optional. Throttled to 10/min per IP.
+- `POST /api/races` body `{ language: Language }` → `201 { id }`. Auth is optional. Throttled to 10/min per IP. A client IP may hold at most 20 open rooms (429 `You have too many open races` beyond that).
   - Room id: 8 chars from crypto randomBytes, base32 lowercase without the ambiguous characters.
   - The server picks a random quote in that language from the Quote table (any length ≤ 300 chars).
 - WebSocket gateway via `@nestjs/platform-ws` (`app.useWebSocketAdapter(new WsAdapter(app))` in main.ts and the e2e setup), at the path **`/api/races/ws`**. Gateways don't get the global prefix, so set the path explicitly.
 - **Origin check on upgrade**: reject connections whose `Origin` header isn't in CORS_ORIGINS (prevents cross-site WebSocket hijacking). In tests, allow the configured origin.
+- **Client IP** (for the socket and room limits): the first `X-Forwarded-For` entry when `TRUST_PROXY` > 0, otherwise the socket's own address.
 - **Identity**: if the upgrade request carries a valid `pt_session` cookie, the player's name is the account name and `userId` is set. Otherwise the client sends a guest nickname in `join` (`/^[a-zA-Z0-9_ ]{2,20}$/`, trimmed). Guests are prefixed "guest " in the display name, so they can't impersonate accounts.
 - **Limits**:
-  - Rooms: max 8 players per room, max 500 rooms in memory, TTL 30 min of inactivity, swept every minute.
+  - Rooms: max 8 players per room, max 500 rooms in memory, 20 open rooms per client IP. A room that never gets a joined player expires after 2 min; any room idle for 30 min expires. Swept every minute.
+  - Sockets: max 10 per client IP (`RACE_MAX_SOCKETS_PER_IP`) and 2000 in total. A socket over either cap is closed with 1013 `Too many connections` before it is counted, and its slot is released when it closes.
+  - Join timeout: a socket that has not sent a valid `join` within 10 s (`RACE_JOIN_TIMEOUT_MS`) is closed with 1008 `Join timeout`.
+  - Heartbeat: a ping every 25 s (`RACE_HEARTBEAT_MS`). A socket that has not answered the previous ping is terminated.
   - Messages: max 4 KB per message and 30 messages/sec per connection (excess messages are dropped; 3 strikes → close with 1008).
   - Inputs: everything is validated with zod, and unknown message types get an error reply.
 - **Protocol** (JSON text frames):
   - Client → server:
-    - `{ type: 'join', room: string, name?: string }`
+    - `{ type: 'join', room: string, name?: string, token?: string }`. `token` is the seat token from `joined` (`/^[0-9a-f]{32}$/`). If it matches a seat in this room, the socket takes that seat back (connected again, progress kept), whether the player is a guest or signed in. A token that matches no seat in the room is ignored and the join is treated as new. A signed-in user also takes back their seat by user id, as before.
     - `{ type: 'start' }` (host only; the lobby needs ≥ 1 player; a solo race is allowed)
-    - `{ type: 'progress', chars: number, wpm: number }` (chars = correct chars typed so far; the server clamps it to the text length, only lets it increase, and drops wpm > 350)
-    - `{ type: 'finish', wpm: number, accuracy: number, durationMs: number }`
+    - `{ type: 'progress', chars: number, wpm: number }`. `chars` = correct chars typed so far. The server clamps it to the text length and to `maxCharsAt(elapsed)` = `floor(350 × 5 × elapsedMs / 60000) + 15`, where elapsed is measured from `startsAt` on the server clock. It only lets it increase. The live `wpm` is clamped to `min(wpm, the wpm implied by chars / elapsed, 350)`. Both are clamped, not rejected.
+    - `{ type: 'finish', wpm: number, accuracy: number, durationMs: number }`. `wpm` and `durationMs` are accepted (so older clients still validate) but ignored: the server computes both. `accuracy` is clamped to 0–100 and kept.
     - `{ type: 'leave' }`
   - Server → client:
-    - `{ type: 'joined', you: playerId }`
+    - `{ type: 'joined', you: playerId, token: string }`. `token` is 32 hex chars (`randomBytes(16)`), stored per player. It is sent only to the connection that took the seat, and it never appears in a RoomView. The client keeps it to reconnect.
     - `{ type: 'room', room: RoomView }` (broadcast on every change, throttled to ≤ 10/sec per room)
-    - `{ type: 'error', message: string }`
+    - `{ type: 'error', message: string }`. Join errors include `Race not found`, `This race is full`, and `This race has already started` (a new player after the countdown has started; a seat reclaimed by token or user id is still allowed).
   ```ts
   type RoomView = {
     id: string; language: Language; status: 'lobby' | 'countdown' | 'racing' | 'finished';
     hostId: string; text: string | null;        // null until the countdown starts (no peeking in the lobby)
     source: string | null; startsAt: number | null; // epoch ms when typing may begin (countdown 3s)
-    players: Array<{ id: string; name: string; isGuest: boolean; progress: number /*0..1*/; wpm: number; finished: boolean; place: number | null; accuracy: number | null; connected: boolean }>;
+    players: Array<{ id: string; name: string; isGuest: boolean; progress: number /*0..1*/; wpm: number /*server value once finished*/; finished: boolean; place: number | null; accuracy: number | null; connected: boolean }>;
   };
   ```
-  - Server-side timing: `finish` is only accepted when `chars === text.length` and `now - startsAt >= durationMs - 500`. The server records `place` in finish order. The race ends when everyone connected has finished, or 3 min after the start.
+  - Server-side timing: `finish` is only accepted when `chars === text.length`. The server then computes `durationMs = now - startsAt` and `wpm = round2((text.length / 5) / (durationMs / 60000))`, and refuses the finish with `Finish rejected: too fast` if that wpm is above 350 (a zero duration counts as too fast). The stored wpm is the server's. The server records `place` in finish order. The race ends when everyone connected has finished, or 3 min after the start.
+  - Disconnects: a player who disconnects in the lobby or after a finish is removed at once. During a countdown or a race the seat is kept as disconnected for 60 s (`DISCONNECT_GRACE_MS`), so the player can come back with the token and keep their progress. If they have not come back by then, the seat is removed. Disconnected seats are also removed when the race finishes and when the host restarts.
+  - Late joins: once the room is in countdown or racing, a new player is refused with `This race has already started`. The room can be joined again after the race finishes.
   - When the host leaves, the next player becomes host. A finished room can be restarted by the host with `start` (new quote, everyone's progress reset).
   - Race results aren't saved to the results table (unranked fun).
-- Vite dev proxy: `/api` with `ws: true`. nginx: `location /api/races/ws` with the Upgrade/Connection headers.
-- Tests: unit tests for the room service (join/leave/host transfer/limits/progress clamping/finish validation/places), and an e2e test with the `ws` client: create a room, two clients join, start, progress, finish, places; a bad origin is rejected; the 9th player is rejected.
+- Vite dev proxy: `/api` with `ws: true`. nginx: `location /api/races/ws` with the Upgrade/Connection headers. The CSP is `connect-src 'self'`, which covers the same-origin socket.
+- Tests: unit tests for the room service (join/reclaim by token or user id/late joins/leave/host transfer/limits/progress clamping/finish validation and server timing/places/disconnect grace/room-per-IP cap/unjoined expiry) and for the rule helpers and socket limiter. An e2e test with the `ws` client: create a room, two clients join, start, progress, finish (paced; a too-fast finish is refused), places; a late join is refused; a dropped guest takes its seat back with its token; a bad origin is rejected; the 9th player is rejected; the 13th socket from one IP is closed with 1013; a socket that never joins is closed with 1008.
 
 ### Insights, achievements, export (`src/results`, `src/users`)
 - `GET /api/results/me/insights` (auth) → `Insights`:

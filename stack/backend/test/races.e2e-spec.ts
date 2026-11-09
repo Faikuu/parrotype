@@ -10,17 +10,25 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import type { ServerMessage } from '../src/races/races.protocol';
 import { applyE2eEnv } from './e2e.env';
 
-// Config is read lazily, so setting it before the app is built is enough. A 300 ms countdown keeps the test quick.
+// Config is read lazily, so setting it before the app is built is enough.
+// A 300 ms countdown keeps the test quick. The socket cap is 12 per IP (the suite's own sockets all come
+// from 127.0.0.1), and a join must arrive within 1.5 s.
 applyE2eEnv();
 process.env.RACE_COUNTDOWN_MS = '300';
+process.env.RACE_MAX_SOCKETS_PER_IP = '12';
+process.env.RACE_JOIN_TIMEOUT_MS = '1500';
 
 jest.setTimeout(30_000);
 
 const ALLOWED_ORIGIN = 'http://localhost:5173';
-const QUOTE = 'Hola mundo';
+const QUOTE = 'Hola mundo'; // 10 chars: at 350 wpm the fastest honest finish takes 343 ms
+const SOCKET_CAP = Number(process.env.RACE_MAX_SOCKETS_PER_IP);
 
 type Msg = ServerMessage;
 type RoomMsg = Extract<ServerMessage, { type: 'room' }>;
+type JoinedMsg = Extract<ServerMessage, { type: 'joined' }>;
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** A ws client that records every message and lets a test wait for the next one matching a predicate. */
 class Sock {
@@ -28,6 +36,7 @@ class Sock {
   private cursor = 0;
   private readonly listeners = new Set<() => void>();
   closeCode: number | null = null;
+  closeReason = '';
   readonly closed: Promise<number>;
 
   constructor(readonly ws: WebSocket) {
@@ -36,8 +45,9 @@ class Sock {
       for (const l of this.listeners) l();
     });
     this.closed = new Promise((resolve) => {
-      ws.once('close', (code: number) => {
+      ws.once('close', (code: number, reason: Buffer) => {
         this.closeCode = code;
+        this.closeReason = reason.toString();
         resolve(code);
       });
     });
@@ -77,8 +87,8 @@ class Sock {
     return this.until((m) => m.type === 'error' && m.message === message, `error "${message}"`);
   }
 
-  joined(): Promise<Msg> {
-    return this.until((m) => m.type === 'joined', 'joined');
+  joined(): Promise<JoinedMsg> {
+    return this.until((m) => m.type === 'joined', 'joined') as Promise<JoinedMsg>;
   }
 
   room(pred: (room: RoomMsg['room']) => boolean, label: string): Promise<RoomMsg> {
@@ -125,14 +135,17 @@ describe('Races (e2e)', () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     for (const s of sockets.splice(0)) s.ws.terminate();
+    // Let the server see the closes before the next test counts sockets per IP.
+    await sleep(100);
   });
 
   afterAll(async () => {
     await app.close();
   });
 
+  // The throttle allows 10 room creates a minute per IP. This file makes 8.
   const createRoom = async (language = 'es'): Promise<string> => {
     const res = await request(app.getHttpServer()).post('/api/races').send({ language }).expect(201);
     return res.body.id as string;
@@ -160,6 +173,9 @@ describe('Races (e2e)', () => {
     await s.error('Unknown message type');
 
     s.send({ type: 'join' });
+    await s.error('Invalid message');
+
+    s.send({ type: 'join', room: 'nope1234', token: 'not-a-token' });
     await s.error('Invalid message');
 
     s.ws.send(Buffer.from([1, 2, 3]), { binary: true });
@@ -190,12 +206,20 @@ describe('Races (e2e)', () => {
     expect(counting.room.startsAt).toEqual(expect.any(Number));
 
     await guest.room((r) => r.status === 'racing', 'racing');
+    // Finishes are timed by the server from the start, so the finishes below come well after it.
+    await sleep(400);
 
     host.send({ type: 'progress', chars: QUOTE.length, wpm: 90 });
     guest.send({ type: 'progress', chars: 4, wpm: 40 });
+    // The client claims 90 wpm over 100 ms. The server ignores both and times the finish itself.
     host.send({ type: 'finish', wpm: 90, accuracy: 100, durationMs: 100 });
     const midway = await guest.room((r) => r.status === 'racing' && r.players[0].finished, 'host finished');
-    expect(midway.room.players[0]).toMatchObject({ place: 1, accuracy: 100, wpm: 90 });
+    expect(midway.room.players[0]).toMatchObject({ place: 1, accuracy: 100 });
+    const hostWpm = midway.room.players[0].wpm;
+    expect(hostWpm).toBeGreaterThan(0);
+    expect(hostWpm).toBeLessThanOrEqual(350);
+    expect(hostWpm).not.toBe(90);
+    expect(Number(hostWpm.toFixed(2))).toBe(hostWpm);
 
     guest.send({ type: 'progress', chars: QUOTE.length, wpm: 80 });
     guest.send({ type: 'finish', wpm: 80, accuracy: 96, durationMs: 100 });
@@ -206,6 +230,30 @@ describe('Races (e2e)', () => {
       ['guest buddy', 2],
     ]);
     expect(done.room.players[1]).toMatchObject({ isGuest: true, accuracy: 96 });
+  });
+
+  it('refuses a finish that is incomplete or too fast, and accepts a paced one', async () => {
+    const id = await createRoom();
+    const host = await open();
+    host.send({ type: 'join', room: id, name: 'early' });
+    await host.joined();
+    host.send({ type: 'start' });
+    await host.room((r) => r.status === 'racing', 'racing');
+
+    host.send({ type: 'progress', chars: 3, wpm: 30 });
+    host.send({ type: 'finish', wpm: 30, accuracy: 100, durationMs: 100 });
+    await host.error('Finish rejected: not every character is typed');
+
+    // Every character typed right at the start: the server clock says the pace is far above 350 wpm.
+    host.send({ type: 'progress', chars: QUOTE.length, wpm: 90 });
+    host.send({ type: 'finish', wpm: 90, accuracy: 100, durationMs: 100 });
+    await host.error('Finish rejected: too fast');
+
+    await sleep(400);
+    host.send({ type: 'finish', wpm: 90, accuracy: 100, durationMs: 100 });
+    const done = await host.room((r) => r.status === 'finished', 'finished');
+    expect(done.room.players[0]).toMatchObject({ place: 1, accuracy: 100 });
+    expect(done.room.players[0].wpm).toBeLessThanOrEqual(350);
   });
 
   it('refuses a ninth player with "This race is full"', async () => {
@@ -220,16 +268,44 @@ describe('Races (e2e)', () => {
     await ninth.error('This race is full');
   });
 
-  it('refuses a finish before every character is typed', async () => {
+  it('refuses a new player once the race has started', async () => {
     const id = await createRoom();
     const host = await open();
-    host.send({ type: 'join', room: id, name: 'early' });
+    host.send({ type: 'join', room: id, name: 'hosty' });
     await host.joined();
     host.send({ type: 'start' });
-    await host.room((r) => r.status === 'racing', 'racing');
-    host.send({ type: 'progress', chars: 3, wpm: 30 });
-    host.send({ type: 'finish', wpm: 30, accuracy: 100, durationMs: 100 });
-    await host.error('Finish rejected: not every character is typed');
+    await host.room((r) => r.status === 'countdown' || r.status === 'racing', 'started');
+
+    const late = await open();
+    late.send({ type: 'join', room: id, name: 'late' });
+    await late.error('This race has already started');
+  });
+
+  it('a guest who drops reconnects with the token, keeps the seat and the progress', async () => {
+    const id = await createRoom();
+    const host = await open();
+    host.send({ type: 'join', room: id, name: 'hosty' });
+    await host.joined();
+    const guest = await open();
+    guest.send({ type: 'join', room: id, name: 'buddy' });
+    const first = await guest.joined();
+    expect(first.token).toMatch(/^[0-9a-f]{32}$/);
+
+    host.send({ type: 'start' });
+    await guest.room((r) => r.status === 'racing', 'racing');
+    guest.send({ type: 'progress', chars: 4, wpm: 40 });
+    await host.room((r) => r.players.some((p) => p.id === first.you && p.progress === 0.4), 'progress');
+
+    guest.ws.close();
+    await guest.closed;
+    await host.room((r) => r.players.some((p) => p.id === first.you && !p.connected), 'guest gone');
+
+    const back = await open();
+    back.send({ type: 'join', room: id, name: 'ignored', token: first.token });
+    const again = await back.joined();
+    expect(again).toEqual(first);
+    const view = await back.room((r) => r.players.some((p) => p.id === first.you && p.connected), 'reclaimed');
+    expect(view.room.players.find((p) => p.id === first.you)).toMatchObject({ progress: 0.4, connected: true });
   });
 
   it('identifies a signed-in user from the session cookie', async () => {
@@ -252,5 +328,18 @@ describe('Races (e2e)', () => {
     await request(app.getHttpServer()).post('/api/races').send({ language: 'xx' }).expect(400);
     // Polish has no quotes in this database, so creating a race there is refused.
     await request(app.getHttpServer()).post('/api/races').send({ language: 'pl' }).expect(400);
+  });
+
+  it('refuses sockets past the per-IP cap with 1013', async () => {
+    for (let i = 0; i < SOCKET_CAP; i++) await open();
+    const extra = await open();
+    expect(await extra.closed).toBe(1013);
+    expect(extra.closeReason).toBe('Too many connections');
+  });
+
+  it('closes a socket that never sends a valid join, with 1008 "Join timeout"', async () => {
+    const s = await open();
+    expect(await s.closed).toBe(1008);
+    expect(s.closeReason).toBe('Join timeout');
   });
 });

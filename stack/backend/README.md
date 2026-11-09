@@ -72,11 +72,16 @@ Session = JWT (HS256, 7 days) in the httpOnly cookie `pt_session`. Set `COOKIE_S
 
 ## Races (WebSocket)
 
-- `POST /api/races` with `{ "language": "en" }` creates a room and returns `{ "id" }` (throttled to 10 per minute per IP).
+- `POST /api/races` with `{ "language": "en" }` creates a room and returns `{ "id" }` (throttled to 10 per minute per IP). A client IP may hold at most 20 open rooms; beyond that the answer is 429 "You have too many open races".
 - The socket is at `/api/races/ws` (not under the global prefix). Messages are JSON text frames with a `type` field; the protocol is in `docs/SPEC-2.2.md`.
 - The socket is accepted only when its `Origin` is in `CORS_ORIGINS`. Otherwise it is closed with 1008. Behind a reverse proxy, the proxy must pass the browser's `Origin` header through and forward the Upgrade headers (see `stack/frontend/nginx.conf`).
-- Rooms live in memory: at most 8 players, 500 rooms, and a 30-minute idle timeout. A restart drops them. Run one API instance, or races on a second instance will not see each other's rooms.
+- Client IP for the limits: the first `X-Forwarded-For` entry when `TRUST_PROXY` is above 0, otherwise the socket's address. Set `TRUST_PROXY` only when a proxy you control appends to that header.
+- Socket limits: 10 open sockets per client IP and 2000 in total (the extras are closed with 1013 "Too many connections"). A socket that has not sent a valid `join` within 10 s is closed with 1008 "Join timeout". The server pings every 25 s, and a socket that has not answered the previous ping is terminated.
+- Rooms live in memory: at most 8 players, 500 rooms, a room with no joined player expires after 2 minutes, and a 30-minute idle timeout. A restart drops them. Run one API instance, or races on a second instance will not see each other's rooms.
+- A player who disconnects during a countdown or a race keeps their seat for 60 seconds, and can take it back with the token from `joined`. After that the seat is removed.
+- Finish times and wpm are computed by the server from its own clock. The client's claimed wpm and duration are ignored, and a finish that would be above 350 wpm is refused.
 - `RACE_COUNTDOWN_MS` (default 3000, max 10000) sets the countdown. The e2e test lowers it.
+- `RACE_MAX_SOCKETS_PER_IP` (default 10), `RACE_JOIN_TIMEOUT_MS` (default 10000) and `RACE_HEARTBEAT_MS` (default 25000) set the socket limits. The e2e test and manual checks lower them.
 
 ## Docker
 `docker-compose.yml` in the repo root runs PostgreSQL 16, the API (`stack/backend/Dockerfile`) and the web app (`stack/frontend/Dockerfile`, nginx, which proxies `/api` to the API).

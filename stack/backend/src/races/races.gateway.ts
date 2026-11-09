@@ -1,4 +1,4 @@
-import { HttpException, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { HttpException, Inject, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway } from '@nestjs/websockets';
 import { randomUUID } from 'node:crypto';
@@ -9,14 +9,30 @@ import { readSessionUser } from '../auth/jwt-auth.guard';
 import { SESSION_COOKIE } from '../auth/auth.service';
 import { getEnv } from '../config/env';
 import { PrismaService } from '../prisma/prisma.service';
-import { BROADCAST_INTERVAL_MS, clientMessageSchema, MAX_FRAME_BYTES, MAX_MESSAGE_BYTES, MAX_MESSAGES_PER_SECOND, MAX_STRIKES, RACES_WS_PATH, RaceError, type ClientMessage, type ServerMessage } from './races.protocol';
+import { RACE_SOCKET_LIMITS, type RaceSocketLimits } from './races.config';
+import {
+  BROADCAST_INTERVAL_MS,
+  clientMessageSchema,
+  MAX_FRAME_BYTES,
+  MAX_MESSAGE_BYTES,
+  MAX_MESSAGES_PER_SECOND,
+  MAX_SOCKETS_TOTAL,
+  MAX_STRIKES,
+  RACES_WS_PATH,
+  RaceError,
+  type ClientMessage,
+  type ServerMessage,
+} from './races.protocol';
 import { parseCookieHeader } from './session-cookie';
+import { clientIp, SocketLimiter } from './socket-limits';
 import { RoomService, type RaceUser, type RoomClosedEvent } from './room.service';
 
 /** Per-socket state. The room itself lives in RoomService. */
 interface Conn {
   id: string;
   socket: WebSocket;
+  /** The client IP the socket was counted under (released on close). */
+  ip: string;
   identity: Promise<RaceUser | null>;
   /** Messages are handled one at a time, in order, after the identity is known. */
   queue: Promise<void>;
@@ -25,6 +41,10 @@ interface Conn {
   windowCount: number;
   windowExcess: boolean;
   strikes: number;
+  /** Closes the socket if it has not joined a race in time. Cleared by a successful join. */
+  joinTimer: NodeJS.Timeout | null;
+  /** Set by each pong. A socket still false at the next ping is terminated. */
+  alive: boolean;
 }
 
 interface RoomSend {
@@ -44,9 +64,12 @@ const KNOWN_TYPES = new Set(['join', 'start', 'progress', 'finish', 'leave']);
 export class RacesGateway implements OnModuleInit, OnModuleDestroy, OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(RacesGateway.name);
   private readonly allowedOrigins = new Set(getEnv().corsOrigins);
+  private readonly trustProxy = getEnv().trustProxy;
+  private readonly limiter: SocketLimiter;
   private readonly conns = new Map<WebSocket, Conn>();
   private readonly connsById = new Map<string, Conn>();
   private readonly sends = new Map<string, RoomSend>();
+  private heartbeat: NodeJS.Timeout | null = null;
   private readonly onChanged = (roomId: string): void => this.scheduleBroadcast(roomId);
   private readonly onClosed = (event: RoomClosedEvent): void => this.notifyClosed(event);
 
@@ -54,20 +77,28 @@ export class RacesGateway implements OnModuleInit, OnModuleDestroy, OnGatewayCon
     private readonly rooms: RoomService,
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
-  ) {}
+    @Inject(RACE_SOCKET_LIMITS) private readonly limits: RaceSocketLimits,
+  ) {
+    this.limiter = new SocketLimiter({ perIp: limits.maxSocketsPerIp, total: MAX_SOCKETS_TOTAL });
+  }
 
   onModuleInit(): void {
     this.rooms.on('changed', this.onChanged);
     this.rooms.on('closed', this.onClosed);
+    this.heartbeat = setInterval(() => this.beat(), this.limits.heartbeatMs);
+    this.heartbeat.unref();
   }
 
   onModuleDestroy(): void {
     this.rooms.off('changed', this.onChanged);
     this.rooms.off('closed', this.onClosed);
+    if (this.heartbeat) clearInterval(this.heartbeat);
+    this.heartbeat = null;
     for (const send of this.sends.values()) {
       if (send.timer) clearTimeout(send.timer);
     }
     this.sends.clear();
+    for (const conn of this.conns.values()) this.clearJoinTimer(conn);
   }
 
   handleConnection(client: WebSocket, request: IncomingMessage): void {
@@ -78,9 +109,15 @@ export class RacesGateway implements OnModuleInit, OnModuleDestroy, OnGatewayCon
       client.close(1008, 'Origin not allowed');
       return;
     }
+    const ip = clientIp(request.headers, request.socket.remoteAddress, this.trustProxy);
+    if (!this.limiter.tryAdd(ip)) {
+      client.close(1013, 'Too many connections');
+      return;
+    }
     const conn: Conn = {
       id: randomUUID(),
       socket: client,
+      ip,
       identity: this.resolveUser(request),
       queue: Promise.resolve(),
       closed: false,
@@ -88,10 +125,16 @@ export class RacesGateway implements OnModuleInit, OnModuleDestroy, OnGatewayCon
       windowCount: 0,
       windowExcess: false,
       strikes: 0,
+      joinTimer: null,
+      alive: true,
     };
+    conn.joinTimer = setTimeout(() => this.closeConn(conn, 1008, 'Join timeout'), this.limits.joinTimeoutMs);
     this.conns.set(client, conn);
     this.connsById.set(conn.id, conn);
     client.on('message', (data: RawData, isBinary: boolean) => this.onRaw(conn, data, isBinary));
+    client.on('pong', () => {
+      conn.alive = true;
+    });
     client.on('error', (err: Error) => this.logger.debug(`socket error: ${err.message}`));
   }
 
@@ -101,7 +144,33 @@ export class RacesGateway implements OnModuleInit, OnModuleDestroy, OnGatewayCon
     this.conns.delete(client);
     this.connsById.delete(conn.id);
     conn.closed = true;
+    this.clearJoinTimer(conn);
+    this.limiter.release(conn.ip);
     this.rooms.disconnect(conn.id);
+  }
+
+  private clearJoinTimer(conn: Conn): void {
+    if (conn.joinTimer) clearTimeout(conn.joinTimer);
+    conn.joinTimer = null;
+  }
+
+  /** Closes a socket with a code and reason. The close event then releases its slot. */
+  private closeConn(conn: Conn, code: number, reason: string): void {
+    this.clearJoinTimer(conn);
+    if (conn.socket.readyState === WebSocket.OPEN) conn.socket.close(code, reason);
+  }
+
+  /** Pings every open socket. One that did not answer the previous ping is terminated. */
+  private beat(): void {
+    for (const conn of this.conns.values()) {
+      if (conn.socket.readyState !== WebSocket.OPEN) continue;
+      if (!conn.alive) {
+        conn.socket.terminate();
+        continue;
+      }
+      conn.alive = false;
+      conn.socket.ping();
+    }
   }
 
   private async resolveUser(request: IncomingMessage): Promise<RaceUser | null> {
@@ -189,8 +258,9 @@ export class RacesGateway implements OnModuleInit, OnModuleDestroy, OnGatewayCon
   private async dispatch(conn: Conn, msg: ClientMessage, user: RaceUser | null): Promise<void> {
     switch (msg.type) {
       case 'join': {
-        const playerId = this.rooms.join(msg.room, conn.id, { user, guestName: msg.name });
-        this.sendTo(conn, { type: 'joined', you: playerId });
+        const joined = this.rooms.join(msg.room, conn.id, { user, guestName: msg.name }, msg.token);
+        this.clearJoinTimer(conn);
+        this.sendTo(conn, { type: 'joined', you: joined.playerId, token: joined.token });
         // The join already scheduled a room update. Scheduling again covers a repeated join.
         this.scheduleBroadcast(msg.room);
         return;
@@ -202,7 +272,7 @@ export class RacesGateway implements OnModuleInit, OnModuleDestroy, OnGatewayCon
         this.rooms.progress(conn.id, msg.chars, msg.wpm);
         return;
       case 'finish':
-        this.rooms.finish(conn.id, msg.wpm, msg.accuracy, msg.durationMs);
+        this.rooms.finish(conn.id, msg.accuracy);
         return;
       case 'leave':
         this.rooms.leave(conn.id);
