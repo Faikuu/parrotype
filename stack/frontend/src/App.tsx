@@ -11,6 +11,8 @@ import { useApplySettings } from '@/store/useApplySettings';
 const AccountPage = lazy(() => import('@/features/account/AccountPage'));
 const LeaderboardPage = lazy(() => import('@/features/leaderboard/LeaderboardPage'));
 const ProfilePage = lazy(() => import('@/features/profile/ProfilePage'));
+const RaceLobbyPage = lazy(() => import('@/features/race/RaceLobbyPage'));
+const RaceRoomPage = lazy(() => import('@/features/race/RaceRoomPage'));
 
 export default function App() {
   useApplySettings();
@@ -43,6 +45,22 @@ export default function App() {
             element={
               <Suspense fallback={null}>
                 <ProfilePage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="race"
+            element={
+              <Suspense fallback={null}>
+                <RaceLobbyPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="race/:id"
+            element={
+              <Suspense fallback={null}>
+                <RaceRoomPage />
               </Suspense>
             }
           />

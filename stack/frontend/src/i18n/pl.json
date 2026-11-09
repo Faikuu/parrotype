@@ -18,7 +18,8 @@
       "restart": "zacznij od nowa",
       "keyCommands": "esc lub ctrl+shift+p",
       "commands": "polecenia",
-      "themeButton": "Zmień motyw"
+      "themeButton": "Zmień motyw",
+      "offline": "Offline"
     }
   },
   "nav": {
@@ -174,6 +175,45 @@
     "paceCaret": "Kursor tempa",
     "tapeMode": "Tryb taśmy",
     "sound": "Dźwięk",
-    "soundVolume": "Głośność dźwięku"
+    "soundVolume": "Głośność dźwięku",
+    "noBackspace": "Bez backspace",
+    "suddenDeath": "Nagła śmierć",
+    "themeCustom": "Własny",
+    "customiseTheme": "Dostosuj motyw…"
+  },
+  "replay": {
+    "title": "Powtórka",
+    "play": "Odtwórz",
+    "pause": "Pauza",
+    "speed": "Prędkość odtwarzania",
+    "speedValue": "{{speed}}×",
+    "scrub": "Pozycja w powtórce",
+    "time": "{{elapsed}} s / {{total}} s"
+  },
+  "themeEditor": {
+    "title": "Dostosuj motyw",
+    "colours": "Kolory",
+    "fields": {
+      "bg": "Tło",
+      "surface": "Powierzchnia",
+      "text": "Tekst",
+      "sub": "Tekst pomocniczy",
+      "main": "Akcent",
+      "caret": "Kursor",
+      "error": "Błąd",
+      "errorExtra": "Znaki nadmiarowe"
+    },
+    "save": "Zapisz motyw",
+    "export": "Eksportuj",
+    "copied": "Skopiowano",
+    "copyFailed": "Nie udało się skopiować. Zaznacz kod i skopiuj go ręcznie.",
+    "exportedCode": "Kod motywu",
+    "contrastText": "Tekst na tle ma kontrast {{ratio}}:1. Zalecane minimum to {{min}}:1.",
+    "contrastSub": "Tekst pomocniczy na tle ma kontrast {{ratio}}:1. Zalecane minimum to {{min}}:1.",
+    "importLabel": "Wklej kod motywu",
+    "importPlaceholder": "pt1.…",
+    "import": "Importuj",
+    "importInvalid": "To nie jest poprawny kod motywu",
+    "imported": "Zaimportowano. Zapisz motyw, żeby go zachować."
   }
 }

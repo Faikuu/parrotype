@@ -16,6 +16,12 @@ const PROFILE = {
   recent: [
     { mode: 'words', mode2: '25', language: 'pl', wpm: 99, accuracy: 97, createdAt: '2026-11-06T10:00:00Z' },
   ],
+  streak: { current: 2, longest: 5 },
+  achievements: [
+    { id: 'first_test', unlockedAt: '2026-10-01T10:00:00Z' },
+    { id: 'wpm_100', unlockedAt: '2026-11-01T10:00:00Z' },
+  ],
+  activity: [{ date: '2026-11-06', tests: 1 }],
 };
 
 const json = (body: unknown, status = 200) =>
@@ -86,5 +92,23 @@ describe('ProfilePage', () => {
     // The query retries once on a server error, so allow for that delay.
     expect(await screen.findByRole('alert', {}, { timeout: 3000 })).toHaveTextContent("Couldn't load this profile.");
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+  it('shows the streak, the unlocked achievements only and the activity calendar', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(PROFILE)));
+    renderProfile('/u/kea');
+
+    expect(await screen.findByText('Current streak 2 days, longest 5')).toBeInTheDocument();
+    expect(screen.getByText('Speed parrot')).toBeInTheDocument();
+    expect(screen.getByText('First words')).toBeInTheDocument();
+    expect(screen.queryByText('Supersonic')).not.toBeInTheDocument();
+    expect(screen.getByText('Unlocked Nov 1, 2026')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Tests per day over the last year' })).toBeInTheDocument();
+  });
+
+  it('shows the empty achievements state when nothing is unlocked', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json({ ...PROFILE, achievements: [], activity: [] })));
+    renderProfile('/u/kea');
+
+    expect(await screen.findByText('No achievements yet.')).toBeInTheDocument();
   });
 });

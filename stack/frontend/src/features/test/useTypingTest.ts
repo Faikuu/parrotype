@@ -43,7 +43,8 @@ const MIN_SAVE_MS = 2000;
 /** Tests below this accuracy are not saved. */
 const MIN_SAVE_ACCURACY = 50;
 
-export type SkipReason = 'short' | 'accuracy';
+/** Why a finished test is not saved. 'failed' is sudden death ending the test on a wrong letter. */
+export type SkipReason = 'short' | 'accuracy' | 'failed';
 
 export type SaveState =
   | { status: 'idle' }
@@ -147,6 +148,7 @@ function serverBestWpm(qc: QueryClient, cfg: TestConfig, date: string): number |
 }
 
 function skipReason(r: TestResult): SkipReason | null {
+  if (r.failed) return 'failed';
   if (r.durationMs < MIN_SAVE_MS) return 'short';
   if (r.accuracy < MIN_SAVE_ACCURACY) return 'accuracy';
   return null;

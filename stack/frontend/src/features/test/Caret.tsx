@@ -11,6 +11,8 @@ export interface CaretProps {
   shift: number;
   /** Horizontal tape offset in px (0 outside tape mode). */
   tapeX?: number;
+  /** Overrides the smooth caret setting (the replay player turns the glide off for reduced motion). */
+  smooth?: boolean;
 }
 
 const IDLE_MS = 1000;
@@ -23,9 +25,10 @@ const BOX_EM = 1.15;
  * The single bold element of the test. Sits on the next letter (or after the last typed letter),
  * glides between letters, and breathes while idle.
  */
-export function Caret({ viewportRef, state, shift, tapeX = 0 }: CaretProps) {
+export function Caret({ viewportRef, state, shift, tapeX = 0, smooth: smoothOverride }: CaretProps) {
   const caretStyle = useSettings((s) => s.caretStyle);
-  const smooth = useSettings((s) => s.smoothCaret);
+  const smoothSetting = useSettings((s) => s.smoothCaret);
+  const smooth = smoothOverride ?? smoothSetting;
   const ref = useRef<HTMLDivElement>(null);
   const placed = useRef<{ shift: number } | null>(null);
   const [, setTick] = useState(0);

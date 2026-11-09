@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ThemeId } from '@/themes/themes';
+import type { ThemeChoice, ThemeTokens } from '@/themes/themes';
 
 /** Element that had focus before the palette or custom text dialog opened. Not reactive. */
 let returnFocusTo: HTMLElement | null = null;
@@ -32,11 +32,19 @@ export interface UiState {
   openCustomText: () => void;
   closeCustomText: () => void;
 
+  themeEditorOpen: boolean;
+  openThemeEditor: () => void;
+  closeThemeEditor: () => void;
+
+  /** Colours being edited in the theme editor, shown live until they are saved or dropped. */
+  themeDraft: ThemeTokens | null;
+  setThemeDraft: (tokens: ThemeTokens | null) => void;
+
   isTyping: boolean;
   setTyping: (typing: boolean) => void;
 
-  previewTheme: ThemeId | null;
-  setPreviewTheme: (id: ThemeId | null) => void;
+  previewTheme: ThemeChoice | null;
+  setPreviewTheme: (id: ThemeChoice | null) => void;
 
   restartToken: number;
   restart: () => void;
@@ -45,14 +53,13 @@ export interface UiState {
 export const useUi = create<UiState>()((set, get) => {
   // Only the first overlay in a stack records the element to return focus to
   // (the palette opening the custom text dialog must not overwrite it).
+  const overlayOpen = (s: UiState) => s.commandLineOpen || s.customTextOpen || s.themeEditorOpen;
   const captureFocusUnlessOverlaid = () => {
-    const s = get();
-    if (!s.commandLineOpen && !s.customTextOpen) returnFocusTo = focusedElement();
+    if (!overlayOpen(get())) returnFocusTo = focusedElement();
   };
   // Focus goes back only once no overlay is left open.
   const restoreFocusIfIdle = () => {
-    const s = get();
-    if (!s.commandLineOpen && !s.customTextOpen) restoreFocus();
+    if (!overlayOpen(get())) restoreFocus();
   };
 
   return {
@@ -76,6 +83,19 @@ export const useUi = create<UiState>()((set, get) => {
       set({ customTextOpen: false });
       restoreFocusIfIdle();
     },
+
+    themeEditorOpen: false,
+    openThemeEditor: () => {
+      captureFocusUnlessOverlaid();
+      set({ themeEditorOpen: true });
+    },
+    closeThemeEditor: () => {
+      set({ themeEditorOpen: false, themeDraft: null });
+      restoreFocusIfIdle();
+    },
+
+    themeDraft: null,
+    setThemeDraft: (tokens) => set({ themeDraft: tokens }),
 
     isTyping: false,
     setTyping: (typing) => set({ isTyping: typing }),

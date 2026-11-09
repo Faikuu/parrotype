@@ -2,6 +2,7 @@ import { Outlet } from 'react-router';
 import { CommandLine } from '@/features/commandline/CommandLine';
 import { CustomTextModal } from '@/features/commandline/CustomTextModal';
 import { useCommandLineShortcuts } from '@/features/commandline/useCommandLine';
+import { ThemeEditor } from '@/themes/ThemeEditor';
 import { useSettings } from '@/store/settings';
 import { useUi } from '@/store/ui';
 import { cn } from './cn';
@@ -41,6 +42,7 @@ export function Layout() {
       </div>
       <CommandLine />
       <CustomTextModal />
+      <ThemeEditor />
     </div>
   );
 }

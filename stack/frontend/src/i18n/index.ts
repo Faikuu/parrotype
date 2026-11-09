@@ -5,10 +5,11 @@ import en from './en.json';
 import pl from './pl.json';
 import { testLocale } from '@/features/test/locale';
 import { pagesLocale } from '@/features/auth/locale';
+import { raceLocale } from '@/features/race/locale';
 
 export const resources = {
-  en: { ...en, ...testLocale.en, ...pagesLocale.en },
-  pl: { ...pl, ...testLocale.pl, ...pagesLocale.pl },
+  en: { ...en, ...testLocale.en, ...pagesLocale.en, ...raceLocale.en },
+  pl: { ...pl, ...testLocale.pl, ...pagesLocale.pl, ...raceLocale.pl },
 };
 
 void i18n.use(initReactI18next).init({

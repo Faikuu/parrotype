@@ -3,13 +3,17 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import { CategoryScale, Chart as ChartJS, LineController, LineElement, LinearScale, PointElement, ScatterController, Tooltip, type ChartData, type ChartOptions } from 'chart.js';
 import { Chart } from 'react-chartjs-2';
-import { ChevronRight, Copy, RotateCcw } from 'lucide-react';
-import type { TestConfig } from '@/lib/engine/types';
+import { ChevronRight, Copy, PlayCircle, RotateCcw } from 'lucide-react';
+import { slowestWords } from '@/lib/engine/timings';
+import type { EngineState, TestConfig } from '@/lib/engine/types';
 import { foldKeyStats } from '@/store/keyStats';
 import { useSettings } from '@/store/settings';
 import { useUi } from '@/store/ui';
 import { KeyHeatmap } from './KeyHeatmap';
+import { ReplayPlayer } from './ReplayPlayer';
+import { SlowestWords } from './SlowestWords';
 import { copyText, summaryText } from './copySummary';
+import { practiceText } from './practice';
 import type { FinishedResult, SaveState } from './useTypingTest';
 
 ChartJS.register(CategoryScale, LinearScale, LineController, LineElement, PointElement, ScatterController, Tooltip);
@@ -47,12 +51,14 @@ function readPalette(): Palette {
  */
 function usePalette(): Palette {
   const theme = useSettings((s) => s.theme);
+  const customTheme = useSettings((s) => s.customTheme);
   const preview = useUi((s) => s.previewTheme);
+  const draft = useUi((s) => s.themeDraft);
   const [palette, setPalette] = useState<Palette>(readPalette);
   useEffect(() => {
     const id = requestAnimationFrame(() => setPalette(readPalette()));
     return () => cancelAnimationFrame(id);
-  }, [theme, preview]);
+  }, [theme, customTheme, preview, draft]);
   return palette;
 }
 
@@ -86,11 +92,11 @@ function testLabel(cfg: TestConfig, t: (key: string, opts?: Record<string, unkno
     .join(' ');
 }
 
-function Stat({ label, value, title }: { label: string; value: string; title?: string }) {
+function Stat({ label, value, title, muted }: { label: string; value: string; title?: string; muted?: boolean }) {
   return (
     <div className="min-w-0" title={title}>
       <dt className="text-[0.85rem] text-sub">{label}</dt>
-      <dd className={'m-0 text-[1.1rem] tabular-nums text-text'}>{value}</dd>
+      <dd className={`m-0 text-[1.1rem] tabular-nums ${muted ? 'text-sub' : 'text-text'}`}>{value}</dd>
     </div>
   );
 }
@@ -98,6 +104,8 @@ function Stat({ label, value, title }: { label: string; value: string; title?: s
 interface ResultsProps {
   config: TestConfig;
   result: FinishedResult;
+  /** The engine state at the finish. Its event log drives the replay, and its words feed the slowest-words list. */
+  state: EngineState;
   /** UTC date of a daily test (for the copied summary). */
   date: string;
   saveState: SaveState;
@@ -108,14 +116,18 @@ interface ResultsProps {
 /** How long "Copied" stays after a copy. */
 const COPIED_MS = 2000;
 
-export function Results({ config, result, date, saveState, onNext, onRepeat }: ResultsProps) {
+export function Results({ config, result, state, date, saveState, onNext, onRepeat }: ResultsProps) {
   const { t } = useTranslation();
   const palette = usePalette();
   const samples = result.samples;
   const { correct, incorrect, extra, missed } = result.charStats;
   const [copied, setCopied] = useState(false);
+  const [replayOpen, setReplayOpen] = useState(false);
   const missedKeys = useMemo(() => foldKeyStats(result.keyStats, config.language), [result.keyStats, config.language]);
   const hasKeys = Object.keys(missedKeys).length > 0;
+  const slowest = useMemo(() => slowestWords(state, 5), [state]);
+  const hasEvents = state.events.length > 0;
+  const failed = result.failed;
 
   useEffect(() => {
     if (!copied) return;
@@ -227,17 +239,36 @@ export function Results({ config, result, date, saveState, onNext, onRepeat }: R
   const acc = Math.round(result.accuracy);
   const seconds = (result.durationMs / 1000).toFixed(1);
 
+  // Custom text made from the slow words, then a restart in custom mode.
+  function practice() {
+    useSettings.getState().setMany({ customText: practiceText(slowest.map((w) => w.word)), mode: 'custom' });
+    useUi.getState().restart();
+  }
+
   return (
     <section aria-label={t('results:title')} className="flex flex-col gap-8 py-2">
       <div className="grid items-center gap-8 md:grid-cols-[minmax(0,12rem)_1fr]">
         <div className="flex flex-col gap-3">
+          {failed ? (
+            <p role="status" className="m-0 text-[2.5rem] leading-tight text-error">
+              {t('results:failedAt', { word: state.current + 1 })}
+            </p>
+          ) : null}
           <dl className="flex gap-8 md:flex-col md:gap-4">
             <div>
-              <dd className="m-0 text-[5rem] leading-none tabular-nums text-main">{Math.round(result.wpm)}</dd>
+              {failed ? (
+                <dd className="m-0 text-[1.6rem] leading-none tabular-nums text-sub">{Math.round(result.wpm)}</dd>
+              ) : (
+                <dd className="m-0 text-[5rem] leading-none tabular-nums text-main">{Math.round(result.wpm)}</dd>
+              )}
               <dt className="mt-1 text-[0.85rem] text-sub">{t('results:wpm')}</dt>
             </div>
             <div>
-              <dd className="m-0 text-[2.5rem] leading-none tabular-nums text-main">{acc}%</dd>
+              {failed ? (
+                <dd className="m-0 text-[1.6rem] leading-none tabular-nums text-sub">{acc}%</dd>
+              ) : (
+                <dd className="m-0 text-[2.5rem] leading-none tabular-nums text-main">{acc}%</dd>
+              )}
               <dt className="mt-1 text-[0.85rem] text-sub">{t('results:acc')}</dt>
             </div>
           </dl>
@@ -257,19 +288,28 @@ export function Results({ config, result, date, saveState, onNext, onRepeat }: R
         </div>
       </div>
 
+      {replayOpen && hasEvents && (
+        <div id="replay-panel">
+          <ReplayPlayer config={state.config} words={state.words} events={state.events} final={state} />
+        </div>
+      )}
+
       <dl className="flex flex-wrap gap-x-8 gap-y-3">
-        <Stat label={t('results:raw')} value={String(Math.round(result.rawWpm))} />
-        <Stat label={t('results:consistency')} value={`${Math.round(result.consistency)}%`} />
+        <Stat label={t('results:raw')} value={String(Math.round(result.rawWpm))} muted={failed} />
+        <Stat label={t('results:consistency')} value={`${Math.round(result.consistency)}%`} muted={failed} />
         <Stat
           label={t('results:characters')}
           value={`${correct}/${incorrect}/${extra}/${missed}`}
           title={t('results:charactersTitle')}
+          muted={failed}
         />
-        <Stat label={t('results:time')} value={t('results:seconds', { value: seconds })} />
-        <Stat label={t('results:test')} value={testLabel(config, t)} />
+        <Stat label={t('results:time')} value={t('results:seconds', { value: seconds })} muted={failed} />
+        <Stat label={t('results:test')} value={testLabel(config, t)} muted={failed} />
       </dl>
 
       {hasKeys && <KeyHeatmap stats={missedKeys} language={config.language} />}
+
+      {slowest.length > 0 && <SlowestWords words={slowest} onPractice={practice} />}
 
       <div className="flex flex-wrap items-center gap-3">
         <button
@@ -299,6 +339,19 @@ export function Results({ config, result, date, saveState, onNext, onRepeat }: R
         >
           <Copy size={18} aria-hidden="true" />
         </button>
+        {hasEvents && (
+          <button
+            type="button"
+            onClick={() => setReplayOpen((open) => !open)}
+            aria-expanded={replayOpen}
+            aria-controls="replay-panel"
+            title={t('results:replayTitle')}
+            aria-label={t('results:replay')}
+            className={ACTION_BUTTON}
+          >
+            <PlayCircle size={18} aria-hidden="true" />
+          </button>
+        )}
         <span role="status" aria-live="polite" className="text-[0.9rem] text-main">
           {copied ? t('results:copied') : ''}
         </span>
@@ -328,7 +381,12 @@ function SaveStatus({ saveState }: { saveState: SaveState }) {
         <span className="text-[0.9rem] text-error">{t('results:saveError', { message: saveState.message })}</span>
       );
     case 'skipped': {
-      const key = saveState.reason === 'short' ? 'results:skippedShort' : 'results:skippedAccuracy';
+      const key =
+        saveState.reason === 'short'
+          ? 'results:skippedShort'
+          : saveState.reason === 'failed'
+            ? 'results:skippedFailed'
+            : 'results:skippedAccuracy';
       return <span className="text-[0.9rem] text-sub">{t(key)}</span>;
     }
   }

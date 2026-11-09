@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { Crown, Keyboard, LogIn, User } from 'lucide-react';
+import { Crown, Flag, Keyboard, LogIn, User } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link, NavLink } from 'react-router';
 import { useAuth } from '@/features/auth/useAuth';
@@ -39,6 +39,7 @@ export function Header() {
       <nav aria-label={t('nav:main')} className="flex items-center gap-1">
         <NavIcon to="/" end label={t('nav:test')} icon={Keyboard} />
         <NavIcon to="/leaderboard" label={t('nav:leaderboard')} icon={Crown} />
+        <NavIcon to="/race" label={t('race:navLabel')} icon={Flag} />
         {user ? (
           <NavIcon to="/account" label={t('nav:account')} icon={User} />
         ) : (

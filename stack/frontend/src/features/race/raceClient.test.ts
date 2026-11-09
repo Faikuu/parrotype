@@ -1,0 +1,330 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MockSocket } from './mockSocket';
+import { MAX_RECONNECT_ATTEMPTS, ProgressThrottle, RaceClient, raceSocketUrl } from './raceClient';
+import type { RaceRoom } from './protocol';
+
+function player(id: string, name: string, over: Partial<RaceRoom['players'][number]> = {}) {
+  return {
+    id,
+    name,
+    isGuest: name.startsWith('guest '),
+    progress: 0,
+    wpm: 0,
+    finished: false,
+    place: null,
+    accuracy: null,
+    connected: true,
+    ...over,
+  };
+}
+
+function room(over: Partial<RaceRoom> = {}): RaceRoom {
+  return {
+    id: 'abc12345',
+    language: 'en',
+    status: 'lobby',
+    hostId: 'p1',
+    text: null,
+    source: null,
+    startsAt: null,
+    players: [player('p1', 'guest Ann')],
+    ...over,
+  };
+}
+
+function makeListener() {
+  return {
+    onConnection: vi.fn(),
+    onJoined: vi.fn(),
+    onRoom: vi.fn(),
+    onError: vi.fn(),
+  };
+}
+
+beforeEach(() => {
+  MockSocket.reset();
+  vi.useFakeTimers();
+  vi.stubGlobal('WebSocket', MockSocket);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+describe('RaceClient', () => {
+  it('joins on open, then reports joined and room messages', () => {
+    const listener = makeListener();
+    const client = new RaceClient('ws://host/api/races/ws', listener);
+    client.connect({ room: 'abc12345', name: 'Ann' });
+    const socket = MockSocket.instances[0];
+    expect(socket.url).toBe('ws://host/api/races/ws');
+    expect(socket.sent).toHaveLength(0);
+
+    socket.open();
+    expect(socket.sentMessages()).toEqual([{ type: 'join', room: 'abc12345', name: 'Ann' }]);
+
+    socket.receive({ type: 'joined', you: 'p1' });
+    socket.receive({ type: 'room', room: room() });
+    expect(listener.onJoined).toHaveBeenCalledWith('p1');
+    expect(listener.onRoom).toHaveBeenCalledWith(room());
+    expect(listener.onConnection).toHaveBeenLastCalledWith('joined');
+  });
+
+  it('leaves out the name for a signed-in user', () => {
+    const client = new RaceClient('ws://host/api/races/ws', makeListener());
+    client.connect({ room: 'abc12345' });
+    MockSocket.instances[0].open();
+    expect(MockSocket.instances[0].sentMessages()).toEqual([{ type: 'join', room: 'abc12345' }]);
+  });
+
+  it('ignores malformed frames and malformed room payloads', () => {
+    const listener = makeListener();
+    const client = new RaceClient('ws://host/api/races/ws', listener);
+    client.connect({ room: 'abc12345' });
+    const socket = MockSocket.instances[0];
+    socket.open();
+    socket.receiveRaw('not json');
+    socket.receive({ type: 'room', room: { id: 'x', status: 'nope' } });
+    socket.receive({ type: 'mystery' });
+    expect(listener.onRoom).not.toHaveBeenCalled();
+    expect(listener.onError).not.toHaveBeenCalled();
+    expect(listener.onJoined).not.toHaveBeenCalled();
+  });
+
+  it('reconnects with 1s, 2s, 4s, 8s, then 10s, and rejoins each time', () => {
+    const client = new RaceClient('ws://host/api/races/ws', makeListener());
+    client.connect({ room: 'abc12345', name: 'Ann' });
+    MockSocket.instances[0].open();
+
+    const expected = [1000, 2000, 4000, 8000, 10000];
+    let drops = 0;
+    for (const delay of expected) {
+      const socket = MockSocket.instances[MockSocket.instances.length - 1];
+      socket.drop(1006);
+      drops++;
+      vi.advanceTimersByTime(delay - 1);
+      expect(MockSocket.instances).toHaveLength(drops);
+      vi.advanceTimersByTime(1);
+      expect(MockSocket.instances).toHaveLength(drops + 1);
+      MockSocket.instances[drops].open();
+      expect(MockSocket.instances[drops].sentMessages()).toEqual([{ type: 'join', room: 'abc12345', name: 'Ann' }]);
+    }
+  });
+
+  it('starts the backoff again after a successful join', () => {
+    const client = new RaceClient('ws://host/api/races/ws', makeListener());
+    client.connect({ room: 'abc12345' });
+    MockSocket.instances[0].open();
+    MockSocket.instances[0].drop();
+    vi.advanceTimersByTime(1000);
+    MockSocket.instances[1].open();
+    MockSocket.instances[1].receive({ type: 'joined', you: 'p1' });
+    MockSocket.instances[1].drop();
+    vi.advanceTimersByTime(999);
+    expect(MockSocket.instances).toHaveLength(2);
+    vi.advanceTimersByTime(1);
+    expect(MockSocket.instances).toHaveLength(3);
+  });
+
+  it('stops for good after a fatal error such as a full room', () => {
+    const listener = makeListener();
+    const client = new RaceClient('ws://host/api/races/ws', listener);
+    client.connect({ room: 'abc12345', name: 'Ann' });
+    const socket = MockSocket.instances[0];
+    socket.open();
+    socket.receive({ type: 'error', message: 'This race is full' });
+
+    expect(listener.onError).toHaveBeenCalledWith({ code: 'full', message: 'This race is full', fatal: true });
+    expect(listener.onConnection).toHaveBeenLastCalledWith('failed');
+    socket.drop();
+    vi.advanceTimersByTime(60_000);
+    expect(MockSocket.instances).toHaveLength(1);
+  });
+
+  it('treats "Race not found" and "This race has expired" as fatal too', () => {
+    for (const message of ['Race not found', 'This race has expired']) {
+      MockSocket.reset();
+      const listener = makeListener();
+      const client = new RaceClient('ws://host/api/races/ws', listener);
+      client.connect({ room: 'abc12345' });
+      MockSocket.instances[0].open();
+      MockSocket.instances[0].receive({ type: 'error', message });
+      expect(listener.onError.mock.calls[0][0].fatal).toBe(true);
+      client.close();
+    }
+  });
+
+  it('treats an error before the join as fatal, and a later error as a notice', () => {
+    const listener = makeListener();
+    const client = new RaceClient('ws://host/api/races/ws', listener);
+    client.connect({ room: 'abc12345', name: 'x' });
+    const socket = MockSocket.instances[0];
+    socket.open();
+    socket.receive({ type: 'error', message: 'Pick a nickname of 2 to 20 letters' });
+    expect(listener.onError.mock.calls[0][0].fatal).toBe(true);
+
+    MockSocket.reset();
+    const listener2 = makeListener();
+    const client2 = new RaceClient('ws://host/api/races/ws', listener2);
+    client2.connect({ room: 'abc12345' });
+    const socket2 = MockSocket.instances[0];
+    socket2.open();
+    socket2.receive({ type: 'joined', you: 'p1' });
+    socket2.receive({ type: 'error', message: 'Finish rejected: not every character is typed' });
+    expect(listener2.onError.mock.calls[0][0].fatal).toBe(false);
+    expect(client2.progress(3, 40)).toBe(true);
+  });
+
+  it('gives up with a connection error after too many failed attempts', () => {
+    const listener = makeListener();
+    const client = new RaceClient('ws://host/api/races/ws', listener);
+    client.connect({ room: 'abc12345' });
+    for (let i = 0; i <= MAX_RECONNECT_ATTEMPTS; i++) {
+      MockSocket.instances[MockSocket.instances.length - 1].drop(1006);
+      vi.advanceTimersByTime(10_000);
+    }
+    expect(listener.onError).toHaveBeenLastCalledWith({
+      code: 'connection',
+      message: "Couldn't connect to the race server",
+      fatal: true,
+    });
+    expect(MockSocket.instances).toHaveLength(MAX_RECONNECT_ATTEMPTS + 1);
+  });
+
+  it('does not retry a 1008 close (the origin was refused)', () => {
+    const listener = makeListener();
+    const client = new RaceClient('ws://host/api/races/ws', listener);
+    client.connect({ room: 'abc12345' });
+    MockSocket.instances[0].drop(1008);
+    vi.advanceTimersByTime(60_000);
+    expect(MockSocket.instances).toHaveLength(1);
+    expect(listener.onError.mock.calls[0][0]).toMatchObject({ code: 'connection', fatal: true });
+  });
+
+  it('sends a finish that happened while the socket was down once the join succeeds again', () => {
+    const client = new RaceClient('ws://host/api/races/ws', makeListener());
+    client.connect({ room: 'abc12345', name: 'Ann' });
+    MockSocket.instances[0].open();
+    MockSocket.instances[0].receive({ type: 'joined', you: 'p1' });
+    MockSocket.instances[0].drop();
+
+    client.finish({ chars: 12, wpm: 60, accuracy: 97, durationMs: 9000 });
+    expect(MockSocket.instances).toHaveLength(1);
+
+    vi.advanceTimersByTime(1000);
+    const socket = MockSocket.instances[1];
+    socket.open();
+    socket.receive({ type: 'joined', you: 'p1' });
+    expect(socket.sentMessages().slice(1)).toEqual([
+      { type: 'progress', chars: 12, wpm: 60 },
+      { type: 'finish', wpm: 60, accuracy: 97, durationMs: 9000 },
+    ]);
+  });
+
+  it('sends the final progress before the finish', () => {
+    const client = new RaceClient('ws://host/api/races/ws', makeListener());
+    client.connect({ room: 'abc12345', name: 'Ann' });
+    const socket = MockSocket.instances[0];
+    socket.open();
+    socket.receive({ type: 'joined', you: 'p1' });
+    client.finish({ chars: 10, wpm: 50, accuracy: 98, durationMs: 12000 });
+    expect(socket.sentMessages().slice(1)).toEqual([
+      { type: 'progress', chars: 10, wpm: 50 },
+      { type: 'finish', wpm: 50, accuracy: 98, durationMs: 12000 },
+    ]);
+  });
+
+  it('does not send start or progress before the join', () => {
+    const client = new RaceClient('ws://host/api/races/ws', makeListener());
+    client.connect({ room: 'abc12345', name: 'Ann' });
+    const socket = MockSocket.instances[0];
+    socket.open();
+    expect(client.start()).toBe(false);
+    expect(client.progress(1, 10)).toBe(false);
+    socket.receive({ type: 'joined', you: 'p1' });
+    expect(client.start()).toBe(true);
+    expect(socket.sentMessages().at(-1)).toEqual({ type: 'start' });
+  });
+
+  it('leaves the room and closes without reconnecting on close()', () => {
+    const client = new RaceClient('ws://host/api/races/ws', makeListener());
+    client.connect({ room: 'abc12345', name: 'Ann' });
+    const socket = MockSocket.instances[0];
+    socket.open();
+    socket.receive({ type: 'joined', you: 'p1' });
+    client.close();
+    expect(socket.sentMessages().at(-1)).toEqual({ type: 'leave' });
+    expect(socket.readyState).toBe(MockSocket.CLOSED);
+    vi.advanceTimersByTime(60_000);
+    expect(MockSocket.instances).toHaveLength(1);
+  });
+});
+
+describe('raceSocketUrl', () => {
+  it('uses the page origin for a relative API base', () => {
+    expect(raceSocketUrl('/api', { protocol: 'http:', host: 'localhost:5185' })).toBe(
+      'ws://localhost:5185/api/races/ws',
+    );
+    expect(raceSocketUrl('/api', { protocol: 'https:', host: 'parrotype.app' })).toBe(
+      'wss://parrotype.app/api/races/ws',
+    );
+  });
+
+  it('derives the websocket from an absolute API URL', () => {
+    expect(raceSocketUrl('https://api.example.com/api/', { protocol: 'http:', host: 'x' })).toBe(
+      'wss://api.example.com/api/races/ws',
+    );
+    expect(raceSocketUrl('http://localhost:3000/api', { protocol: 'https:', host: 'x' })).toBe(
+      'ws://localhost:3000/api/races/ws',
+    );
+  });
+});
+
+describe('ProgressThrottle', () => {
+  it('sends at most once per 200ms and keeps the latest value for the trailing send', () => {
+    const sent: Array<[number, number]> = [];
+    const at: number[] = [];
+    const throttle = new ProgressThrottle((c, w) => {
+      sent.push([c, w]);
+      at.push(Date.now());
+    });
+
+    throttle.push(1, 10);
+    throttle.push(2, 11);
+    throttle.push(3, 12);
+    expect(sent).toEqual([[1, 10]]);
+
+    vi.advanceTimersByTime(199);
+    expect(sent).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(sent).toEqual([
+      [1, 10],
+      [3, 12],
+    ]);
+
+    throttle.push(4, 13);
+    vi.advanceTimersByTime(199);
+    expect(sent).toHaveLength(2);
+    vi.advanceTimersByTime(1);
+    expect(sent).toHaveLength(3);
+
+    for (let i = 1; i < at.length; i++) expect(at[i] - at[i - 1]).toBeGreaterThanOrEqual(200);
+  });
+
+  it('flush sends the pending value at once, and cancel drops it', () => {
+    const send = vi.fn();
+    const throttle = new ProgressThrottle(send);
+    throttle.push(1, 1);
+    throttle.push(2, 2);
+    throttle.flush();
+    expect(send).toHaveBeenLastCalledWith(2, 2);
+    expect(send).toHaveBeenCalledTimes(2);
+
+    throttle.push(9, 9);
+    throttle.cancel();
+    vi.advanceTimersByTime(1000);
+    throttle.flush();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+});

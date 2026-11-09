@@ -86,7 +86,46 @@ export type PublicProfile = {
   totalTimeMs: number;
   bests: BestEntry[]; // ranked modes only, best per (mode, mode2, language)
   recent: RecentResult[]; // last 10
+  streak: Streak;
+  achievements: Achievement[]; // in unlock order
+  activity: ActivityDay[]; // last 365 UTC days, only days with tests
 };
+
+// Insights, achievements and export (docs/SPEC-2.2.md). Mirrors stack/backend/src/results/insights.ts.
+export type Streak = { current: number; longest: number };
+export type ActivityDay = { date: string; tests: number }; // YYYY-MM-DD (UTC)
+export type HistogramBucket = { from: number; count: number }; // wpm buckets of 10
+export type HourBucket = { hour: number; tests: number; avgWpm: number }; // 0-23 UTC
+
+export type AchievementId =
+  | 'first_test'
+  | 'tests_100'
+  | 'tests_1000'
+  | 'wpm_60'
+  | 'wpm_80'
+  | 'wpm_100'
+  | 'wpm_120'
+  | 'wpm_150'
+  | 'perfect'
+  | 'marathon'
+  | 'polyglot'
+  | 'pangram_hunter'
+  | 'daily_first'
+  | 'streak_3'
+  | 'streak_7'
+  | 'streak_30';
+
+export type Achievement = { id: AchievementId; unlockedAt: string };
+
+export type Insights = {
+  streak: Streak;
+  activity: ActivityDay[];
+  histogram: HistogramBucket[];
+  byHour: HourBucket[];
+  achievements: Achievement[];
+};
+
+export type ExportFormat = 'csv' | 'json';
 
 export type LeaderboardQuery = { mode: string; mode2: string; language: Language };
 export type QuoteQuery = { language: Language; length: QuoteLength };

@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { TestConfig } from '@/lib/engine/types';
-import { DEFAULT_THEME, FONT_IDS, THEME_IDS, type FontId, type ThemeId } from '@/themes/themes';
+import { DEFAULT_THEME, FONT_IDS, THEME_IDS, type FontId, type ThemeChoice, type ThemeTokens } from '@/themes/themes';
+import { normaliseTokens } from '@/themes/themeCode';
 import { safeStorage } from './storage';
 
 export type FontSize = 1 | 1.25 | 1.5 | 2 | 2.5 | 3;
@@ -13,7 +14,9 @@ export type PaceCaret = 'off' | 'pb' | 'average' | 'custom';
 export type SoundProfile = 'off' | 'click' | 'soft' | 'typewriter';
 
 export interface SettingsData extends TestConfig {
-  theme: ThemeId;
+  theme: ThemeChoice;
+  /** The user's own colours (used when theme is 'custom'). Null until they save a theme. */
+  customTheme: ThemeTokens | null;
   font: FontId;
   fontSize: FontSize; // rem multiplier for the test text
   caretStyle: CaretStyle;
@@ -60,6 +63,7 @@ export const DEFAULT_SETTINGS: SettingsData = {
   noBackspace: false,
   suddenDeath: false,
   theme: DEFAULT_THEME,
+  customTheme: null,
   font: 'spline',
   fontSize: 1,
   caretStyle: 'line',
@@ -90,7 +94,7 @@ const ALLOWED: Partial<Record<keyof SettingsData, readonly unknown[]>> = {
   pangramCount: [1, 3, 5],
   language: ['en', 'pl', 'de', 'es'],
   stopOnError: ['off', 'letter', 'word'],
-  theme: THEME_IDS,
+  theme: [...THEME_IDS, 'custom'],
   font: FONT_IDS,
   fontSize: [1, 1.25, 1.5, 2, 2.5, 3],
   caretStyle: ['line', 'block', 'underline', 'off'],
@@ -118,6 +122,8 @@ export function sanitizeSettings(input: unknown): SettingsData {
   const src = input as Record<string, unknown>;
   for (const key of DATA_KEYS) {
     const value = src[key];
+    // Validated as a whole below: an object, so the generic type check does not cover it.
+    if (key === 'customTheme') continue;
     if (value === undefined || typeof value !== typeof DEFAULT_SETTINGS[key]) continue;
     const allowed = ALLOWED[key];
     if (allowed && !allowed.includes(value)) continue;
@@ -132,6 +138,9 @@ export function sanitizeSettings(input: unknown): SettingsData {
     const clean = key === 'customText' ? (value as string).slice(0, CUSTOM_TEXT_MAX) : value;
     (out as unknown as Record<string, unknown>)[key] = clean;
   }
+  // A custom theme needs all eight colours; without them the choice falls back to the default theme.
+  out.customTheme = normaliseTokens(src.customTheme);
+  if (out.theme === 'custom' && !out.customTheme) out.theme = DEFAULT_THEME;
   return out;
 }
 

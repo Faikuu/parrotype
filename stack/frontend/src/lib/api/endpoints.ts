@@ -1,6 +1,8 @@
 import type { Language, QuoteLength } from '@/lib/engine/types';
-import { api } from './client';
+import { api, apiBlob } from './client';
 import type {
+  ExportFormat,
+  Insights,
   LeaderboardEntry,
   LeaderboardQuery,
   PublicProfile,
@@ -34,6 +36,10 @@ export const resultsApi = {
   mine: (limit = 50, signal?: AbortSignal) =>
     api<Result[]>(`/results/me?limit=${limit}`, { signal }),
   summary: (signal?: AbortSignal) => api<Summary>('/results/me/summary', { signal }),
+  insights: (signal?: AbortSignal) => api<Insights>('/results/me/insights', { signal }),
+  /** Throttled to 5 a minute by the server: a 429 ApiError means too many downloads. */
+  export: (format: ExportFormat, signal?: AbortSignal) =>
+    apiBlob(`/results/me/export?format=${format}`, { signal }),
 };
 
 export const leaderboardApi = {

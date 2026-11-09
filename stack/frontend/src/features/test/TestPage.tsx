@@ -59,6 +59,7 @@ export default function TestPage() {
           <Results
             config={test.state.config}
             result={result}
+            state={test.state}
             date={test.runDate}
             saveState={test.saveState}
             onNext={test.restart}

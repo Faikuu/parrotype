@@ -52,6 +52,7 @@ function Palette() {
     },
     restart: () => useUi.getState().restart(),
     openCustomText: () => useUi.getState().openCustomText(),
+    openThemeEditor: () => useUi.getState().openThemeEditor(),
     previewTheme: (id) => useUi.getState().setPreviewTheme(id),
   };
   const root = buildCommands(ctx);

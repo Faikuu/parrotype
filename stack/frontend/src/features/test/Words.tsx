@@ -69,13 +69,15 @@ export interface WordsProps {
   onActivate: () => void;
   /** Pace caret target in wpm, or null for no pace caret. */
   pace: number | null;
+  /** Overrides the smooth caret setting for this view (the replay player). */
+  caretSmooth?: boolean;
 }
 
 /**
  * The text. Default: three visible lines that scroll by whole lines so the active line stays on the
  * middle line. Tape mode: one line that slides sideways so the active letter stays about 40% in.
  */
-export function Words({ state, onActivate, pace }: WordsProps) {
+export function Words({ state, onActivate, pace, caretSmooth }: WordsProps) {
   const { t } = useTranslation();
   const blind = useSettings((s) => s.blindMode);
   const font = useSettings((s) => s.font);
@@ -162,7 +164,7 @@ export function Words({ state, onActivate, pace }: WordsProps) {
           />
         ))}
       </div>
-      <Caret viewportRef={viewportRef} state={state} shift={shift} tapeX={tapeX} />
+      <Caret viewportRef={viewportRef} state={state} shift={shift} tapeX={tapeX} smooth={caretSmooth} />
       {pace !== null && (
         <PaceCaret viewportRef={viewportRef} state={state} wpm={pace} shift={shift} tapeX={tapeX} />
       )}

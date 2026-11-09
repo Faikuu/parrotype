@@ -1,9 +1,10 @@
-import { Palette } from 'lucide-react';
+import { Palette, WifiOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { getTheme } from '@/themes/themes';
+import { resolveTheme } from '@/themes/themes';
 import { useSettings } from '@/store/settings';
 import { useUi } from '@/store/ui';
 import { Kbd } from './Kbd';
+import { useOnline } from './useOnline';
 
 const REPO_URL = 'https://github.com/Faikuu/parrotype';
 
@@ -18,7 +19,9 @@ function GitHubMark() {
 export function Footer() {
   const { t } = useTranslation();
   const theme = useSettings((s) => s.theme);
+  const customTheme = useSettings((s) => s.customTheme);
   const openCommandLine = useUi((s) => s.openCommandLine);
+  const online = useOnline();
 
   return (
     <footer className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 pb-6 pt-6 text-[0.85rem] text-sub">
@@ -33,6 +36,12 @@ export function Footer() {
         </span>
       </div>
       <div className="flex items-center gap-4">
+        {!online && (
+          <span role="status" className="flex items-center gap-1.5 text-sub">
+            <WifiOff size={14} aria-hidden="true" />
+            {t('common:footer.offline')}
+          </span>
+        )}
         <button
           type="button"
           title={t('common:footer.themeButton')}
@@ -40,7 +49,7 @@ export function Footer() {
           className="flex items-center gap-1.5 rounded-[6px] px-2 py-1 transition-colors hover:text-text"
         >
           <Palette size={16} aria-hidden="true" />
-          {getTheme(theme).name}
+          {theme === 'custom' ? t('commands:themeCustom') : resolveTheme(theme, customTheme).name}
         </button>
         <span className="tabular">v2.0.0</span>
         <a

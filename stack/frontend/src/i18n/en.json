@@ -18,7 +18,8 @@
       "restart": "restart",
       "keyCommands": "esc or ctrl+shift+p",
       "commands": "commands",
-      "themeButton": "Change theme"
+      "themeButton": "Change theme",
+      "offline": "Offline"
     }
   },
   "nav": {
@@ -168,6 +169,45 @@
     "paceCaret": "Pace caret",
     "tapeMode": "Tape mode",
     "sound": "Sound",
-    "soundVolume": "Sound volume"
+    "soundVolume": "Sound volume",
+    "noBackspace": "No backspace",
+    "suddenDeath": "Sudden death",
+    "themeCustom": "Custom",
+    "customiseTheme": "Customise theme…"
+  },
+  "replay": {
+    "title": "Replay",
+    "play": "Play",
+    "pause": "Pause",
+    "speed": "Playback speed",
+    "speedValue": "{{speed}}×",
+    "scrub": "Replay position",
+    "time": "{{elapsed}} s / {{total}} s"
+  },
+  "themeEditor": {
+    "title": "Customise theme",
+    "colours": "Colours",
+    "fields": {
+      "bg": "Background",
+      "surface": "Surface",
+      "text": "Text",
+      "sub": "Secondary text",
+      "main": "Accent",
+      "caret": "Caret",
+      "error": "Error",
+      "errorExtra": "Extra characters"
+    },
+    "save": "Save theme",
+    "export": "Export",
+    "copied": "Copied",
+    "copyFailed": "Couldn't copy. Select the code and copy it by hand.",
+    "exportedCode": "Theme code",
+    "contrastText": "Text on the background is {{ratio}}:1. Aim for at least {{min}}:1.",
+    "contrastSub": "Secondary text on the background is {{ratio}}:1. Aim for at least {{min}}:1.",
+    "importLabel": "Paste a theme code",
+    "importPlaceholder": "pt1.…",
+    "import": "Import",
+    "importInvalid": "That code isn't a valid theme",
+    "imported": "Imported. Save the theme to keep it."
   }
 }

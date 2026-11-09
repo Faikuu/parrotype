@@ -1,3 +1,5 @@
+import { isLightColour } from './contrast';
+
 export type ThemeId =
   | 'kea'
   | 'kakapo'
@@ -21,14 +23,22 @@ export interface ThemeTokens {
   errorExtra: string;
 }
 
+/** A theme the user can pick: one of the built-in parrots, or their own colours. */
+export type ThemeChoice = ThemeId | 'custom';
+
 export interface Theme {
-  id: ThemeId;
+  id: ThemeChoice;
   name: string;
   light: boolean;
   tokens: ThemeTokens;
 }
 
-export const THEMES: readonly Theme[] = [
+/** A built-in theme (the custom theme is not in this list). */
+export interface BuiltinTheme extends Theme {
+  id: ThemeId;
+}
+
+export const THEMES: readonly BuiltinTheme[] = [
   {
     id: 'kea', name: 'Kea', light: false,
     tokens: { bg: '#1d2119', surface: '#272c22', text: '#e4e3d3', sub: '#6f7562', main: '#9db35f', caret: '#f0782f', error: '#e0525a', errorExtra: '#8f3a3f' },
@@ -66,8 +76,20 @@ export const THEMES: readonly Theme[] = [
 export const THEME_IDS: readonly ThemeId[] = THEMES.map((t) => t.id);
 export const DEFAULT_THEME: ThemeId = 'kea';
 
-export function getTheme(id: ThemeId): Theme {
+export function getTheme(id: ThemeId): BuiltinTheme {
   return THEMES.find((t) => t.id === id) ?? THEMES[0]!;
+}
+
+/**
+ * The theme to show for a choice. 'custom' uses the saved colours; without them it falls back to the
+ * default theme, so a stale choice never leaves the page unstyled.
+ */
+export function resolveTheme(choice: ThemeChoice, custom: ThemeTokens | null): Theme {
+  if (choice === 'custom') {
+    if (!custom) return getTheme(DEFAULT_THEME);
+    return { id: 'custom', name: 'Custom', light: isLightColour(custom.bg), tokens: custom };
+  }
+  return getTheme(choice);
 }
 
 const TOKEN_VARS: Record<keyof ThemeTokens, string> = {
@@ -82,9 +104,8 @@ const TOKEN_VARS: Record<keyof ThemeTokens, string> = {
 };
 
 /** Sets the colour tokens, data-theme, colour-scheme and theme-color on <html>. */
-export function applyTheme(id: ThemeId): void {
+export function applyTheme(theme: Theme): void {
   if (typeof document === 'undefined') return;
-  const theme = getTheme(id);
   const root = document.documentElement;
   for (const key of Object.keys(TOKEN_VARS) as (keyof ThemeTokens)[]) {
     root.style.setProperty(TOKEN_VARS[key], theme.tokens[key]);

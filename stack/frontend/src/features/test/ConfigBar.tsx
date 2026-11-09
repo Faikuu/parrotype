@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AtSign, Globe, Hash } from 'lucide-react';
+import { AtSign, Ban, Globe, Hash, Skull } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/components/cn';
 import { LANGUAGE_NAMES, LANGUAGES } from '@/lib/text/languages';
@@ -72,6 +72,8 @@ export function ConfigBar() {
       numbers: s.numbers,
       language: s.language,
       focusMode: s.focusMode,
+      noBackspace: s.noBackspace,
+      suddenDeath: s.suddenDeath,
     })),
   );
   const set = useSettings((s) => s.set);
@@ -177,6 +179,30 @@ export function ConfigBar() {
         <>
           <Divider />
           <div className="flex flex-wrap items-center gap-0.5">{sub}</div>
+        </>
+      )}
+
+      {cfg.mode !== 'zen' && (
+        <>
+          <Divider />
+          <div role="group" aria-label={t('test:modifiers')} className="flex items-center gap-0.5">
+            <Opt
+              pressed={cfg.noBackspace}
+              onPick={() => set('noBackspace', !cfg.noBackspace)}
+              title={t('test:noBackspaceTitle')}
+            >
+              <Ban size={13} className="mr-1 inline-block align-[-2px]" aria-hidden="true" />
+              {t('test:noBackspace')}
+            </Opt>
+            <Opt
+              pressed={cfg.suddenDeath}
+              onPick={() => set('suddenDeath', !cfg.suddenDeath)}
+              title={t('test:suddenDeathTitle')}
+            >
+              <Skull size={13} className="mr-1 inline-block align-[-2px]" aria-hidden="true" />
+              {t('test:suddenDeath')}
+            </Opt>
+          </div>
         </>
       )}
 

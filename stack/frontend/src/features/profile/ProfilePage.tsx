@@ -3,9 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router';
 import { Button } from '@/components/Button';
+import { ActivityCalendar } from '@/features/account/ActivityCalendar';
+import { AchievementsGrid } from '@/features/account/AchievementsGrid';
 import { BestsTable } from '@/features/account/BestsTable';
 import { formatDate, formatNumber, relativeTime, splitDuration } from '@/features/account/format';
 import { languageLabel, modeLabel, optionLabel, type Tr } from '@/features/account/labels';
+import { StreakLine } from '@/features/account/Insights';
 import { ApiError, usersApi } from '@/lib/api';
 import type { PublicProfile, RecentResult } from '@/lib/api/types';
 
@@ -61,6 +64,16 @@ export default function ProfilePage() {
           {t('account:stats.heading')}
         </h2>
         <Totals totalTests={p.totalTests} totalTimeMs={p.totalTimeMs} lang={lang} />
+        <div className="mt-6">
+          <StreakLine streak={p.streak} />
+        </div>
+      </section>
+
+      <section aria-labelledby="profile-achievements" className="mt-12">
+        <h2 id="profile-achievements" className="mb-4 text-[1.1rem] font-semibold text-text">
+          {t('achievements.heading')}
+        </h2>
+        <AchievementsGrid achievements={p.achievements} onlyUnlocked />
       </section>
 
       <section aria-labelledby="profile-bests" className="mt-12">
@@ -79,6 +92,13 @@ export default function ProfilePage() {
         ) : (
           <RecentTable results={p.recent} lang={lang} />
         )}
+      </section>
+
+      <section aria-labelledby="profile-activity" className="mt-12">
+        <h2 id="profile-activity" className="mb-4 text-[1.1rem] font-semibold text-text">
+          {t('insights.calendar.heading')}
+        </h2>
+        <ActivityCalendar activity={p.activity} />
       </section>
     </div>
   );

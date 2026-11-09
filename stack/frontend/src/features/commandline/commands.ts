@@ -8,6 +8,7 @@ import {
   Languages,
   LogIn,
   LogOut,
+  Paintbrush,
   Palette,
   Pencil,
   Quote,
@@ -24,7 +25,7 @@ import {
 } from 'lucide-react';
 import type { Language, Mode, PangramCount, QuoteLength, TestConfig, TimeOption, WordsOption } from '@/lib/engine/types';
 import { LANGUAGES as LANGUAGE_LIST } from '@/lib/text/languages';
-import { FONT_IDS, FONTS, THEMES, type ThemeId } from '@/themes/themes';
+import { FONT_IDS, FONTS, THEMES, type ThemeChoice } from '@/themes/themes';
 import type {
   CaretStyle,
   FontSize,
@@ -65,10 +66,11 @@ export interface CommandContext {
   logout: () => void;
   restart: () => void;
   openCustomText: () => void;
-  previewTheme: (id: ThemeId | null) => void;
+  openThemeEditor: () => void;
+  previewTheme: (id: ThemeChoice | null) => void;
 }
 
-type BooleanKey = 'punctuation' | 'numbers' | 'smoothCaret' | 'blindMode' | 'focusMode' | 'tapeMode';
+type BooleanKey = 'punctuation' | 'numbers' | 'smoothCaret' | 'blindMode' | 'focusMode' | 'tapeMode' | 'noBackspace' | 'suddenDeath';
 
 interface Option<V> {
   value: V;
@@ -229,9 +231,9 @@ export function buildCommands(ctx: CommandContext): Command[] {
       group: g.appearance,
       icon: Palette,
       keywords: ['color', 'colour', 'colors'],
-      hint: THEMES.find((th) => th.id === s.theme)?.name,
-      children: () =>
-        THEMES.map((th) => ({
+      hint: s.theme === 'custom' ? t('commands:themeCustom') : THEMES.find((th) => th.id === s.theme)?.name,
+      children: () => {
+        const entries: Command[] = THEMES.map((th) => ({
           id: `theme.${th.id}`,
           label: th.name,
           active: th.id === s.theme,
@@ -241,7 +243,29 @@ export function buildCommands(ctx: CommandContext): Command[] {
             ctx.settings.set('theme', th.id);
             ctx.previewTheme(null);
           },
-        })),
+        }));
+        if (s.customTheme) {
+          entries.push({
+            id: 'theme.custom',
+            label: t('commands:themeCustom'),
+            active: s.theme === 'custom',
+            onPreview: () => ctx.previewTheme('custom'),
+            onPreviewEnd: () => ctx.previewTheme(null),
+            run: () => {
+              ctx.settings.set('theme', 'custom');
+              ctx.previewTheme(null);
+            },
+          });
+        }
+        entries.push({
+          id: 'theme.customise',
+          label: t('commands:customiseTheme'),
+          icon: Paintbrush,
+          keywords: ['custom', 'edit', 'colours', 'colors'],
+          run: () => ctx.openThemeEditor(),
+        });
+        return entries;
+      },
     },
     {
       id: 'randomTheme',
@@ -333,6 +357,8 @@ export function buildCommands(ctx: CommandContext): Command[] {
       options: SOUND_VOLUMES.map((v) => ({ value: v, label: `${Math.round(v * 100)}%` })),
     }),
 
+    toggle(ctx, 'noBackspace', 'noBackspace', t('commands:noBackspace'), g.behaviour),
+    toggle(ctx, 'suddenDeath', 'suddenDeath', t('commands:suddenDeath'), g.behaviour),
     choice(ctx, {
       id: 'stopOnError',
       key: 'stopOnError',

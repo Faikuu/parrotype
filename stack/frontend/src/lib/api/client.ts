@@ -31,9 +31,10 @@ async function readErrorMessage(res: Response): Promise<string> {
   return res.statusText || `Request failed (${res.status})`;
 }
 
-export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
+/** Sends a request and throws ApiError for any non-2xx status. The body is not read. */
+async function send(path: string, opts: ApiOptions, accept: string): Promise<Response> {
   const { method = 'GET', body, signal } = opts;
-  const headers: Record<string, string> = { Accept: 'application/json' };
+  const headers: Record<string, string> = { Accept: accept };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
   let res: Response;
@@ -51,7 +52,23 @@ export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
   }
 
   if (!res.ok) throw new ApiError(res.status, await readErrorMessage(res));
+  return res;
+}
+
+export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
+  const res = await send(path, opts, 'application/json');
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
+}
+
+/** A file download. The name comes from Content-Disposition when the server sends one. */
+export async function apiBlob(
+  path: string,
+  opts: ApiOptions = {},
+): Promise<{ blob: Blob; filename: string | null }> {
+  const res = await send(path, opts, '*/*');
+  const disposition = res.headers.get('Content-Disposition') ?? '';
+  const match = /filename="([^"]+)"/.exec(disposition);
+  return { blob: await res.blob(), filename: match?.[1] ?? null };
 }

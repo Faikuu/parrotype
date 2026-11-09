@@ -6,8 +6,10 @@ import { Button } from '@/components/Button';
 import { useAuth } from '@/features/auth/useAuth';
 import { resultsApi } from '@/lib/api';
 import type { Result } from '@/lib/api/types';
+import { AchievementsGrid } from './AchievementsGrid';
 import { BestsTable } from './BestsTable';
 import { ChangePasswordForm } from './ChangePassword';
+import { DataExport } from './DataExport';
 import { DeleteAccountForm } from './DeleteAccount';
 import {
   formatDate,
@@ -17,6 +19,8 @@ import {
   splitDuration,
 } from './format';
 import { languageLabel, modeLabel, optionLabel, type Tr } from './labels';
+import { useInsights, InsightsSection } from './Insights';
+import { LoadError } from './LoadError';
 import { ProgressChart } from './ProgressChart';
 
 const RECENT_LIMIT = 100;
@@ -39,6 +43,7 @@ export default function AccountPage() {
     queryFn: ({ signal }) => resultsApi.mine(RECENT_LIMIT, signal),
     enabled: user !== null,
   });
+  const insights = useInsights(user !== null);
 
   if (isLoading) return <p className="py-16 text-sub">{t('common:loading')}</p>;
   if (!user && !leaving) return <Navigate to="/login?next=/account" replace />;
@@ -107,6 +112,21 @@ export default function AccountPage() {
         ) : null}
       </section>
 
+      <InsightsSection query={insights} />
+
+      <section aria-labelledby="account-achievements" className="mt-12">
+        <h2 id="account-achievements" className="mb-4 text-[1.1rem] font-semibold text-text">
+          {t('achievements.heading')}
+        </h2>
+        {insights.isPending ? (
+          <p className="text-sub">{t('common:loading')}</p>
+        ) : insights.isError || !insights.data ? (
+          <LoadError onRetry={() => void insights.refetch()} />
+        ) : (
+          <AchievementsGrid achievements={insights.data.achievements} />
+        )}
+      </section>
+
       <section aria-labelledby="account-progress" className="mt-12">
         <h2 id="account-progress" className="text-[1.1rem] font-semibold text-text">
           {t('account:progress.heading')}
@@ -139,6 +159,9 @@ export default function AccountPage() {
         <div className="mt-8 grid gap-12 md:grid-cols-2">
           <ChangePasswordForm />
           <DeleteAccountForm name={user.name} onLeaving={setLeaving} />
+        </div>
+        <div className="mt-12">
+          <DataExport />
         </div>
       </section>
     </div>
@@ -250,18 +273,6 @@ function EmptyState() {
       <Link to="/" className="mt-2 inline-block text-main underline underline-offset-4">
         {t('account:empty.link')}
       </Link>
-    </div>
-  );
-}
-
-function LoadError({ onRetry }: { onRetry: () => void }) {
-  const { t } = useTranslation();
-  return (
-    <div role="alert" className="flex flex-wrap items-center gap-4">
-      <p className="text-error">{t('account:loadError')}</p>
-      <Button variant="ghost" onClick={onRetry}>
-        {t('common:retry')}
-      </Button>
     </div>
   );
 }
