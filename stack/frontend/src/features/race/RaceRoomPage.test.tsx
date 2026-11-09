@@ -300,6 +300,38 @@ describe('RaceRoomPage: errors', () => {
     expect(await screen.findByText('Race not found')).toBeInTheDocument();
   });
 
+  it('shows the too-many-connections message for a 1013 close', async () => {
+    stubSession({ id: 1, name: 'alice' });
+    renderRoom();
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    act(() => socket().drop(1013));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Too many open connections from your network. Close other race tabs and try again.',
+    );
+    expect(MockSocket.instances).toHaveLength(1);
+  });
+
+  it('shows the late-join message, and Try again re-sends join', async () => {
+    stubSession({ id: 1, name: 'alice' });
+    renderRoom();
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    act(() => {
+      socket().open();
+      socket().receive({ type: 'error', message: 'This race has already started' });
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'This race has already started. Wait for it to finish, then join the next one.',
+    );
+    // No automatic retry while the message is up.
+    expect(MockSocket.instances).toHaveLength(1);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
+    act(() => socket().open());
+    expect(socket().sentMessages()[0]).toEqual({ type: 'join', room: 'abc12345' });
+  });
+
   it("shows \"Couldn't connect\" once reconnecting gives up on a refused origin", async () => {
     stubSession({ id: 1, name: 'alice' });
     renderRoom();

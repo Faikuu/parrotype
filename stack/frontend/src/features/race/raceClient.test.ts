@@ -1,7 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MockSocket } from './mockSocket';
-import { MAX_RECONNECT_ATTEMPTS, ProgressThrottle, RaceClient, raceSocketUrl } from './raceClient';
+import {
+  MAX_RECONNECT_ATTEMPTS,
+  ProgressThrottle,
+  RaceClient,
+  STABLE_CONNECTION_MS,
+  raceSocketUrl,
+  readRaceToken,
+} from './raceClient';
 import type { RaceRoom } from './protocol';
+
+const TOKEN = '0123456789abcdef0123456789abcdef';
+const TOKEN_KEY = 'parrotype:race-token:abc12345';
+const TOO_MANY_MESSAGE = 'Too many open connections from your network. Close other race tabs and try again.';
+const STARTED_MESSAGE = 'This race has already started';
 
 function player(id: string, name: string, over: Partial<RaceRoom['players'][number]> = {}) {
   return {
@@ -57,6 +69,7 @@ function makeListener() {
 
 beforeEach(() => {
   MockSocket.reset();
+  sessionStorage.clear();
   vi.useFakeTimers();
   vi.stubGlobal('WebSocket', MockSocket);
 });
@@ -126,19 +139,52 @@ describe('RaceClient', () => {
     }
   });
 
-  it('starts the backoff again after a successful join', () => {
+  it('restarts the backoff only after the joined socket has stayed open for 5s', () => {
     const client = new RaceClient('ws://host/api/races/ws', makeListener());
     client.connect({ room: 'abc12345' });
     sock(0).open();
-    sock(0).drop();
+    sock(0).drop(); // never joined: 1s
     vi.advanceTimersByTime(1000);
+
+    // Accepted and joined, then dropped after 4.999s: the count is not reset, so the next wait is 2s.
     sock(1).open();
     sock(1).receive({ type: 'joined', you: 'p1' });
+    vi.advanceTimersByTime(STABLE_CONNECTION_MS - 1);
     sock(1).drop();
-    vi.advanceTimersByTime(999);
+    vi.advanceTimersByTime(1999);
     expect(MockSocket.instances).toHaveLength(2);
     vi.advanceTimersByTime(1);
     expect(MockSocket.instances).toHaveLength(3);
+
+    // Joined and stable for 5s: the count starts over, so the next wait is 1s again.
+    sock(2).open();
+    sock(2).receive({ type: 'joined', you: 'p1' });
+    vi.advanceTimersByTime(STABLE_CONNECTION_MS);
+    sock(2).drop();
+    vi.advanceTimersByTime(999);
+    expect(MockSocket.instances).toHaveLength(3);
+    vi.advanceTimersByTime(1);
+    expect(MockSocket.instances).toHaveLength(4);
+  });
+
+  it('does not reset the count when the server accepts and then drops again and again', () => {
+    const listener = makeListener();
+    const client = new RaceClient('ws://host/api/races/ws', listener);
+    client.connect({ room: 'abc12345' });
+    for (let i = 0; i <= MAX_RECONNECT_ATTEMPTS; i++) {
+      const socket = sock(MockSocket.instances.length - 1);
+      socket.open();
+      socket.receive({ type: 'joined', you: 'p1' });
+      socket.drop();
+      vi.advanceTimersByTime(10_000);
+    }
+    expect(listener.onError).toHaveBeenLastCalledWith({
+      code: 'connection',
+      message: "Couldn't connect to the race server",
+      fatal: false,
+      retryable: true,
+    });
+    expect(MockSocket.instances).toHaveLength(MAX_RECONNECT_ATTEMPTS + 1);
   });
 
   it('stops for good after a fatal error such as a full room', () => {
@@ -190,10 +236,10 @@ describe('RaceClient', () => {
     expect(client2.progress(3, 40)).toBe(true);
   });
 
-  it('gives up with a connection error after too many failed attempts', () => {
+  it('stops after 8 automatic reconnects with a retryable connection error, and retry() connects again', () => {
     const listener = makeListener();
     const client = new RaceClient('ws://host/api/races/ws', listener);
-    client.connect({ room: 'abc12345' });
+    client.connect({ room: 'abc12345', name: 'Ann' });
     for (let i = 0; i <= MAX_RECONNECT_ATTEMPTS; i++) {
       sock(MockSocket.instances.length - 1).drop(1006);
       vi.advanceTimersByTime(10_000);
@@ -201,9 +247,18 @@ describe('RaceClient', () => {
     expect(listener.onError).toHaveBeenLastCalledWith({
       code: 'connection',
       message: "Couldn't connect to the race server",
-      fatal: true,
+      fatal: false,
+      retryable: true,
     });
+    expect(listener.onConnection).toHaveBeenLastCalledWith('failed');
     expect(MockSocket.instances).toHaveLength(MAX_RECONNECT_ATTEMPTS + 1);
+
+    client.retry();
+    expect(MockSocket.instances).toHaveLength(MAX_RECONNECT_ATTEMPTS + 2);
+    sock(MockSocket.instances.length - 1).open();
+    expect(sock(MockSocket.instances.length - 1).sentMessages()).toEqual([
+      { type: 'join', room: 'abc12345', name: 'Ann' },
+    ]);
   });
 
   it('does not retry a 1008 close (the origin was refused)', () => {
@@ -214,6 +269,45 @@ describe('RaceClient', () => {
     vi.advanceTimersByTime(60_000);
     expect(MockSocket.instances).toHaveLength(1);
     expect(firstError(listener)).toMatchObject({ code: 'connection', fatal: true });
+  });
+
+  it('treats a 1013 close (too many connections) as fatal, with no retry', () => {
+    const listener = makeListener();
+    const client = new RaceClient('ws://host/api/races/ws', listener);
+    client.connect({ room: 'abc12345', name: 'Ann' });
+    sock(0).drop(1013);
+    expect(listener.onError).toHaveBeenCalledWith({ code: 'tooMany', message: TOO_MANY_MESSAGE, fatal: true });
+    expect(listener.onConnection).toHaveBeenLastCalledWith('failed');
+    vi.advanceTimersByTime(60_000);
+    expect(MockSocket.instances).toHaveLength(1);
+    client.retry();
+    expect(MockSocket.instances).toHaveLength(1);
+  });
+
+  it('pauses on a late join with no automatic retry, and retry() sends join again', () => {
+    const listener = makeListener();
+    const client = new RaceClient('ws://host/api/races/ws', listener);
+    client.connect({ room: 'abc12345', name: 'Ann' });
+    sock(0).open();
+    sock(0).receive({ type: 'error', message: STARTED_MESSAGE });
+
+    expect(listener.onError).toHaveBeenCalledWith({
+      code: 'started',
+      message: STARTED_MESSAGE,
+      fatal: false,
+      retryable: true,
+    });
+    expect(listener.onConnection).toHaveBeenLastCalledWith('failed');
+    vi.advanceTimersByTime(60_000);
+    expect(MockSocket.instances).toHaveLength(1);
+
+    client.retry();
+    expect(MockSocket.instances).toHaveLength(2);
+    sock(1).open();
+    expect(sock(1).sentMessages()).toEqual([{ type: 'join', room: 'abc12345', name: 'Ann' }]);
+    sock(1).receive({ type: 'joined', you: 'p1', token: TOKEN });
+    expect(listener.onJoined).toHaveBeenLastCalledWith('p1');
+    expect(client.start()).toBe(true);
   });
 
   it('sends a finish that happened while the socket was down once the join succeeds again', () => {
@@ -272,6 +366,68 @@ describe('RaceClient', () => {
     expect(socket.readyState).toBe(MockSocket.CLOSED);
     vi.advanceTimersByTime(60_000);
     expect(MockSocket.instances).toHaveLength(1);
+  });
+});
+
+describe('join token', () => {
+  it('stores the token from joined and sends it on every rejoin', () => {
+    const client = new RaceClient('ws://host/api/races/ws', makeListener());
+    client.connect({ room: 'abc12345', name: 'Ann' });
+    sock(0).open();
+    expect(sock(0).sentMessages()).toEqual([{ type: 'join', room: 'abc12345', name: 'Ann' }]);
+
+    sock(0).receive({ type: 'joined', you: 'p1', token: TOKEN });
+    expect(sessionStorage.getItem(TOKEN_KEY)).toBe(TOKEN);
+
+    sock(0).drop();
+    vi.advanceTimersByTime(1000);
+    sock(1).open();
+    expect(sock(1).sentMessages()).toEqual([{ type: 'join', room: 'abc12345', name: 'Ann', token: TOKEN }]);
+  });
+
+  it('sends the saved token when a new client joins the same room, but not for another room', () => {
+    sessionStorage.setItem(TOKEN_KEY, TOKEN);
+    const client = new RaceClient('ws://host/api/races/ws', makeListener());
+    client.connect({ room: 'abc12345' });
+    sock(0).open();
+    expect(sock(0).sentMessages()).toEqual([{ type: 'join', room: 'abc12345', token: TOKEN }]);
+    client.close();
+
+    const other = new RaceClient('ws://host/api/races/ws', makeListener());
+    other.connect({ room: 'zzzzzzzz' });
+    sock(1).open();
+    expect(sock(1).sentMessages()).toEqual([{ type: 'join', room: 'zzzzzzzz' }]);
+  });
+
+  it('ignores a saved value that is not a token', () => {
+    sessionStorage.setItem(TOKEN_KEY, 'not-a-token');
+    expect(readRaceToken('abc12345')).toBeNull();
+    const client = new RaceClient('ws://host/api/races/ws', makeListener());
+    client.connect({ room: 'abc12345' });
+    sock(0).open();
+    expect(sock(0).sentMessages()).toEqual([{ type: 'join', room: 'abc12345' }]);
+  });
+
+  it('keeps the token for reconnects when session storage is blocked', () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    try {
+      const client = new RaceClient('ws://host/api/races/ws', makeListener());
+      client.connect({ room: 'abc12345', name: 'Ann' });
+      sock(0).open();
+      sock(0).receive({ type: 'joined', you: 'p1', token: TOKEN });
+      sock(0).drop();
+      vi.advanceTimersByTime(1000);
+      sock(1).open();
+      expect(sock(1).sentMessages()).toEqual([{ type: 'join', room: 'abc12345', name: 'Ann', token: TOKEN }]);
+    } finally {
+      setItem.mockRestore();
+      getItem.mockRestore();
+    }
   });
 });
 

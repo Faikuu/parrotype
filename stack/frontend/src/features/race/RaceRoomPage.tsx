@@ -1,6 +1,7 @@
 import '@/features/test/test.css';
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Link, useParams } from 'react-router';
 import { Button } from '@/components/Button';
 import { TextField } from '@/components/TextField';
@@ -32,6 +33,7 @@ export default function RaceRoomPage() {
   if (!user && guest === null) return <GuestJoin onJoin={setGuest} />;
   if (race.error?.fatal) return <ErrorPanel error={race.error} />;
   if (!race.room) {
+    if (race.error?.retryable) return <ErrorPanel error={race.error} onRetry={race.retry} />;
     return <Status>{race.connection === 'reconnecting' ? t('race:room.reconnecting') : t('race:room.loading')}</Status>;
   }
   return <RoomBody room={race.room} race={race} />;
@@ -80,31 +82,50 @@ function GuestJoin({ onJoin }: { onJoin: (name: string) => void }) {
   );
 }
 
-function ErrorPanel({ error }: { error: RaceErrorInfo }) {
+function errorMessage(error: RaceErrorInfo, t: TFunction): string {
+  switch (error.code) {
+    case 'full':
+      return t('race:errors.full');
+    case 'notFound':
+      return t('race:errors.notFound');
+    case 'expired':
+      return t('race:errors.expired');
+    case 'started':
+      return t('race:errors.started');
+    case 'connection':
+      return t('race:errors.connection');
+    case 'tooMany':
+      return t('race:errors.tooMany');
+    default:
+      return t('race:errors.rejected', { message: error.message });
+  }
+}
+
+function ErrorPanel({ error, onRetry }: { error: RaceErrorInfo; onRetry?: () => void }) {
   const { t } = useTranslation();
-  const message = (() => {
-    switch (error.code) {
-      case 'full':
-        return t('race:errors.full');
-      case 'notFound':
-        return t('race:errors.notFound');
-      case 'expired':
-        return t('race:errors.expired');
-      case 'connection':
-        return t('race:errors.connection');
-      default:
-        return t('race:errors.rejected', { message: error.message });
-    }
-  })();
   return (
     <section className="flex flex-col items-start gap-4 py-16">
       <p role="alert" className="text-[1.1rem] text-error">
-        {message}
+        {errorMessage(error, t)}
       </p>
+      {error.retryable && onRetry && <Button onClick={onRetry}>{t('race:errors.retry')}</Button>}
       <Link to="/race" className="text-main underline-offset-4 hover:underline">
         {t('race:errors.back')}
       </Link>
     </section>
+  );
+}
+
+/** A non-fatal error shown above the race. Retryable ones (late join, reconnects used up) get a Try again button. */
+function ErrorNotice({ error, onRetry }: { error: RaceErrorInfo; onRetry: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col items-start gap-3">
+      <p role="alert" className="text-[0.95rem] text-error">
+        {errorMessage(error, t)}
+      </p>
+      {error.retryable && <Button onClick={onRetry}>{t('race:errors.retry')}</Button>}
+    </div>
   );
 }
 
@@ -123,11 +144,7 @@ function RoomBody({ room, race }: { room: RaceRoom; race: UseRace }) {
   );
 
   const notice =
-    race.error && !race.error.fatal ? (
-      <p role="alert" className="text-[0.95rem] text-error">
-        {t('race:errors.rejected', { message: race.error.message })}
-      </p>
-    ) : null;
+    race.error && !race.error.fatal ? <ErrorNotice error={race.error} onRetry={race.retry} /> : null;
 
   if (room.status === 'lobby') {
     return <Lobby room={room} you={race.you} isHost={isHost} onStart={start} notice={notice} />;

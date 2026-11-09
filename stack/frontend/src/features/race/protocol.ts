@@ -31,15 +31,28 @@ export interface RaceRoom {
   players: RacePlayer[];
 }
 
+/** A seat token: 32 lowercase hex chars. The server gives one on join; sending it back reclaims the seat. */
+export const RACE_TOKEN_PATTERN = /^[0-9a-f]{32}$/;
+
 export type ServerMessage =
-  | { type: 'joined'; you: string }
+  | { type: 'joined'; you: string; token: string | null }
   | { type: 'room'; room: RaceRoom }
   | { type: 'error'; message: string };
 
 /** The server rejects a finish or progress above this wpm (MAX_WPM on the backend). */
 export const MAX_REPORTED_WPM = 350;
 
-export type RaceErrorCode = 'full' | 'notFound' | 'expired' | 'connection' | 'rejected';
+export type RaceErrorCode =
+  | 'full'
+  | 'notFound'
+  | 'expired'
+  | 'started'
+  | 'connection'
+  | 'tooMany'
+  | 'rejected';
+
+/** The server's text for a late join (the race is in countdown or racing). */
+export const RACE_STARTED_MESSAGE = 'This race has already started';
 
 export interface RaceErrorInfo {
   code: RaceErrorCode;
@@ -47,6 +60,8 @@ export interface RaceErrorInfo {
   message: string;
   /** Fatal errors end the session: the page shows the error instead of the race. */
   fatal: boolean;
+  /** Non-fatal errors that stop automatic reconnects: the user can try again. */
+  retryable?: boolean;
 }
 
 const LANGUAGES: readonly Language[] = ['en', 'pl', 'de', 'es'];
@@ -99,7 +114,13 @@ export function parseServerMessage(raw: unknown): ServerMessage | null {
   if (!isRecord(raw)) return null;
   switch (raw.type) {
     case 'joined':
-      return typeof raw.you === 'string' ? { type: 'joined', you: raw.you } : null;
+      return typeof raw.you === 'string'
+        ? {
+            type: 'joined',
+            you: raw.you,
+            token: typeof raw.token === 'string' && RACE_TOKEN_PATTERN.test(raw.token) ? raw.token : null,
+          }
+        : null;
     case 'room':
       return isRaceRoom(raw.room) ? { type: 'room', room: raw.room } : null;
     case 'error':
@@ -121,6 +142,7 @@ const KNOWN_ERRORS: Record<string, RaceErrorCode> = {
  * shown and the race goes on.
  */
 export function classifyServerError(message: string, joined: boolean): RaceErrorInfo {
+  if (message === RACE_STARTED_MESSAGE) return { code: 'started', message, fatal: false, retryable: true };
   const known = Object.prototype.hasOwnProperty.call(KNOWN_ERRORS, message) ? KNOWN_ERRORS[message] : undefined;
   if (known) return { code: known, message, fatal: true };
   return { code: 'rejected', message, fatal: !joined };

@@ -15,6 +15,8 @@ export interface UseRace {
   /** The room's status, or the connection state while there is no room yet. */
   status: RaceStatusLike;
   start: () => void;
+  /** Tries again after the client stopped reconnecting (a late join, or reconnects used up). */
+  retry: () => void;
   sendProgress: (chars: number, wpm: number) => void;
   finish: (result: FinishPayload) => void;
 }
@@ -78,6 +80,10 @@ export function useRace(roomId: string, name: string | null | undefined): UseRac
     clientRef.current?.start();
   }, []);
 
+  const retry = useCallback(() => {
+    clientRef.current?.retry();
+  }, []);
+
   const finish = useCallback((result: FinishPayload) => {
     // The payload carries the final chars, so the pending throttled value is superseded.
     throttleRef.current?.cancel();
@@ -93,6 +99,7 @@ export function useRace(roomId: string, name: string | null | undefined): UseRac
     error: current.error,
     status: current.room?.status ?? current.connection,
     start,
+    retry,
     sendProgress,
     finish,
   };
