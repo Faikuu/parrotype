@@ -17,7 +17,7 @@ const config: TestConfig = {
   customText: '',
   stopOnError: 'off',
   noBackspace: false,
-  suddenDeath: false,
+  suddenDeath: false, codeLanguage: 'js',
 };
 
 /** Types `typed` against the target quote `quote`. */

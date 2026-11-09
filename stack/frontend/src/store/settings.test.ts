@@ -78,3 +78,21 @@ describe('sanitizeSettings: 2.1 keys', () => {
     expect(useSettings.persist.getOptions().migrate?.({ words: 10 }, 1)).toMatchObject({ words: 10, paceCaret: 'off' });
   });
 });
+
+describe('sanitizeSettings: code mode', () => {
+  it('defaults to JavaScript snippets', () => {
+    expect(DEFAULT_SETTINGS.codeLanguage).toBe('js');
+  });
+
+  it('accepts the code mode and the four snippet languages', () => {
+    expect(sanitizeSettings({ mode: 'code' }).mode).toBe('code');
+    for (const codeLanguage of ['js', 'py', 'rs', 'go']) {
+      expect(sanitizeSettings({ codeLanguage }).codeLanguage).toBe(codeLanguage);
+    }
+  });
+
+  it('drops an unknown snippet language and keeps the default', () => {
+    expect(sanitizeSettings({ codeLanguage: 'cobol' }).codeLanguage).toBe('js');
+    expect(sanitizeSettings({ codeLanguage: 3 }).codeLanguage).toBe('js');
+  });
+});

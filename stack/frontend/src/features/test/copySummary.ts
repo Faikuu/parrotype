@@ -11,6 +11,7 @@ function modeLabel(cfg: TestConfig, date: string): string {
     custom: 'custom',
     daily: 'daily',
     weak: 'weak keys',
+    code: 'code',
   };
   switch (cfg.mode) {
     case 'time':

@@ -6,7 +6,7 @@ import type { EngineState, SecondSample, TestConfig } from './types';
 const cfg: TestConfig = {
   mode: 'words', time: 15, words: 10, quoteLength: 'short', pangramCount: 1,
   punctuation: false, numbers: false, language: 'en', customText: '', stopOnError: 'off',
-  noBackspace: false, suddenDeath: false,
+  noBackspace: false, suddenDeath: false, codeLanguage: 'js',
 };
 
 function typeAt(state: EngineState, events: [string, number][]): EngineState {

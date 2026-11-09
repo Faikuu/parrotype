@@ -1,7 +1,7 @@
 // Mirrors the backend types (docs/SPEC.md and docs/SPEC-2.1.md). Kept local to the API layer,
 // so the wire format does not depend on the engine's in-progress unions.
 export type Language = 'en' | 'pl' | 'de' | 'es';
-export type Mode = 'time' | 'words' | 'quote' | 'zen' | 'pangram' | 'custom' | 'daily' | 'weak';
+export type Mode = 'time' | 'words' | 'quote' | 'zen' | 'pangram' | 'custom' | 'daily' | 'weak' | 'code';
 export type QuoteLength = 'short' | 'medium' | 'long' | 'any';
 
 export type PublicUser = { id: number; name: string; email: string; createdAt: string };

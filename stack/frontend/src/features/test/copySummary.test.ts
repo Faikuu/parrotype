@@ -13,7 +13,7 @@ const cfg: TestConfig = {
   customText: '',
   stopOnError: 'off',
   noBackspace: false,
-  suddenDeath: false,
+  suddenDeath: false, codeLanguage: 'js',
 };
 
 const result = {

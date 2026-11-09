@@ -6,7 +6,7 @@ import { createReplayCursor, eventCountAt, replayLength } from './replayCursor';
 
 const CONFIG: TestConfig = {
   mode: 'custom', time: 30, words: 25, quoteLength: 'any', pangramCount: 1, punctuation: false, numbers: false,
-  language: 'en', customText: '', stopOnError: 'off', noBackspace: false, suddenDeath: false,
+  language: 'en', customText: '', stopOnError: 'off', noBackspace: false, suddenDeath: false, codeLanguage: 'js',
 };
 const WORDS = ['cat', 'dog'];
 

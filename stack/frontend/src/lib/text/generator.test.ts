@@ -9,7 +9,7 @@ import type { TestConfig } from '../engine/types';
 const base: TestConfig = {
   mode: 'words', time: 15, words: 10, quoteLength: 'short', pangramCount: 1,
   punctuation: false, numbers: false, language: 'en', customText: '', stopOnError: 'off',
-  noBackspace: false, suddenDeath: false,
+  noBackspace: false, suddenDeath: false, codeLanguage: 'js',
 };
 
 describe('generateWords', () => {

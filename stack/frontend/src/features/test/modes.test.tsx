@@ -35,7 +35,7 @@ function baseConfig(over: Partial<TestConfig>): TestConfig {
     customText: '',
     stopOnError: 'off',
     noBackspace: false,
-    suddenDeath: false,
+    suddenDeath: false, codeLanguage: 'js',
     ...over,
   };
 }

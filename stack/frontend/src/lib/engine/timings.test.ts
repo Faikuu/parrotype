@@ -6,7 +6,7 @@ import type { EngineEvent, EngineState, TestConfig } from './types';
 const cfg: TestConfig = {
   mode: 'words', time: 15, words: 10, quoteLength: 'short', pangramCount: 1,
   punctuation: false, numbers: false, language: 'en', customText: '', stopOnError: 'off',
-  noBackspace: false, suddenDeath: false,
+  noBackspace: false, suddenDeath: false, codeLanguage: 'js',
 };
 
 const c = (t: number, ch: string): EngineEvent => ({ t, k: 'c', ch });

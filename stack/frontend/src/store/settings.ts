@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import type { TestConfig } from '@/lib/engine/types';
+import type { CodeLanguage, TestConfig } from '@/lib/engine/types';
 import { DEFAULT_THEME, FONT_IDS, THEME_IDS, type FontId, type ThemeChoice, type ThemeTokens } from '@/themes/themes';
 import { normaliseTokens } from '@/themes/themeCode';
 import { safeStorage } from './storage';
@@ -59,6 +59,7 @@ export const DEFAULT_SETTINGS: SettingsData = {
   numbers: false,
   language: 'en',
   customText: '',
+  codeLanguage: 'js',
   stopOnError: 'off',
   noBackspace: false,
   suddenDeath: false,
@@ -87,7 +88,8 @@ export const CUSTOM_TEXT_MAX = 10000;
 
 /** Allowed values for enum-like keys; anything else from storage falls back to the default. */
 const ALLOWED: Partial<Record<keyof SettingsData, readonly unknown[]>> = {
-  mode: ['time', 'words', 'quote', 'zen', 'pangram', 'custom', 'daily', 'weak'],
+  mode: ['time', 'words', 'quote', 'zen', 'pangram', 'custom', 'daily', 'weak', 'code'],
+  codeLanguage: ['js', 'py', 'rs', 'go'] satisfies CodeLanguage[],
   time: [15, 30, 60, 120],
   words: [10, 25, 50, 100],
   quoteLength: ['short', 'medium', 'long', 'any'],
@@ -184,6 +186,7 @@ export function selectTestConfig(s: SettingsData): TestConfig {
     numbers: s.numbers,
     language: s.language,
     customText: s.customText,
+    codeLanguage: s.codeLanguage,
     stopOnError: s.stopOnError,
     noBackspace: s.noBackspace,
     suddenDeath: s.suddenDeath,

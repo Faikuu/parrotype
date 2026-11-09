@@ -104,6 +104,8 @@ export function mode2Of(cfg: TestConfig, date: string): string {
       return date;
     case 'weak':
       return 'weak';
+    case 'code':
+      return cfg.codeLanguage;
   }
 }
 

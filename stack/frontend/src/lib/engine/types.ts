@@ -1,4 +1,5 @@
-export type Mode = 'time' | 'words' | 'quote' | 'zen' | 'pangram' | 'custom' | 'daily' | 'weak';
+export type Mode = 'time' | 'words' | 'quote' | 'zen' | 'pangram' | 'custom' | 'daily' | 'weak' | 'code';
+export type CodeLanguage = 'js' | 'py' | 'rs' | 'go';
 export type Language = 'en' | 'pl' | 'de' | 'es';
 export type TimeOption = 15 | 30 | 60 | 120;
 export type WordsOption = 10 | 25 | 50 | 100;
@@ -9,6 +10,8 @@ export interface TestConfig {
   mode: Mode; time: TimeOption; words: WordsOption; quoteLength: QuoteLength;
   pangramCount: PangramCount; punctuation: boolean; numbers: boolean;
   language: Language; customText: string;
+  /** Snippet language for mode 'code'. */
+  codeLanguage: CodeLanguage;
   stopOnError: 'off' | 'letter' | 'word';
   /** Backspace and word-backspace do nothing. */
   noBackspace: boolean;
@@ -24,6 +27,13 @@ export interface SecondSample { second: number; wpm: number; raw: number; errors
  * `k`: 'c' char, 's' space, 'b' backspace, 'B' word backspace, 'n' newline. `ch` is set for 'c' only.
  */
 export interface EngineEvent { t: number; k: 'c' | 's' | 'b' | 'B' | 'n'; ch?: string }
+/**
+ * Line structure of a code test (see lib/text/code.ts). `breaks[i]` is true when word i ends its line, so the
+ * separator after it is Enter. `indent[i]` is the leading spaces of the line when word i starts it.
+ */
+export interface CodeLines { breaks: boolean[]; indent: number[] }
+/** Optional inputs that some configs need to build or replay a state. */
+export interface EngineExtras { code?: CodeLines }
 export interface EngineState {
   status: 'idle' | 'running' | 'finished';
   config: TestConfig;
@@ -36,9 +46,11 @@ export interface EngineState {
   errorsThisSecond: number;
   events: EngineEvent[];    // every accepted input action since the start, including no-ops (see replay.ts)
   failed: boolean;          // sudden death: the test ended on a wrong or extra char
+  /** Line breaks and indentation, in code mode only. */
+  code?: CodeLines;
 }
 export type EngineAction =
-  | { type: 'reset'; words: string[]; config: TestConfig }
+  | { type: 'reset'; words: string[]; config: TestConfig; extras?: EngineExtras }
   | { type: 'char'; char: string; at: number }     // any printable char except space; starts the test if idle
   | { type: 'space'; at: number }
   | { type: 'backspace'; at: number; word?: boolean }   // word=true => ctrl/alt+backspace clears the word

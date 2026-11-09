@@ -1,4 +1,5 @@
 import type { TestConfig } from '../engine/types';
+import { codeForConfig } from './code';
 import { dailyWords, utcDateString } from './daily';
 import type { Rng } from './rng';
 import { generatePangrams } from './pangram';
@@ -23,7 +24,8 @@ export interface WordsExtras {
 
 /**
  * Initial word list for the config. Quote and zen give []. Daily ignores `rng` (it is seeded
- * from the date and language). Weak uses `rng` with `extras.weakKeys`.
+ * from the date and language). Weak uses `rng` with `extras.weakKeys`. Code gives the words of a random
+ * snippet; use codeForConfig when the line breaks are needed too.
  */
 export function wordsForConfig(config: TestConfig, rng: Rng = Math.random, extras: WordsExtras = {}): string[] {
   switch (config.mode) {
@@ -47,6 +49,8 @@ export function wordsForConfig(config: TestConfig, rng: Rng = Math.random, extra
       return dailyWords(utcDateString(extras.now ?? Date.now()), config.language);
     case 'weak':
       return weakKeyWords(extras.weakKeys ?? [], config.language, WEAK_WORD_COUNT, rng);
+    case 'code':
+      return codeForConfig(config, rng).words;
     case 'zen':
     case 'quote':
       return [];

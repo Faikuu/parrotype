@@ -1,5 +1,5 @@
 import { createInitialState, engineReducer } from './engine';
-import type { EngineAction, EngineEvent, EngineState, TestConfig } from './types';
+import type { EngineAction, EngineEvent, EngineExtras, EngineState, TestConfig } from './types';
 
 /**
  * Replays start at this base, so an event's `t` is also its `at`. Times in a replayed state are relative
@@ -27,6 +27,7 @@ export function eventAction(e: EngineEvent): EngineAction {
 /**
  * The state after the events with `e.t <= t` have been applied to a fresh state. `words` is the target
  * text (zen ignores it). For time mode pass the final word list, since appended words are not logged.
+ * `extras` carries what the config needs beyond the words (the code line breaks in code mode).
  * Replaying every event gives the same typed, current, words and status as the live state; a time-mode
  * test ended by the timer is the one exception, because the timer is not logged.
  */
@@ -35,8 +36,9 @@ export function replayStateAt(
   words: readonly string[],
   events: readonly EngineEvent[],
   t: number,
+  extras?: EngineExtras,
 ): EngineState {
-  let state = createInitialState(config, [...words]);
+  let state = createInitialState(config, [...words], extras);
   for (const e of events) {
     if (e.t > t) continue;
     state = engineReducer(state, eventAction(e));

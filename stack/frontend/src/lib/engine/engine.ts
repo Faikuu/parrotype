@@ -1,6 +1,7 @@
 import type {
   CharState,
   EngineAction,
+  EngineExtras,
   EngineState,
   EngineEvent,
   Keystroke,
@@ -19,7 +20,20 @@ function isZen(config: TestConfig): boolean {
 }
 
 function finishesOnLastWord(mode: Mode): boolean {
-  return mode === 'words' || mode === 'quote' || mode === 'pangram' || mode === 'custom' || mode === 'daily' || mode === 'weak';
+  return (
+    mode === 'words' ||
+    mode === 'quote' ||
+    mode === 'pangram' ||
+    mode === 'custom' ||
+    mode === 'daily' ||
+    mode === 'weak' ||
+    mode === 'code'
+  );
+}
+
+/** In code mode, the word at the end of a line is followed by Enter, not space. */
+function atLineBreak(state: EngineState): boolean {
+  return state.config.mode === 'code' && state.code?.breaks[state.current] === true;
 }
 
 function replaceAt(list: string[], index: number, value: string): string[] {
@@ -45,7 +59,7 @@ function hasError(typed: string, target: string): boolean {
   return false;
 }
 
-export function createInitialState(config: TestConfig, words: string[]): EngineState {
+export function createInitialState(config: TestConfig, words: string[], extras: EngineExtras = {}): EngineState {
   // Zen has no target text: the typed text is the target, so keep words in step with typed.
   return {
     status: 'idle',
@@ -60,6 +74,7 @@ export function createInitialState(config: TestConfig, words: string[]): EngineS
     errorsThisSecond: 0,
     events: [],
     failed: false,
+    ...(extras.code ? { code: extras.code } : {}),
   };
 }
 
@@ -82,7 +97,7 @@ function withEvent(
 }
 
 export function engineReducer(state: EngineState, action: EngineAction): EngineState {
-  if (action.type === 'reset') return createInitialState(action.config, action.words);
+  if (action.type === 'reset') return createInitialState(action.config, action.words, action.extras);
   if (state.status === 'finished') return state;
 
   switch (action.type) {
@@ -98,8 +113,14 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
         action.word === true ? 'B' : 'b',
       );
     case 'newline': {
-      const pressed = isZen(state.config) && state.status === 'running';
-      return withEvent(state, pressed ? finish(state, action.at) : state, action.at, 'n');
+      // Zen: Enter finishes a running test. Code: Enter at a line end is the separator. Elsewhere it is a no-op.
+      let next = state;
+      if (isZen(state.config)) {
+        if (state.status === 'running') next = finish(state, action.at);
+      } else if (atLineBreak(state)) {
+        next = advance(state, action.at);
+      }
+      return withEvent(state, next, action.at, 'n');
     }
     case 'tick':
       return onTick(state, action.at);
@@ -151,6 +172,13 @@ function onChar(state: EngineState, char: string, at: number): EngineState {
 }
 
 function onSpace(state: EngineState, at: number): EngineState {
+  // In code mode space does nothing at a line end: the separator there is Enter.
+  if (atLineBreak(state)) return state;
+  return advance(state, at);
+}
+
+/** Moves past the current word (the separator logic shared by space and, in code mode, Enter). */
+function advance(state: EngineState, at: number): EngineState {
   const { config } = state;
   const i = state.current;
   const typedWord = state.typed[i] ?? '';

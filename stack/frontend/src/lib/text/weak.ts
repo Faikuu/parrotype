@@ -13,15 +13,22 @@ export function weakKeyWords(
   count = 40,
   rng: Rng = Math.random,
 ): string[] {
-  if (count <= 0) return [];
-  const list = WORDLISTS[language];
   const weakSet = new Set(weak.map((letter) => letter.toLowerCase()));
-
+  const list = WORDLISTS[language];
   const weights = list.map((word) => {
     let k = 0;
     for (const ch of new Set(word)) if (weakSet.has(ch)) k++;
     return (1 + 3 * k) ** 2;
   });
+  return drawWeighted(list, weights, count, rng);
+}
+
+/**
+ * `count` draws from `list`, where item i has weight `weights[i]`. The item drawn last is left out of the
+ * next draw, so the same word never comes up twice in a row (a single-item list must repeat).
+ */
+export function drawWeighted(list: readonly string[], weights: readonly number[], count: number, rng: Rng): string[] {
+  if (count <= 0) return [];
   const total = weights.reduce((sum, w) => sum + w, 0);
 
   const out: string[] = [];

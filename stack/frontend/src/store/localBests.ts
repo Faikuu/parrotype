@@ -66,7 +66,7 @@ export function isPersonalBest(wpm: number, previous: number | undefined, server
  * Whether the account's best for this mode, mode2 and language can be compared with a run. The server
  * does not store the punctuation and numbers flags, so its best only means the same thing when the text
  * cannot change with them: quote (API text), zen (no text), custom (the user's text), weak (letter words),
- * daily (always punctuated, no numbers). Time, words and pangram text does change with the flags, so
+ * daily (always punctuated, no numbers), code (snippets, whose text the flags do not change). Time, words and pangram text does change with the flags, so
  * those are only compared when both flags are off.
  */
 export function serverBestComparable(cfg: Pick<TestConfig, 'mode' | 'punctuation' | 'numbers'>): boolean {
@@ -76,6 +76,7 @@ export function serverBestComparable(cfg: Pick<TestConfig, 'mode' | 'punctuation
     case 'custom':
     case 'weak':
     case 'daily':
+    case 'code':
       return true;
     case 'time':
     case 'words':

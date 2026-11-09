@@ -5,7 +5,7 @@ import type { EngineState, TestConfig } from '@/lib/engine/types';
 export function customConfig(over: Partial<TestConfig> = {}): TestConfig {
   return {
     mode: 'custom', time: 30, words: 25, quoteLength: 'any', pangramCount: 1, punctuation: false, numbers: false,
-    language: 'en', customText: '', stopOnError: 'off', noBackspace: false, suddenDeath: false, ...over,
+    language: 'en', customText: '', stopOnError: 'off', noBackspace: false, suddenDeath: false, codeLanguage: 'js', ...over,
   };
 }
 
