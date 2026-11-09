@@ -57,6 +57,8 @@ export const DEFAULT_SETTINGS: SettingsData = {
   language: 'en',
   customText: '',
   stopOnError: 'off',
+  noBackspace: false,
+  suddenDeath: false,
   theme: DEFAULT_THEME,
   font: 'spline',
   fontSize: 1,
@@ -174,5 +176,7 @@ export function selectTestConfig(s: SettingsData): TestConfig {
     language: s.language,
     customText: s.customText,
     stopOnError: s.stopOnError,
+    noBackspace: s.noBackspace,
+    suddenDeath: s.suddenDeath,
   };
 }

@@ -12,9 +12,12 @@ const cfg: TestConfig = {
   language: 'en',
   customText: '',
   stopOnError: 'off',
+  noBackspace: false,
+  suddenDeath: false,
 };
 
 const result = {
+  failed: false,
   wpm: 92.4,
   rawWpm: 97.6,
   accuracy: 96.8,

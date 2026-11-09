@@ -2,6 +2,7 @@ import type {
   CharState,
   EngineAction,
   EngineState,
+  EngineEvent,
   Keystroke,
   Mode,
   SecondSample,
@@ -57,7 +58,27 @@ export function createInitialState(config: TestConfig, words: string[]): EngineS
     keystrokes: [],
     samples: [],
     errorsThisSecond: 0,
+    events: [],
+    failed: false,
   };
+}
+
+/**
+ * Logs an input action that changed the state. `before` is the state the action was applied to, so
+ * `t` is measured from its start (0 for the starting char). No-op actions (the same state object back)
+ * are not logged: the reducer is deterministic, so replaying without them gives the same state.
+ */
+function withEvent(
+  before: EngineState,
+  after: EngineState,
+  at: number,
+  k: EngineEvent['k'],
+  ch?: string,
+): EngineState {
+  if (after === before) return after;
+  const t = before.startedAt === null ? 0 : at - before.startedAt;
+  const event: EngineEvent = ch === undefined ? { t, k } : { t, k, ch };
+  return { ...after, events: [...before.events, event] };
 }
 
 export function engineReducer(state: EngineState, action: EngineAction): EngineState {
@@ -66,13 +87,20 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 
   switch (action.type) {
     case 'char':
-      return onChar(state, action.char, action.at);
+      return withEvent(state, onChar(state, action.char, action.at), action.at, 'c', action.char);
     case 'space':
-      return onSpace(state, action.at);
+      return withEvent(state, onSpace(state, action.at), action.at, 's');
     case 'backspace':
-      return onBackspace(state, action.word === true);
-    case 'newline':
-      return isZen(state.config) && state.status === 'running' ? finish(state, action.at) : state;
+      return withEvent(
+        state,
+        onBackspace(state, action.word === true),
+        action.at,
+        action.word === true ? 'B' : 'b',
+      );
+    case 'newline': {
+      const pressed = isZen(state.config) && state.status === 'running';
+      return withEvent(state, pressed ? finish(state, action.at) : state, action.at, 'n');
+    }
     case 'tick':
       return onTick(state, action.at);
     case 'append':
@@ -107,6 +135,11 @@ function onChar(state: EngineState, char: string, at: number): EngineState {
     errorsThisSecond: state.errorsThisSecond + (correct ? 0 : 1),
   };
 
+  // Sudden death: any wrong char, or an extra char past the end of the word (both are incorrect here).
+  if (config.suddenDeath && !zen && !correct) {
+    return finish({ ...next, failed: true }, at);
+  }
+
   const typedLastWord =
     insert &&
     !zen &&
@@ -137,7 +170,7 @@ function onSpace(state: EngineState, at: number): EngineState {
 }
 
 function onBackspace(state: EngineState, word: boolean): EngineState {
-  if (state.status === 'idle') return state;
+  if (state.status === 'idle' || state.config.noBackspace) return state;
   const i = state.current;
   const typedWord = state.typed[i] ?? '';
 

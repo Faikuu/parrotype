@@ -76,6 +76,7 @@ export function computeResult(state: EngineState): TestResult {
   const perMinute = (chars: number): number => (minutes > 0 ? chars / 5 / minutes : 0);
 
   return {
+    failed: state.failed,
     wpm: round2(perMinute(netChars + spacesCounted)),
     rawWpm: round2(perMinute(allChars + spacesTyped)),
     accuracy: totalKeys === 0 ? 100 : round2((correctKeys / totalKeys) * 100),

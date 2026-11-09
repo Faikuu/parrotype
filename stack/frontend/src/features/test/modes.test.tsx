@@ -34,6 +34,8 @@ function baseConfig(over: Partial<TestConfig>): TestConfig {
     language: 'en',
     customText: '',
     stopOnError: 'off',
+    noBackspace: false,
+    suddenDeath: false,
     ...over,
   };
 }

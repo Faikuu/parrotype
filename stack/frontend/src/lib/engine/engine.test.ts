@@ -14,6 +14,7 @@ import type { EngineState, TestConfig } from './types';
 const base: TestConfig = {
   mode: 'words', time: 15, words: 10, quoteLength: 'short', pangramCount: 1,
   punctuation: false, numbers: false, language: 'en', customText: '', stopOnError: 'off',
+  noBackspace: false, suddenDeath: false,
 };
 
 function make(words: string[], config: Partial<TestConfig> = {}): EngineState {
@@ -418,4 +419,132 @@ describe('daily and weak modes finish like words mode', () => {
       expect(s.status).toBe('running');
     });
   }
+});
+
+describe('event log', () => {
+  it('starts empty and records the starting char at t=0', () => {
+    const s0 = make(['cat']);
+    expect(s0.events).toEqual([]);
+    expect(s0.failed).toBe(false);
+    const s = engineReducer(s0, { type: 'char', char: 'c', at: 500 });
+    expect(s.events).toEqual([{ t: 0, k: 'c', ch: 'c' }]);
+  });
+
+  it('records every accepted action with its time relative to the start', () => {
+    let s = make(['ab', 'cd']);
+    s = engineReducer(s, { type: 'char', char: 'a', at: 1000 });
+    s = engineReducer(s, { type: 'char', char: 'x', at: 1150 });
+    s = engineReducer(s, { type: 'backspace', at: 1200 });
+    s = engineReducer(s, { type: 'backspace', at: 1300, word: true });
+    s = engineReducer(s, { type: 'char', char: 'a', at: 1400 });
+    s = engineReducer(s, { type: 'char', char: 'b', at: 1500 });
+    s = engineReducer(s, { type: 'space', at: 1600 });
+    expect(s.events).toEqual([
+      { t: 0, k: 'c', ch: 'a' },
+      { t: 150, k: 'c', ch: 'x' },
+      { t: 200, k: 'b' },
+      { t: 300, k: 'B' },
+      { t: 400, k: 'c', ch: 'a' },
+      { t: 500, k: 'c', ch: 'b' },
+      { t: 600, k: 's' },
+    ]);
+  });
+
+  it('does not log actions that change nothing, idle or running', () => {
+    let s = make(['a']);
+    s = engineReducer(s, { type: 'space', at: 1 });      // idle: no-op
+    s = engineReducer(s, { type: 'backspace', at: 2 });  // idle: no-op
+    s = engineReducer(s, { type: 'newline', at: 3 });    // idle: no-op
+    expect(s.events).toEqual([]);
+    s = engineReducer(s, { type: 'char', char: 'z', at: 10 });  // wrong char, logged
+    s = engineReducer(s, { type: 'backspace', at: 20 });        // removes z, logged
+    expect(s.events.map((e) => e.k)).toEqual(['c', 'b']);
+    const noop = engineReducer(s, { type: 'backspace', at: 30 }); // nothing left in the only word
+    expect(noop).toBe(s);
+    s = engineReducer(s, { type: 'space', at: 40 });    // empty word: no-op
+    expect(s.events.map((e) => e.k)).toEqual(['c', 'b']);
+    s = engineReducer(s, { type: 'char', char: 'a', at: 50 }); // finishes words mode
+    expect(s.status).toBe('finished');
+    expect(s.events.map((e) => e.k)).toEqual(['c', 'b', 'c']);
+    const after = engineReducer(s, { type: 'char', char: 'a', at: 60 });
+    expect(after).toBe(s);
+  });
+
+  it('does not log finish or tick', () => {
+    const s = typeText(make(['ab']), 'a', 0);
+    const finished = engineReducer(s, { type: 'finish', at: 500 });
+    expect(finished.events).toEqual(s.events);
+  });
+});
+
+describe('noBackspace', () => {
+  const cfgNB: Partial<TestConfig> = { noBackspace: true };
+
+  it('makes backspace and word backspace no-ops', () => {
+    const s = typeText(make(['cat', 'dog'], cfgNB), 'cx', 0);
+    const b = engineReducer(s, { type: 'backspace', at: 500 });
+    expect(b.typed).toEqual(s.typed);
+    expect(b.current).toBe(s.current);
+    const w = engineReducer(s, { type: 'backspace', at: 600, word: true });
+    expect(w.typed).toEqual(s.typed);
+  });
+
+  it('does not step back into the previous word', () => {
+    const s = typeText(make(['cat', 'dog'], cfgNB), 'cxt ', 0);
+    expect(engineReducer(s, { type: 'backspace', at: 900 }).current).toBe(1);
+  });
+
+  it('does not log the ignored backspace', () => {
+    const s = typeText(make(['cat'], cfgNB), 'c', 0);
+    expect(engineReducer(s, { type: 'backspace', at: 100 }).events).toEqual(s.events);
+  });
+});
+
+describe('sudden death', () => {
+  const sd: Partial<TestConfig> = { suddenDeath: true };
+
+  it('finishes on the first wrong char with failed=true', () => {
+    const s = typeText(make(['cat', 'dog'], sd), 'cx', 0);
+    expect(s.status).toBe('finished');
+    expect(s.failed).toBe(true);
+    expect(s.finishedAt).toBe(100);
+    expect(s.typed[0]).toBe('cx');
+  });
+
+  it('fails on an extra char past the end of the word', () => {
+    const s = typeText(make(['cat', 'dog'], sd), 'catt', 0);
+    expect(s.status).toBe('finished');
+    expect(s.failed).toBe(true);
+    expect(s.finishedAt).toBe(300);
+  });
+
+  it('fails in letter mode too, without inserting the wrong char', () => {
+    const s = typeText(make(['cat', 'dog'], { ...sd, stopOnError: 'letter' }), 'cx', 0);
+    expect(s.status).toBe('finished');
+    expect(s.failed).toBe(true);
+    expect(s.typed[0]).toBe('c');
+  });
+
+  it('a wrong space on an incomplete word does not fail', () => {
+    const s = typeText(make(['cat', 'dog'], sd), 'c ', 0);
+    expect(s.status).toBe('running');
+    expect(s.failed).toBe(false);
+  });
+
+  it('a clean run is not failed, and finishing normally keeps failed false', () => {
+    const s = typeText(make(['ab'], sd), 'ab', 0);
+    expect(s.status).toBe('finished');
+    expect(s.failed).toBe(false);
+  });
+
+  it('is not triggered in zen, where every char is a correct char', () => {
+    const s = typeText(make([], { ...sd, mode: 'zen' }), 'abc', 0);
+    expect(s.status).toBe('running');
+    expect(s.failed).toBe(false);
+  });
+
+  it('logs the failing char as an event', () => {
+    const s = typeText(make(['cat'], sd), 'cx', 0);
+    expect(s.events).toEqual([{ t: 0, k: 'c', ch: 'c' }, { t: 100, k: 'c', ch: 'x' }]);
+  });
 });

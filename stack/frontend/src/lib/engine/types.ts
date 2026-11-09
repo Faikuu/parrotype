@@ -10,11 +10,20 @@ export interface TestConfig {
   pangramCount: PangramCount; punctuation: boolean; numbers: boolean;
   language: Language; customText: string;
   stopOnError: 'off' | 'letter' | 'word';
+  /** Backspace and word-backspace do nothing. */
+  noBackspace: boolean;
+  /** The first incorrect or extra char finishes the test as failed. */
+  suddenDeath: boolean;
 }
 export type CharState = 'pending' | 'correct' | 'incorrect' | 'extra' | 'missed';
 /** `expected` is the target char at the cursor ('' for extra chars and in zen). */
 export interface Keystroke { at: number; correct: boolean; expected: string }      // ms timestamps
 export interface SecondSample { second: number; wpm: number; raw: number; errors: number }
+/**
+ * One accepted input action after the test started. `t` is ms since the start (0 for the first char).
+ * `k`: 'c' char, 's' space, 'b' backspace, 'B' word backspace, 'n' newline. `ch` is set for 'c' only.
+ */
+export interface EngineEvent { t: number; k: 'c' | 's' | 'b' | 'B' | 'n'; ch?: string }
 export interface EngineState {
   status: 'idle' | 'running' | 'finished';
   config: TestConfig;
@@ -25,6 +34,8 @@ export interface EngineState {
   keystrokes: Keystroke[];
   samples: SecondSample[];  // one per elapsed whole second, pushed on 'tick'
   errorsThisSecond: number;
+  events: EngineEvent[];    // every accepted input action since the start, including no-ops (see replay.ts)
+  failed: boolean;          // sudden death: the test ended on a wrong or extra char
 }
 export type EngineAction =
   | { type: 'reset'; words: string[]; config: TestConfig }
@@ -39,6 +50,7 @@ export type EngineAction =
 export interface KeyStat { hits: number; misses: number }
 export type KeyStatsMap = Record<string, KeyStat>;
 export interface TestResult {
+  failed: boolean;
   wpm: number; rawWpm: number; accuracy: number; consistency: number; durationMs: number;
   charStats: { correct: number; incorrect: number; extra: number; missed: number };
   samples: SecondSample[];
