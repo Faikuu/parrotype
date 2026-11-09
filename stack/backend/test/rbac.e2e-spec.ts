@@ -509,6 +509,47 @@ describe('permission groups, admin users and the safety rules (e2e)', () => {
     });
   });
 
+  describe('suspended targets keep their rank', () => {
+    it("refuses to unsuspend, rename, sign out or delete a suspended user who holds permissions the actor lacks", async () => {
+      // The target holds groups.manage on top of the actor's user powers.
+      const strong = await prisma.permissionGroup.create({
+        data: {
+          name: 'rb_strong',
+          permissions: { create: ['users.read', 'users.ban', 'users.edit', 'users.delete', 'groups.read', 'groups.manage'].map((permission) => ({ permission })) },
+        },
+        select: { id: true },
+      });
+      const managers = await prisma.permissionGroup.create({
+        data: {
+          name: 'rb_user_managers',
+          permissions: { create: ['users.read', 'users.ban', 'users.edit', 'users.delete'].map((permission) => ({ permission })) },
+        },
+        select: { id: true },
+      });
+      const targetId = await makeUser('rb_strong_target');
+      const actorId = await makeUser('rb_user_manager');
+      await prisma.userGroup.create({ data: { userId: targetId, groupId: strong.id } });
+      await prisma.userGroup.create({ data: { userId: actorId, groupId: managers.id } });
+      const actor = await sessionFor(app, prisma, 'rb_user_manager');
+
+      // Not suspended: the actor is refused (control).
+      await post(`/api/admin/users/${targetId}/ban`, actor, { reason: 'test' }).expect(403);
+      // An administrator suspends the target.
+      await post(`/api/admin/users/${targetId}/ban`, root, { reason: 'test' }).expect(200);
+
+      // Suspended: still refused for every action.
+      await post(`/api/admin/users/${targetId}/unban`, actor).expect(403);
+      await patch(`/api/admin/users/${targetId}`, actor, { name: 'rb_renamed' }).expect(403);
+      await post(`/api/admin/users/${targetId}/revoke-sessions`, actor).expect(403);
+      await del(`/api/admin/users/${targetId}`, actor, { confirm: 'rb_strong_target' }).expect(403);
+
+      const detail = await get(`/api/admin/users/${targetId}`, root).expect(200);
+      expect(detail.body.effectivePermissions).toEqual([]);
+      expect(detail.body.heldPermissions).toEqual(expect.arrayContaining(['groups.manage']));
+      expect(await prisma.user.findUnique({ where: { id: targetId }, select: { name: true } })).toEqual({ name: 'rb_strong_target' });
+    });
+  });
+
   describe('audit and the CLI-free rules', () => {
     it('lets a moderator read the audit log (audit.read), and writes group and user actions with the admin named', async () => {
       const actions = await get('/api/admin/actions?pageSize=100', mod).expect(200);

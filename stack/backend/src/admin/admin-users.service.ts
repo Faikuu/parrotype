@@ -76,6 +76,8 @@ export interface AdminUserRow {
 export interface AdminUserDetail extends AdminUserRow {
   banReason: string | null;
   effectivePermissions: Permission[];
+  /** What the user's groups grant, ignoring a suspension: the rank used for who may manage them. */
+  heldPermissions: Permission[];
   stats: { tests: number; bestWpm: number | null; lastResultAt: string | null };
   recentResults: Array<{
     id: number;
@@ -181,7 +183,7 @@ export class AdminUsersService {
     });
     if (!user) throw new NotFoundException(NOT_FOUND_USER_ID);
 
-    const [totals, last, recent, received, made, effective] = await Promise.all([
+    const [totals, last, recent, received, made, effective, held] = await Promise.all([
       this.prisma.result.aggregate({
         where: { userId: id },
         _count: { _all: true },
@@ -211,12 +213,14 @@ export class AdminUsersService {
         select: REPORT_SELECT,
       }),
       this.permissions.effective(id),
+      this.permissions.held(id),
     ]);
 
     return {
       ...toUserRow(user),
       banReason: user.banReason,
       effectivePermissions: [...effective].sort(),
+      heldPermissions: [...held].sort(),
       stats: {
         tests: totals._count._all,
         bestWpm: totals._max.wpm ?? null,

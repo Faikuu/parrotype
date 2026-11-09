@@ -20,7 +20,7 @@ type Db = PrismaClient;
 
 async function findByName(prisma: Db, name: string) {
   if (!USERNAME_REGEX.test(name)) throw new Error(`"${name}" is not a valid username`);
-  const user = await prisma.user.findUnique({ where: { nameLower: name.toLowerCase() }, select: { id: true, name: true } });
+  const user = await prisma.user.findUnique({ where: { nameLower: name.toLowerCase() }, select: { id: true, name: true, bannedAt: true } });
   if (!user) throw new Error(`No user named "${name}"`);
   return user;
 }
@@ -47,6 +47,8 @@ export async function setAdmin(prisma: Db, name: string, grant: boolean): Promis
 
   if (grant) {
     if (member) return `${user.name} is already an admin`;
+    // The API refuses to add a suspended user to a group; the CLI must not be a way around that.
+    if (user.bannedAt) throw new Error(`${user.name} is suspended. Unsuspend them first.`);
     await prisma.$transaction(async (tx) => {
       await tx.userGroup.create({ data: { userId: user.id, groupId: group.id } });
       await tx.adminAction.create({

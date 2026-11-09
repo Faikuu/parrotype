@@ -125,8 +125,11 @@ describe('the act-on rule (assertCanActOn)', () => {
     expect(actOnProblem(moderator, moderator)).toBeNull();
   });
 
-  it('lets anyone act on a banned user, whose effective set is empty', () => {
+  it('compares sets only: a banned user has an empty effective set, so callers must pass the held set', () => {
+    // PermissionsService.assertCanActOn passes the target's held permissions (ignoring the ban), so a
+    // suspended administrator still outranks a moderator there. See permissions.service.spec.ts.
     expect(actOnProblem(moderator, bannedAdmin)).toBeNull();
+    expect(actOnProblem(moderator, admin)).not.toBeNull();
   });
 
   it('refuses a target who holds a permission the actor lacks, even one permission', () => {

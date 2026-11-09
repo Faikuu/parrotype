@@ -208,6 +208,8 @@ export type AdminUserReportRef = {
 export type AdminUserDetail = AdminUserRow & {
   banReason: string | null;
   effectivePermissions: string[];
+  /** What the user's groups grant, ignoring a suspension: decides who may manage them. */
+  heldPermissions: string[];
   stats: { tests: number; bestWpm: number | null; lastResultAt: string | null };
   recentResults: AdminResultRow[];
   reportsReceived: AdminUserReportRef[];

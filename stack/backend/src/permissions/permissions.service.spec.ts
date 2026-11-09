@@ -111,6 +111,17 @@ describe('PermissionsService.assertCanActOn and assertCanGrant', () => {
     await expect(service.assertCanActOn(ids.mod, ids.admin)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('still forbids acting on a suspended user who holds permissions the actor lacks', async () => {
+    const { service } = setup({
+      ...accounts,
+      4: { id: 4, bannedAt: new Date(), groups: [{ name: 'Editors', system: false, permissions: ['users.read', 'users.delete'] }] },
+    });
+    // A suspended user can't use their permissions, but suspension must not lower their rank.
+    expect(await service.effective(4)).toEqual(new Set());
+    await expect(service.assertCanActOn(ids.mod, 4)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.assertCanActOn(ids.admin, 4)).resolves.toBeUndefined();
+  });
+
   it('allows a moderator to act on an ordinary user, and an administrator on anyone', async () => {
     const { service } = setup(accounts);
     await expect(service.assertCanActOn(ids.mod, ids.plain)).resolves.toBeUndefined();

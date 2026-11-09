@@ -56,7 +56,8 @@ export default function UserDetailPage() {
   const isSelf = me?.id === u.id;
   const refresh = () => qc.invalidateQueries({ queryKey: ['admin'] });
   // The server refuses to act on a user whose permissions aren't all held by the actor.
-  const outranks = u.effectivePermissions.some((p) => !held.has(p));
+  // Rank by held permissions: a suspension doesn't lower who may manage this user.
+  const outranks = (u.heldPermissions ?? u.effectivePermissions).some((p) => !held.has(p));
   const manageReason = (perm: PermissionKey): string | null => {
     if (!can(perm)) return t('admin:perm.noPermission');
     if (outranks) return t('admin:perm.cannotActOn');
@@ -320,7 +321,7 @@ function GroupsEditor({ user, groups, onDone }: { user: AdminUserDetail; groups:
       held,
       group: g,
       isMember: draft.has(g.id),
-      target: { targetPerms: user.effectivePermissions, banned: user.bannedAt !== null },
+      target: { targetPerms: user.heldPermissions ?? user.effectivePermissions, banned: user.bannedAt !== null },
     });
     return block;
   };

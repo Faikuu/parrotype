@@ -30,6 +30,7 @@ const USER = {
   groups: [{ id: 2, name: 'Moderators' }],
   resultCount: 12,
   effectivePermissions: MODERATOR_PERMS,
+  heldPermissions: MODERATOR_PERMS,
   stats: { tests: 12, bestWpm: 88.5, lastResultAt: '2026-11-08T10:00:00Z' },
   recentResults: [],
   reportsReceived: [],
@@ -97,12 +98,21 @@ describe('User detail groups', () => {
   });
 
   it('locks every group when the user holds a permission the actor does not', async () => {
-    api(ACTOR, { ...USER, effectivePermissions: [...MODERATOR_PERMS, 'users.delete'] });
+    api(ACTOR, { ...USER, effectivePermissions: [...MODERATOR_PERMS, 'users.delete'], heldPermissions: [...MODERATOR_PERMS, 'users.delete'] });
     renderUser();
     await screen.findByRole('heading', { name: 'cuckoo' });
 
     expect(group('Viewers')).toBeDisabled();
     expect(group('Viewers').closest('label')).toHaveAttribute('title', "You can't manage a user with permissions you don't have");
+    expect(group('Moderators')).toBeDisabled();
+  });
+
+  it('still locks the groups of a suspended user who holds a permission the actor does not', async () => {
+    // A suspended user has no effective permissions, but keeps their rank.
+    api(ACTOR, { ...USER, bannedAt: '2026-11-01T00:00:00.000Z', effectivePermissions: [], heldPermissions: [...MODERATOR_PERMS, 'users.delete'] });
+    renderUser();
+    await screen.findByRole('heading', { name: 'cuckoo' });
+    expect(group('Viewers')).toBeDisabled();
     expect(group('Moderators')).toBeDisabled();
   });
 

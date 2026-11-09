@@ -73,7 +73,7 @@ model UserGroup {
 - `PermissionsService`:
   - `effective(userId): Promise<Set<Permission>>`: the union of the user's groups' permissions. The Administrators group always resolves to the full catalog, whatever rows it has. Banned users get the empty set.
   - `has(userId, p)`.
-  - `assertCanActOn(actorId, targetId)`: throws 403 "You can't manage a user with permissions you don't have" unless the target's effective permissions are a subset of the actor's. Acting on yourself is allowed only where an endpoint says so.
+  - `assertCanActOn(actorId, targetId)`: throws 403 "You can't manage a user with permissions you don't have" unless the target's **held** permissions (what their groups grant, ignoring a suspension) are a subset of the actor's effective ones. A suspended user can't use their permissions, but suspension must not lower their rank: otherwise anyone with a lesser permission could unsuspend, rename or delete a suspended administrator-level account. Acting on yourself is allowed only where an endpoint says so.
   - `assertCanGrant(actorId, permissions[])`: 403 unless the actor holds every one of them.
 - `@RequirePermissions(...keys)` decorator + `PermissionsGuard`: it uses the verified session (readSessionUser), loads the effective permissions once per request (cache them on req), and returns 401 with no session, 403 when a permission is missing. It replaces AdminGuard. Every existing admin endpoint is switched to the matching permission.
 - `GET /api/auth/me` and the PublicUser of `me` include `permissions: Permission[]` (sorted). `role` is removed from all responses.

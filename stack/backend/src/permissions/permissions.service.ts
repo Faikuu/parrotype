@@ -88,18 +88,28 @@ export class PermissionsService {
   async effective(userId: number, db: Db = this.prisma): Promise<Set<Permission>> {
     const user = await db.user.findUnique({ where: { id: userId }, select: { bannedAt: true } });
     if (!user) return new Set();
+    return resolveEffective(await this.groupFacts(userId, db), user.bannedAt !== null);
+  }
+
+  /**
+   * The permissions the user's groups grant, ignoring a suspension. A suspended user can't use them,
+   * but they still decide who may manage that user: otherwise suspending a powerful account would let
+   * anyone with a lesser permission unsuspend, rename or delete it.
+   */
+  async held(userId: number, db: Db = this.prisma): Promise<Set<Permission>> {
+    return resolveEffective(await this.groupFacts(userId, db), false);
+  }
+
+  private async groupFacts(userId: number, db: Db) {
     const groups = await db.permissionGroup.findMany({
       where: { members: { some: { userId } } },
       select: { name: true, system: true, permissions: { select: { permission: true } } },
     });
-    return resolveEffective(
-      groups.map((group) => ({
-        name: group.name,
-        system: group.system,
-        permissions: group.permissions.map((row) => row.permission),
-      })),
-      user.bannedAt !== null,
-    );
+    return groups.map((group) => ({
+      name: group.name,
+      system: group.system,
+      permissions: group.permissions.map((row) => row.permission),
+    }));
   }
 
   async has(userId: number, permission: Permission, db: Db = this.prisma): Promise<boolean> {
@@ -113,7 +123,8 @@ export class PermissionsService {
    */
   async assertCanActOn(actorId: number, targetId: number, db: Db = this.prisma): Promise<void> {
     const actor = await this.effective(actorId, db);
-    const target = await this.effective(targetId, db);
+    // The target's held permissions, not its effective ones: a suspension must not lower its rank.
+    const target = await this.held(targetId, db);
     const problem = actOnProblem(actor, target);
     if (problem) throw new ForbiddenException(problem);
   }
