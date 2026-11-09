@@ -9,7 +9,7 @@ export const PERMISSIONS = {
   'users.ban':        { area: 'users',    description: 'Suspend and unsuspend users' },
   'users.delete':     { area: 'users',    description: 'Delete user accounts' },
   'users.groups':     { area: 'users',    description: "Change a user's groups" },
-  'users.security':   { area: 'users',    description: "Turn off a user's two-factor authentication and resend verification" },
+  'users.security':   { area: 'users',    description: "Turn off a user's two-factor authentication" },
   'groups.read':      { area: 'groups',   description: 'View groups, members and the permission matrix' },
   'groups.manage':    { area: 'groups',   description: 'Create, edit and delete groups and their permissions' },
   'reports.read':     { area: 'reports',  description: 'View reports' },
