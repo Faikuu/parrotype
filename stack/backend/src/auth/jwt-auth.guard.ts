@@ -18,6 +18,30 @@ declare global {
   }
 }
 
+/** The verified claims of a session cookie. `version` is the tokenVersion the token was issued with. */
+export interface SessionClaims {
+  sub: number;
+  version: unknown;
+}
+
+/**
+ * Reads the session cookie and verifies its signature and expiry. Returns null for no cookie, an invalid
+ * token, or a token without a numeric subject. It reads no database row: callers check the account.
+ */
+export async function readSessionClaims(req: Request, jwt: JwtService): Promise<SessionClaims | null> {
+  const token: unknown = req.cookies?.[SESSION_COOKIE];
+  if (typeof token !== 'string' || token.length === 0) return null;
+  try {
+    const payload = await jwt.verifyAsync<{ sub?: unknown; v?: unknown }>(token, {
+      algorithms: ['HS256'],
+    });
+    if (typeof payload.sub !== 'number' || !Number.isInteger(payload.sub)) return null;
+    return { sub: payload.sub, version: payload.v };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Reads the session cookie, verifies its signature and expiry, then checks it against the
  * user's current tokenVersion (bumped on logout). Returns null when there is no cookie, the
@@ -30,27 +54,14 @@ export async function readSessionUser(
   jwt: JwtService,
   prisma: PrismaService,
 ): Promise<AuthUser | null> {
-  const token: unknown = req.cookies?.[SESSION_COOKIE];
-  if (typeof token !== 'string' || token.length === 0) return null;
-
-  let sub: number;
-  let version: unknown;
-  try {
-    const payload = await jwt.verifyAsync<{ sub?: unknown; v?: unknown }>(token, {
-      algorithms: ['HS256'],
-    });
-    if (typeof payload.sub !== 'number' || !Number.isInteger(payload.sub)) return null;
-    sub = payload.sub;
-    version = payload.v;
-  } catch {
-    return null;
-  }
+  const claims = await readSessionClaims(req, jwt);
+  if (!claims) return null;
 
   const user = await prisma.user.findUnique({
-    where: { id: sub },
+    where: { id: claims.sub },
     select: { id: true, name: true, tokenVersion: true, bannedAt: true },
   });
-  if (!user || user.bannedAt || version !== user.tokenVersion) return null;
+  if (!user || user.bannedAt || claims.version !== user.tokenVersion) return null;
   return { id: user.id, name: user.name };
 }
 
