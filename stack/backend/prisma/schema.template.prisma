@@ -63,6 +63,8 @@ model Result {
   createdAt      DateTime @default(now())
   @@index([userId, createdAt])
   @@index([mode, mode2, language, wpm])
+  // The badge's best wpm for one user and filter: a lookup on this index, not a scan of the group.
+  @@index([userId, mode, mode2, language, wpm])
 }
 
 model Follow {
