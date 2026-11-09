@@ -6,6 +6,7 @@ import { DailyModule } from './daily/daily.module';
 import { HealthController } from './health/health.controller';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RacesModule } from './races/races.module';
 import { QuotesModule } from './quotes/quotes.module';
 import { ResultsModule } from './results/results.module';
 import { UsersModule } from './users/users.module';
@@ -22,6 +23,7 @@ import { UsersModule } from './users/users.module';
     LeaderboardModule,
     DailyModule,
     UsersModule,
+    RacesModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
