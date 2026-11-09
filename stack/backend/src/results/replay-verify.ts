@@ -7,6 +7,7 @@ import {
   quoteToWords,
   type CodeLanguage,
   type EngineState,
+  type Keystroke,
   type Language,
   type Mode,
   type PangramCount,
@@ -81,35 +82,70 @@ export function configFor(
   }
 }
 
+/** Index of the first keystroke at or after `at`, in a list sorted by time. */
+function firstAtOrAfter(keys: readonly Keystroke[], at: number): number {
+  let lo = 0;
+  let hi = keys.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if ((keys[mid]?.at ?? 0) < at) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 /**
  * Runs the replay the way the frontend's live run went: the keystrokes through the reducer, a sample tick at
  * every whole second (the samples feed consistency), and the finish. Time mode ends at its configured time,
  * which the timer, not a keystroke, decides, so the final tick sits at that time.
  *
- * `skipSample` leaves out the tick at that second (see candidateSkips). The reducer's event log is not read
- * here, so it is cleared before each step: that keeps the replay linear in the number of events.
+ * `skipSample` leaves out the tick at that second (see candidateSkips).
+ *
+ * Speed: the reducer copies its keystroke list on every key, and a tick reads the keystrokes of the seconds it
+ * samples. So the list the reducer sees is kept short: each tick gets only the keystrokes of the seconds it adds,
+ * and the full list is kept here and given to the result at the end. The reducer's event log is not read here
+ * either, so it is cleared before each step. The results are the same as with the full lists (the tests check
+ * that against a plain run), and the work is linear in the number of events.
  */
 export function playReplay(config: TestConfig, replay: Replay, skipSample: number | null): EngineState {
   const limit = config.mode === 'time' ? config.time * 1000 : Infinity;
   const extras = replay.code ? { code: replay.code } : {};
   let state = createInitialState(config, replay.words, extras);
+  const keys: Keystroke[] = [];
   let nextTick = SAMPLE_STEP_MS;
+
+  const tick = (at: number): void => {
+    const start = state.startedAt;
+    if (start !== null) {
+      // The seconds this tick adds are those after the samples so far, up to the whole seconds elapsed at `at`.
+      const elapsed = Math.min(Math.max(0, at - start), limit);
+      const from = start + state.samples.length * SAMPLE_STEP_MS;
+      const to = start + Math.floor(elapsed / SAMPLE_STEP_MS) * SAMPLE_STEP_MS;
+      const window = keys.slice(firstAtOrAfter(keys, from), firstAtOrAfter(keys, to));
+      state = engineReducer({ ...state, keystrokes: window }, { type: 'tick', at });
+    } else {
+      state = engineReducer(state, { type: 'tick', at });
+    }
+    state = { ...state, keystrokes: [] };
+  };
   // Issues the ticks due at or before `until`. Time mode's final tick is issued by the caller.
   const tickThrough = (until: number): void => {
     while (nextTick <= until && nextTick < limit) {
-      if (nextTick !== skipSample) state = engineReducer(state, { type: 'tick', at: nextTick });
+      if (nextTick !== skipSample) tick(nextTick);
       nextTick += SAMPLE_STEP_MS;
     }
   };
+
   for (const e of replay.events) {
     tickThrough(e.t);
-    state = engineReducer({ ...state, events: [] }, eventAction(e));
+    state = engineReducer({ ...state, events: [], keystrokes: [] }, eventAction(e));
+    keys.push(...state.keystrokes);
   }
   if (limit !== Infinity) {
     tickThrough(limit);
-    state = engineReducer(state, { type: 'tick', at: limit });
+    tick(limit);
   }
-  return state;
+  return { ...state, keystrokes: keys, events: [] };
 }
 
 /** The second whose sample may be missing before a finish at `end`, or null. Only for non-time modes. */

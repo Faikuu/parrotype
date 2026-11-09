@@ -16,6 +16,9 @@ import {
 import { ResultsService } from './results.service';
 
 const EXPORT_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
+// Replay verification runs the engine synchronously (up to about a second at the event cap), so
+// submissions get a tighter limit than the global one. A real test takes at least 2 seconds to type.
+const SUBMIT_THROTTLE = { default: { limit: 20, ttl: 60_000 } };
 
 const CONTENT_TYPE: Record<ExportFormat, string> = {
   csv: 'text/csv; charset=utf-8',
@@ -54,6 +57,7 @@ export class ResultsController {
   constructor(private readonly results: ResultsService) {}
 
   @Post()
+  @Throttle(SUBMIT_THROTTLE)
   create(
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(resultInputSchema)) body: ResultInput,

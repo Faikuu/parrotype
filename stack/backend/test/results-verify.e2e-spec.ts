@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { ThrottlerStorage } from '@nestjs/throttler';
 import { dailyWords, quoteToWords, type TestConfig } from '@parrotype/engine';
 import * as bcrypt from 'bcrypt';
 import request from 'supertest';
@@ -64,7 +65,12 @@ describe('results verification (e2e)', () => {
   const submit = (cookie: string, body: object) => request(server()).post('/api/results').set('Cookie', cookie).send(body);
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    // The submit throttle is covered in submit-throttle.e2e-spec.ts; this file posts many results quickly.
+    // The throttler is a global APP_GUARD, which overrideGuard can't reach, so its storage never counts here.
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(ThrottlerStorage)
+      .useValue({ increment: async () => ({ totalHits: 1, timeToExpire: 0, isBlocked: false, timeToBlockExpire: 0 }) })
+      .compile();
     app = moduleRef.createNestApplication<INestApplication<App>>();
     configureApp(app);
     await app.init();

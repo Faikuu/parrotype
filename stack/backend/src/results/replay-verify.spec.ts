@@ -2,17 +2,22 @@ import {
   CODE_SNIPPETS,
   codeToWords,
   computeResult,
+  createInitialState,
   dailyWords,
+  engineReducer,
+  eventAction,
   type EngineExtras,
   type EngineState,
   type TestConfig,
 } from '@parrotype/engine';
 import { base, liveRun, POOL, replayOf, resultFields, typeWords, type Key } from '../../test/replay.fixtures';
+import type { Replay } from './results.schemas';
 import {
   configFor,
   dailyTextMatches,
   eventTextWords,
   matchReplay,
+  playReplay,
   statMismatches,
   type VerifyInput,
 } from './replay-verify';
@@ -107,6 +112,62 @@ describe('replay verification: runs the frontend would save', () => {
       expect(state.status).toBe('finished');
       expect(computeResult(state).durationMs).toBe(4050);
       expect(matchReplay(inputFor(config, state, 'words', '10'), replayOf(state)).matched).toBe(true);
+    }
+  });
+});
+
+const WORDS_FOR_EQUIVALENCE = POOL.slice(0, 10);
+
+describe('playReplay', () => {
+  /** The plain engine run: every event and tick through the reducer, with the full lists, no shortcuts. */
+  function naiveReplay(config: TestConfig, replay: Replay, skipSample: number | null): EngineState {
+    const limit = config.mode === 'time' ? config.time * 1000 : Infinity;
+    let state = createInitialState(config, replay.words, replay.code ? { code: replay.code } : {});
+    let nextTick = 1000;
+    const tickThrough = (until: number): void => {
+      while (nextTick <= until && nextTick < limit) {
+        if (nextTick !== skipSample) state = engineReducer(state, { type: 'tick', at: nextTick });
+        nextTick += 1000;
+      }
+    };
+    for (const e of replay.events) {
+      tickThrough(e.t);
+      state = engineReducer(state, eventAction(e));
+    }
+    if (limit !== Infinity) {
+      tickThrough(limit);
+      state = engineReducer(state, { type: 'tick', at: limit });
+    }
+    return state;
+  }
+
+  it('gives the same result as the plain engine run, for words, time, code, zen and skipped samples', () => {
+    const cases: Array<{ config: TestConfig; words: string[]; keys: Key[]; extras?: EngineExtras; skip?: number }> = [
+      { config: { ...base, mode: 'words', words: 10 }, words: WORDS_FOR_EQUIVALENCE, keys: typeWords(WORDS_FOR_EQUIVALENCE, 41, { mistakeRate: 0.2, startAt: 0 }) },
+      { config: { ...base, mode: 'time', time: 15 }, words: Array.from({ length: 300 }, (_, i) => POOL[i % POOL.length] ?? 'the'), keys: typeWords(POOL.slice(0, 40), 42, { mistakeRate: 0.1, startAt: 300 }) },
+      { config: { ...base, mode: 'words', words: 10, stopOnError: 'letter' }, words: WORDS_FOR_EQUIVALENCE, keys: typeWords(WORDS_FOR_EQUIVALENCE, 43, { mistakeRate: 0.2, startAt: 0, backspace: false }) },
+    ];
+    // A zen run and a code run, built like the cases above.
+    const zenKeys: Key[] = [];
+    let at = 0;
+    for (const ch of 'quick brown fox jumps over the lazy dog '.repeat(12)) {
+      at += 137;
+      zenKeys.push(ch === ' ' ? { at, kind: 's' } : { at, kind: 'c', ch });
+    }
+    zenKeys.push({ at: at + 200, kind: 'n' });
+    cases.push({ config: { ...base, mode: 'zen' }, words: [], keys: zenKeys });
+
+    for (const c of cases) {
+      const state = liveRun(c.config, c.words, c.extras ?? {}, c.keys);
+      const replay = replayOf(state, c.extras ?? {});
+      const end = replay.events[replay.events.length - 1]?.t ?? 0;
+      const skips: Array<number | null> = [null];
+      if (c.config.mode !== 'time' && end % 1000 < 150) skips.push(Math.floor(end / 1000) * 1000);
+      for (const skip of skips) {
+        const fast = computeResult(playReplay(c.config, replay, skip));
+        const plain = computeResult(naiveReplay(c.config, replay, skip));
+        expect(fast).toEqual(plain);
+      }
     }
   });
 });
