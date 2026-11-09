@@ -34,7 +34,7 @@ Upgrading an existing checkout: the SQLite file used to be `file:./dev.db`. Beca
 PostgreSQL and MariaDB are not started by this project. Run them yourself, or use the Docker stack below.
 
 ## How the schema is organised
-- `prisma/schema.template.prisma` is the single source of the data model. Provider-specific bits are placeholders: long text columns become `@db.Text` on PostgreSQL and MySQL, and emails get `VARCHAR(254)` on those two.
+- `prisma/schema.template.prisma` is the single source of the data model. Provider-specific bits are placeholders: long text columns become `@db.Text` on PostgreSQL and MySQL, the keystroke replay column (`{{veryLongText}}`) becomes `@db.Text` on PostgreSQL and `@db.MediumText` on MySQL, and emails get `VARCHAR(254)` on those two.
 - `prisma/<provider>/schema.prisma` is rendered from the template by `scripts/prisma-schema.mjs`. Both are committed. Do not edit the rendered files. Run `npm run prisma:schema` after changing the template.
 - `prisma/<provider>/migrations/` holds the migrations for each engine. SQLite has its own history (`prisma/sqlite/migrations`). PostgreSQL and MySQL start from one init migration generated with `prisma migrate diff --from-empty`.
 - A schema change means updating the template and adding a migration in each provider's folder. `npm run prisma:migrate` does that for the engine in `DATABASE_PROVIDER`, using that engine's database.

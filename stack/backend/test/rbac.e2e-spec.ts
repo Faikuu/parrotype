@@ -296,9 +296,10 @@ describe('permission groups, admin users and the safety rules (e2e)', () => {
       await addToGroup(memberId, 'RB Members');
       const manager = await sessionFor(app, prisma, 'rb_members_only');
       const denied = await put(`/api/admin/groups/${adminsId}/members/${memberId}`, manager).expect(403);
-      // Holds users.groups and users.read (and so admin.access): the 14 other Administrators permissions are named, in catalog order.
+      // Holds users.groups and users.read (and so admin.access): every other catalog permission is named, in catalog order.
+      const held = new Set(['admin.access', 'users.read', 'users.groups']);
       expect(denied.body.message).toBe(
-        "You can't grant permissions you don't have: users.edit, users.ban, users.delete, groups.read, groups.manage, reports.read, reports.resolve, results.read, results.delete, quotes.read, quotes.manage, races.read, races.manage, audit.read",
+        `You can't grant permissions you don't have: ${ALL_PERMISSIONS.filter((p) => !held.has(p)).join(', ')}`,
       );
       expect(await prisma.userGroup.count({ where: { groupId: adminsId, userId: memberId } })).toBe(0);
     });

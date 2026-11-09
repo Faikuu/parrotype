@@ -17,13 +17,22 @@ const MODERATORS = [
 ] as Permission[];
 
 describe('catalog', () => {
-  it('has exactly the 17 keys of the 2.4 spec, each with an area and a description', () => {
-    expect(ALL_PERMISSIONS).toHaveLength(17);
+  it('has exactly the 20 keys of the 2.4 spec and the 2.5 additions, each with an area and a description', () => {
+    expect(ALL_PERMISSIONS).toHaveLength(20);
     expect(CATALOG.map((c) => c.key)).toEqual(ALL_PERMISSIONS);
     for (const entry of CATALOG) {
       expect(entry.description.length).toBeGreaterThan(0);
       expect(entry.area).toBe(PERMISSIONS[entry.key].area);
     }
+  });
+
+  it('lists the areas, with the 2.5 areas announcements and events', () => {
+    expect([...new Set(CATALOG.map((c) => c.area))].sort()).toEqual(
+      ['announcements', 'audit', 'events', 'general', 'groups', 'quotes', 'races', 'reports', 'results', 'users'],
+    );
+    expect(PERMISSIONS['announcements.manage'].area).toBe('announcements');
+    expect(PERMISSIONS['events.manage'].area).toBe('events');
+    expect(PERMISSIONS['users.security'].area).toBe('users');
   });
 
   it('recognises only catalog keys', () => {
@@ -43,6 +52,11 @@ describe('impliedReads', () => {
     expect(impliedReads(['results.delete'])).toEqual(['results.read']);
     expect(impliedReads(['quotes.manage'])).toEqual(['quotes.read']);
     expect(impliedReads(['races.manage'])).toEqual(['races.read']);
+  });
+
+  it('implies users.read for users.security, and nothing for the areas without a read key', () => {
+    expect(impliedReads(['users.security'])).toEqual(['users.read']);
+    expect(impliedReads(['announcements.manage', 'events.manage'])).toEqual([]);
   });
 
   it('implies nothing for reads, for admin.access, or for an area without a read key', () => {
@@ -79,6 +93,14 @@ describe('permissionsOfGroup and resolveEffective', () => {
 
   it('does not treat a custom group named Administrators as the system group', () => {
     expect(permissionsOfGroup(group('Administrators', false, ['users.ban']))).toEqual(set('users.ban'));
+  });
+
+  it('gives the 2.5 permissions to Administrators and not to Moderators', () => {
+    const NEW_KEYS: Permission[] = ['announcements.manage', 'events.manage', 'users.security'];
+    for (const key of NEW_KEYS) {
+      expect(resolveEffective([group('Administrators', true, [])], false).has(key)).toBe(true);
+      expect(resolveEffective([group('Moderators', false, MODERATORS)], false).has(key)).toBe(false);
+    }
   });
 
   it('is the union of the user groups', () => {

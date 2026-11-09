@@ -9,6 +9,7 @@ export const PERMISSIONS = {
   'users.ban':        { area: 'users',    description: 'Suspend and unsuspend users' },
   'users.delete':     { area: 'users',    description: 'Delete user accounts' },
   'users.groups':     { area: 'users',    description: "Change a user's groups" },
+  'users.security':   { area: 'users',    description: "Turn off a user's two-factor authentication and resend verification" },
   'groups.read':      { area: 'groups',   description: 'View groups, members and the permission matrix' },
   'groups.manage':    { area: 'groups',   description: 'Create, edit and delete groups and their permissions' },
   'reports.read':     { area: 'reports',  description: 'View reports' },
@@ -19,6 +20,8 @@ export const PERMISSIONS = {
   'quotes.manage':    { area: 'quotes',   description: 'Add, edit and delete quotes' },
   'races.read':       { area: 'races',    description: 'View live race rooms' },
   'races.manage':     { area: 'races',    description: 'Close race rooms' },
+  'announcements.manage': { area: 'announcements', description: 'Create, edit and delete site announcements' },
+  'events.manage':    { area: 'events',   description: 'Create, edit and delete typing events' },
   'audit.read':       { area: 'audit',    description: 'View the audit log' },
 } as const;
 

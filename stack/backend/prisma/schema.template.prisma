@@ -24,13 +24,97 @@ model User {
   bannedAt     DateTime?
   banReason    String?  {{longText}}
   createdAt    DateTime @default(now())
+  /// Set when the user follows the link in the verification email. Unverified users are kept off leaderboards.
+  emailVerifiedAt DateTime?
+  /// base32, AES-256-GCM encrypted at rest (src/auth). null = two-factor sign-in is off.
+  totpSecret      String?
+  /// Set when two-factor sign-in is switched on. A pending secret (set up but not confirmed) has this null.
+  totpEnabledAt   DateTime?
   /// Permission groups this user belongs to. Effective permissions are read on every request; see src/permissions.
   groups       UserGroup[]
   results      Result[]
+  recoveryCodes   RecoveryCode[]
+  authTokens      AuthToken[]
+  notifications   Notification[]
   following       Follow[]  @relation("follower")
   followers       Follow[]  @relation("followee")
   reportsMade     Report[]  @relation("reporter")
   reportsReceived Report[]  @relation("target")
+}
+
+/// A one-time token for a password reset or an email verification. The raw token is only ever emailed.
+model AuthToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  /// "reset" | "verify"
+  purpose   String
+  /// sha256 hex of the random token
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, purpose])
+}
+
+/// A two-factor recovery code. Only its sha256 is stored; a code works once.
+model RecoveryCode {
+  id       Int       @id @default(autoincrement())
+  userId   Int
+  /// sha256 hex
+  codeHash String
+  usedAt   DateTime?
+  user     User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+
+model Notification {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  /// "follow" | "report_outcome" | "pb_beaten" | "announcement" | "event_start" (reserved)
+  kind      String
+  /// JSON, at most 1000 characters
+  data      String    {{longText}}
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, readAt, createdAt])
+}
+
+/// A site banner. Shown while now is between startsAt and endsAt (or forever when endsAt is null).
+model Announcement {
+  id        Int       @id @default(autoincrement())
+  /// At most 280 characters. A text type, so a 280-character message fits on MySQL too.
+  message   String    {{longText}}
+  /// "info" | "warning"
+  level     String    @default("info")
+  startsAt  DateTime
+  endsAt    DateTime?
+  /// No relation to User, so announcements outlive deleted admins (same as AdminAction).
+  createdBy Int?
+  createdAt DateTime  @default(now())
+  @@index([startsAt])
+}
+
+/// A timed typing event. The text is hidden from the public API until startsAt.
+model Event {
+  id          Int      @id @default(autoincrement())
+  /// /^[a-z0-9-]{3,40}$/
+  slug        String   @unique
+  /// At most 80 characters.
+  title       String
+  /// At most 500 characters.
+  description String   @default("") {{longText}}
+  language    String
+  /// 20 to 1000 characters.
+  text        String   {{longText}}
+  startsAt    DateTime
+  endsAt      DateTime
+  /// No relation to User, so events outlive deleted admins (same as AdminAction).
+  createdBy   Int?
+  createdAt   DateTime @default(now())
+  results     Result[]
+  @@index([startsAt, endsAt])
 }
 
 model Quote {
@@ -46,7 +130,7 @@ model Result {
   id             Int      @id @default(autoincrement())
   userId         Int
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  mode           String // time|words|quote|zen|pangram|custom|daily|weak
+  mode           String // time|words|quote|zen|pangram|custom|daily|weak|event
   mode2          String // "15" | "60" | "25" | "short" | "3" | "custom" | YYYY-MM-DD ...
   language       String
   wpm            Float
@@ -61,10 +145,25 @@ model Result {
   punctuation    Boolean
   numbers        Boolean
   createdAt      DateTime @default(now())
+  /// Set when the result's keystroke replay reproduces its stats (2.5). Only verified results rank on leaderboards.
+  verified       Boolean  @default(false)
+  /// Set for mode "event" (mode2 is the event slug). Null otherwise.
+  eventId        Int?
+  event          Event?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  replay         ResultReplay?
   @@index([userId, createdAt])
   @@index([mode, mode2, language, wpm])
   // The badge's best wpm for one user and filter: a lookup on this index, not a scan of the group.
   @@index([userId, mode, mode2, language, wpm])
+  @@index([eventId, wpm])
+}
+
+/// The keystroke replay of a verified result. Stored only when the server could reproduce the stats.
+model ResultReplay {
+  resultId Int    @id
+  /// JSON: { v: 1, words: string[], events: EngineEvent[], code?: {...} }. Can be large, hence the MySQL MEDIUMTEXT.
+  data     String {{veryLongText}}
+  result   Result @relation(fields: [resultId], references: [id], onDelete: Cascade)
 }
 
 model Follow {
@@ -97,7 +196,8 @@ model AdminAction {
   adminId   Int?     // null for CLI actions and for admins who were deleted later
   /// Values: ban | unban | delete_result | resolve_report | dismiss_report | group_create | group_update | group_delete
   /// | group_permissions | group_member_add | group_member_remove | user_groups | user_rename | user_revoke_sessions
-  /// | user_delete | quote_create | quote_update | quote_delete | race_close
+  /// | user_delete | quote_create | quote_update | quote_delete | race_close | announcement_create | announcement_update
+  /// | announcement_delete | event_create | event_update | event_delete | user_2fa_reset
   /// (2.3 rows also hold grant_admin | revoke_admin, written by the old CLI.)
   action    String
   target    String   // e.g. "user:42", "result:9", "report:3", "group:2"
