@@ -39,11 +39,11 @@ export interface JoinIdentity {
   guestName?: string;
 }
 
-/** Emitted when a room is removed while people are still connected to it. */
+/** Emitted whenever a room is removed. connIds lists the connections still seated in it. */
 export interface RoomClosedEvent {
   roomId: string;
   connIds: string[];
-  reason: 'expired';
+  reason: 'expired' | 'empty';
 }
 
 interface Player {
@@ -89,7 +89,7 @@ interface Membership {
  *
  * Events:
  * - 'changed' (roomId): the room's state changed. The gateway broadcasts it (throttled).
- * - 'closed' (RoomClosedEvent): a room was removed while people were connected.
+ * - 'closed' (RoomClosedEvent): a room was removed (idle, or its last player left).
  */
 @Injectable()
 export class RoomService extends EventEmitter implements OnModuleInit, OnModuleDestroy {
@@ -335,12 +335,7 @@ export class RoomService extends EventEmitter implements OnModuleInit, OnModuleD
     const now = this.now();
     for (const room of [...this.rooms.values()]) {
       if (now - room.lastActivity <= ROOM_IDLE_TTL_MS) continue;
-      const connIds = room.players.flatMap((p) => (p.connId ? [p.connId] : []));
-      this.removeRoom(room);
-      if (connIds.length > 0) {
-        const event: RoomClosedEvent = { roomId: room.id, connIds, reason: 'expired' };
-        this.emit('closed', event);
-      }
+      this.removeRoom(room, 'expired');
     }
   }
 
@@ -418,7 +413,7 @@ export class RoomService extends EventEmitter implements OnModuleInit, OnModuleD
   /** After a seat was released: remove an empty room, otherwise move the host and re-check the finish. */
   private afterRemoval(room: Room): void {
     if (room.players.length === 0) {
-      this.removeRoom(room);
+      this.removeRoom(room, 'empty');
       return;
     }
     if (!room.players.some((p) => p.id === room.hostId)) room.hostId = room.players[0].id;
@@ -426,12 +421,13 @@ export class RoomService extends EventEmitter implements OnModuleInit, OnModuleD
     this.touch(room);
   }
 
-  private removeRoom(room: Room): void {
+  private removeRoom(room: Room, reason: RoomClosedEvent['reason']): void {
     this.clearTimer(room);
-    for (const p of room.players) {
-      if (p.connId) this.memberships.delete(p.connId);
-    }
+    const connIds = room.players.flatMap((p) => (p.connId ? [p.connId] : []));
+    for (const connId of connIds) this.memberships.delete(connId);
     this.rooms.delete(room.id);
+    const event: RoomClosedEvent = { roomId: room.id, connIds, reason };
+    this.emit('closed', event);
   }
 
   private toView(room: Room): RoomView {

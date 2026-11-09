@@ -136,11 +136,14 @@ describe('RoomService', () => {
       expect(service.view(id)?.hostId).toBe(second);
     });
 
-    it('removes the room once the last player leaves', async () => {
+    it('removes the room once the last player leaves, and reports it as closed', async () => {
+      const closed: RoomClosedEvent[] = [];
+      service.on('closed', (e: RoomClosedEvent) => closed.push(e));
       const id = await roomWith('only');
       service.leave('only');
       expect(service.view(id)).toBeNull();
       expect(service.roomCount).toBe(0);
+      expect(closed).toEqual([{ roomId: id, connIds: [], reason: 'empty' }]);
     });
 
     it('releases the seat of a lobby player who disconnects', async () => {

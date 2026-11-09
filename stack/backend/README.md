@@ -70,6 +70,14 @@ Session = JWT (HS256, 7 days) in the httpOnly cookie `pt_session`. Set `COOKIE_S
 
 `JWT_SECRET` must be at least 32 characters with at least 10 distinct characters. The API refuses to start if it is the `.env.sample` placeholder or contains `change-me`. Generate one with `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`, or run `npm run setup` from the repo root, which writes a random one into `.env`.
 
+## Races (WebSocket)
+
+- `POST /api/races` with `{ "language": "en" }` creates a room and returns `{ "id" }` (throttled to 10 per minute per IP).
+- The socket is at `/api/races/ws` (not under the global prefix). Messages are JSON text frames with a `type` field; the protocol is in `docs/SPEC-2.2.md`.
+- The socket is accepted only when its `Origin` is in `CORS_ORIGINS`. Otherwise it is closed with 1008. Behind a reverse proxy, the proxy must pass the browser's `Origin` header through and forward the Upgrade headers (see `stack/frontend/nginx.conf`).
+- Rooms live in memory: at most 8 players, 500 rooms, and a 30-minute idle timeout. A restart drops them. Run one API instance, or races on a second instance will not see each other's rooms.
+- `RACE_COUNTDOWN_MS` (default 3000, max 10000) sets the countdown. The e2e test lowers it.
+
 ## Docker
 `docker-compose.yml` in the repo root runs PostgreSQL 16, the API (`stack/backend/Dockerfile`) and the web app (`stack/frontend/Dockerfile`, nginx, which proxies `/api` to the API).
 

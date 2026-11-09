@@ -7,6 +7,7 @@ import WebSocket from 'ws';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { PrismaService } from '../src/prisma/prisma.service';
+import type { ServerMessage } from '../src/races/races.protocol';
 import { applyE2eEnv } from './e2e.env';
 
 // Config is read lazily, so setting it before the app is built is enough. A 300 ms countdown keeps the test quick.
@@ -18,7 +19,8 @@ jest.setTimeout(30_000);
 const ALLOWED_ORIGIN = 'http://localhost:5173';
 const QUOTE = 'Hola mundo';
 
-type Msg = { type: string; [key: string]: any };
+type Msg = ServerMessage;
+type RoomMsg = Extract<ServerMessage, { type: 'room' }>;
 
 /** A ws client that records every message and lets a test wait for the next one matching a predicate. */
 class Sock {
@@ -79,14 +81,15 @@ class Sock {
     return this.until((m) => m.type === 'joined', 'joined');
   }
 
-  room(pred: (room: Msg) => boolean, label: string): Promise<Msg> {
-    return this.until((m) => m.type === 'room' && pred(m.room), label);
+  room(pred: (room: RoomMsg['room']) => boolean, label: string): Promise<RoomMsg> {
+    return this.until((m) => m.type === 'room' && pred(m.room), label) as Promise<RoomMsg>;
   }
 }
 
-function connect(origin: string | undefined, cookie?: string, port = 0): Promise<Sock> {
+/** origin null sends no Origin header at all. */
+function connect(origin: string | null, cookie?: string, port = 0): Promise<Sock> {
   const headers: Record<string, string> = {};
-  if (origin !== undefined) headers.Origin = origin;
+  if (origin !== null) headers.Origin = origin;
   if (cookie) headers.Cookie = cookie;
   const ws = new WebSocket(`ws://127.0.0.1:${port}/api/races/ws`, { headers });
   const sock = new Sock(ws);
@@ -103,7 +106,7 @@ describe('Races (e2e)', () => {
   let port: number;
   const sockets: Sock[] = [];
 
-  const open = async (origin = ALLOWED_ORIGIN, cookie?: string): Promise<Sock> => {
+  const open = async (origin: string | null = ALLOWED_ORIGIN, cookie?: string): Promise<Sock> => {
     const s = await connect(origin, cookie, port);
     sockets.push(s);
     return s;
@@ -141,7 +144,7 @@ describe('Races (e2e)', () => {
   });
 
   it('rejects a socket with no Origin at all', async () => {
-    const s = await open(undefined);
+    const s = await open(null);
     expect(await s.closed).toBe(1008);
   });
 
@@ -197,9 +200,9 @@ describe('Races (e2e)', () => {
     guest.send({ type: 'progress', chars: QUOTE.length, wpm: 80 });
     guest.send({ type: 'finish', wpm: 80, accuracy: 96, durationMs: 100 });
     const done = await host.room((r) => r.status === 'finished', 'finished');
-    const places = done.room.players.map((p: { name: string; place: number | null }) => [p.name, p.place]);
+    const places = done.room.players.map((p) => [p.name, p.place]);
     expect(places).toEqual([
-      ['hosty', 1],
+      ['guest hosty', 1],
       ['guest buddy', 2],
     ]);
     expect(done.room.players[1]).toMatchObject({ isGuest: true, accuracy: 96 });
