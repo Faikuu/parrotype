@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -15,6 +21,7 @@ const TAKEN = 'Username or email is already taken';
 const WRONG_CURRENT_PASSWORD = 'Current password is incorrect';
 const WRONG_PASSWORD = 'Password is incorrect';
 const SAME_PASSWORD = 'New password must be different from the current one';
+export const SUSPENDED = 'This account has been suspended';
 
 /**
  * bcrypt hash of a throwaway string. Compared against when the email is unknown,
@@ -26,14 +33,16 @@ export interface PublicUser {
   id: number;
   name: string;
   email: string;
+  role: string;
   createdAt: string;
 }
 
-export function toPublicUser(user: Pick<User, 'id' | 'name' | 'email' | 'createdAt'>): PublicUser {
+export function toPublicUser(user: Pick<User, 'id' | 'name' | 'email' | 'role' | 'createdAt'>): PublicUser {
   return {
     id: user.id,
     name: user.name,
     email: user.email,
+    role: user.role,
     createdAt: user.createdAt.toISOString(),
   };
 }
@@ -84,6 +93,8 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { email: input.email } });
     const matches = await bcrypt.compare(input.password, user?.passwordHash ?? DUMMY_HASH);
     if (!user || !matches) throw new UnauthorizedException(INVALID_CREDENTIALS);
+    // Checked after the password, so only someone who knows it learns the account is suspended.
+    if (user.bannedAt) throw new ForbiddenException(SUSPENDED);
     return { user: toPublicUser(user), token: await this.signSession(user) };
   }
 

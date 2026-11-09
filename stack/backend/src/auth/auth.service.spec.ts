@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import type { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,6 +17,8 @@ type UserRow = {
   email: string;
   passwordHash: string;
   tokenVersion: number;
+  role: string;
+  bannedAt: Date | null;
   createdAt: Date;
 };
 
@@ -47,6 +49,8 @@ describe('AuthService', () => {
         email: data.email,
         passwordHash: data.passwordHash,
         tokenVersion: 0,
+        role: 'user',
+        bannedAt: null,
         createdAt: new Date('2026-01-02T03:04:05Z'),
       }));
 
@@ -64,6 +68,7 @@ describe('AuthService', () => {
         id: 7,
         name: 'typist_1',
         email: 'typist@example.com',
+        role: 'user',
         createdAt: '2026-01-02T03:04:05.000Z',
       });
       expect(result.user).not.toHaveProperty('passwordHash');
@@ -81,6 +86,8 @@ describe('AuthService', () => {
         email: data.email,
         passwordHash: data.passwordHash,
         tokenVersion: 0,
+        role: 'user',
+        bannedAt: null,
         createdAt: new Date(0),
       }));
 
@@ -126,12 +133,39 @@ describe('AuthService', () => {
         email: 'alice@example.com',
         passwordHash,
         tokenVersion: 0,
+        role: 'user',
+        bannedAt: null,
         createdAt: new Date(0),
       });
 
       const result = await service.login({ email: 'alice@example.com', password: 'secret-password' });
       expect(result.user.id).toBe(3);
       expect(result.user).not.toHaveProperty('passwordHash');
+      expect(result.user.role).toBe('user');
+    });
+
+    it('refuses a suspended account with 403, but only after the password matched', async () => {
+      const { service, prisma } = setup();
+      const passwordHash = await bcrypt.hash('secret-password', 4);
+      prisma.user.findUnique.mockResolvedValue({
+        id: 3,
+        name: 'alice',
+        nameLower: 'alice',
+        email: 'alice@example.com',
+        passwordHash,
+        tokenVersion: 0,
+        role: 'user',
+        bannedAt: new Date(0),
+        createdAt: new Date(0),
+      });
+
+      const err = await service.login({ email: 'alice@example.com', password: 'secret-password' }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ForbiddenException);
+      expect((err as ForbiddenException).message).toBe('This account has been suspended');
+
+      // A wrong password still gets the generic 401, so a suspension is not revealed to strangers.
+      const wrong = await service.login({ email: 'alice@example.com', password: 'nope-nope' }).catch((e: unknown) => e);
+      expect(wrong).toBeInstanceOf(UnauthorizedException);
     });
 
     it('gives the same generic 401 for a wrong password and an unknown email', async () => {
@@ -144,6 +178,8 @@ describe('AuthService', () => {
         email: 'alice@example.com',
         passwordHash,
         tokenVersion: 0,
+        role: 'user',
+        bannedAt: null,
         createdAt: new Date(0),
       });
       prisma.user.findUnique.mockResolvedValueOnce(null);
@@ -194,7 +230,7 @@ describe('AuthService.changePassword', () => {
     const { service, prisma } = setup();
     const passwordHash = await bcrypt.hash('old-password', 4);
     prisma.user.findUnique.mockResolvedValue({
-      id: 3, name: 'alice', nameLower: 'alice', email: 'a@example.com', passwordHash, tokenVersion: 0, createdAt: new Date(0),
+      id: 3, name: 'alice', nameLower: 'alice', email: 'a@example.com', passwordHash, tokenVersion: 0, role: 'user', bannedAt: null, createdAt: new Date(0),
     });
 
     await expect(

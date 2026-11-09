@@ -3,21 +3,17 @@
 // Usage: node scripts/prisma.mjs <prisma args…>   e.g. migrate deploy, generate, db seed
 // Loads .env first, but never overrides variables that are already set in the environment.
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { backendRoot, loadDotEnv } from './env.mjs';
 import { checkUrl, resolveProvider } from './providers.mjs';
 import { writeSchema } from './prisma-schema.mjs';
 
-const backendRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const fail = (message) => {
   console.error(`prisma: ${message}`);
   process.exit(1);
 };
 
-const envFile = join(backendRoot, '.env');
-if (existsSync(envFile)) process.loadEnvFile(envFile);
+loadDotEnv();
 
 const args = process.argv.slice(2);
 if (args.length === 0) fail('no Prisma arguments given (e.g. node scripts/prisma.mjs migrate deploy)');

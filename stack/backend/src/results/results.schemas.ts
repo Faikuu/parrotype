@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { utcDate } from '../common/dates';
-import { DAILY_DATE_REGEX, isRankedMode, languageSchema, RESULT_MODES, type ResultMode } from '../common/domain';
+import { CODE_LANGUAGES, DAILY_DATE_REGEX, isRankedMode, languageSchema, RESULT_MODES, type ResultMode } from '../common/domain';
 import { EXPORT_FORMATS } from './export';
 
 const num = (min: number, max: number) => z.number().finite().min(min).max(max);
@@ -18,7 +18,13 @@ const FIXED_MODE2: Record<Exclude<ResultMode, 'daily'>, readonly string[]> = {
   zen: ['zen'],
   custom: ['custom'],
   weak: ['weak'],
+  code: CODE_LANGUAGES,
 };
+
+/** The message for a mode that is saved but never ranked. */
+export const UNRANKED_MESSAGE = 'zen, custom, weak and code results are not ranked';
+/** Scopes of the leaderboard. "following" needs a signed-in viewer (checked by the controller). */
+export const LEADERBOARD_SCOPES = ['all', 'following'] as const;
 
 /** Why mode2 does not fit the mode, or null. A daily mode2 must be a well-formed date. */
 export function mode2Problem(mode: ResultMode, mode2: string): string | null {
@@ -89,27 +95,47 @@ export const resultInputSchema = z
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['mode2'], message: problem });
       }
     }
+    if (r.mode === 'code' && r.language !== 'en') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['language'],
+        message: 'code results must have language "en"',
+      });
+    }
   });
 
 export const resultsListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 
-/** Zen, custom and weak tests can be saved but are never ranked. */
+const rankedModeField = z.enum(RESULT_MODES).refine((m) => isRankedMode(m), { message: UNRANKED_MESSAGE });
+const mode2Field = z.string().min(1).max(16);
+
+/** Adds the mode2 check for a ranked mode. Unranked modes already failed their own refinement. */
+function checkRankedFilter(q: { mode: ResultMode; mode2: string }, ctx: z.RefinementCtx): void {
+  if (!isRankedMode(q.mode)) return;
+  const problem = mode2Problem(q.mode, q.mode2);
+  if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['mode2'], message: problem });
+}
+
+/** Zen, custom, weak and code tests can be saved but are never ranked. */
 export const leaderboardQuerySchema = z
   .object({
-    mode: z.enum(RESULT_MODES).refine((m) => isRankedMode(m), {
-      message: 'zen, custom and weak results are not ranked',
-    }),
-    mode2: z.string().min(1).max(16),
+    mode: rankedModeField,
+    mode2: mode2Field,
     language: languageSchema,
+    scope: z.enum(LEADERBOARD_SCOPES).default('all'),
   })
-  .superRefine((q, ctx) => {
-    // Unranked modes already failed the refinement above.
-    if (!isRankedMode(q.mode)) return;
-    const problem = mode2Problem(q.mode, q.mode2);
-    if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['mode2'], message: problem });
-  });
+  .superRefine(checkRankedFilter);
+
+/** The badge shows the best wpm of one ranked filter. Defaults: time, 60 seconds, English. */
+export const badgeQuerySchema = z
+  .object({
+    mode: rankedModeField.default('time'),
+    mode2: mode2Field.default('60'),
+    language: languageSchema.default('en'),
+  })
+  .superRefine(checkRankedFilter);
 
 export const exportQuerySchema = z.object({
   format: z.enum(EXPORT_FORMATS).default('csv'),
@@ -118,4 +144,5 @@ export const exportQuerySchema = z.object({
 export type ResultInput = z.infer<typeof resultInputSchema>;
 export type ResultsListQuery = z.infer<typeof resultsListQuerySchema>;
 export type LeaderboardQuery = z.infer<typeof leaderboardQuerySchema>;
+export type BadgeQuery = z.infer<typeof badgeQuerySchema>;
 export type ExportQuery = z.infer<typeof exportQuerySchema>;

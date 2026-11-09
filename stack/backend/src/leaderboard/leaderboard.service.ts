@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { LeaderboardQuery } from '../results/results.schemas';
 
@@ -25,7 +26,16 @@ export interface LeaderboardRow {
   createdAt: Date;
 }
 
-type Where = { mode: string; mode2: string; language: string };
+/** The filter of one board. Banned users never appear: the filter is on the user relation. */
+type Where = Prisma.ResultWhereInput;
+
+/** What the board is for: a ranked mode, a date, and optionally the viewer's friends. */
+export interface LeaderboardInput {
+  mode: LeaderboardQuery['mode'];
+  mode2: string;
+  language: LeaderboardQuery['language'];
+  scope?: LeaderboardQuery['scope'];
+}
 
 /** Each user's best row (highest wpm, earliest on a tie), sorted, top `limit`, with ranks. */
 export function rankLeaderboard(rows: LeaderboardRow[], limit = LEADERBOARD_SIZE): LeaderboardEntry[] {
@@ -75,8 +85,12 @@ function isEarlier(a: LeaderboardRow, b: LeaderboardRow): boolean {
 export class LeaderboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async top(query: LeaderboardQuery): Promise<LeaderboardEntry[]> {
-    const where: Where = { mode: query.mode, mode2: query.mode2, language: query.language };
+  /**
+   * `scope: 'following'` limits the board to the viewer and the people they follow. The caller
+   * must pass the viewer's id for that scope (the controller refuses anonymous requests).
+   */
+  async top(query: LeaderboardInput, viewerId?: number): Promise<LeaderboardEntry[]> {
+    const where = await this.boardWhere(query, viewerId);
     if (query.mode === 'daily') return this.dailyTop(where);
 
     let best = await this.bestPerUser(where);
@@ -104,6 +118,25 @@ export class LeaderboardService {
     ]);
     const names = new Map(users.map((u) => [u.id, u.name]));
     return rankLeaderboard(rows.map((r) => ({ ...r, name: names.get(r.userId) ?? '' })));
+  }
+
+  /** The rows of one board: the filter, the banned-user exclusion, and the friends scope. */
+  private async boardWhere(query: LeaderboardInput, viewerId: number | undefined): Promise<Where> {
+    const where: Where = {
+      mode: query.mode,
+      mode2: query.mode2,
+      language: query.language,
+      user: { bannedAt: null },
+    };
+    if (query.scope === 'following') {
+      if (viewerId === undefined) throw new Error('scope=following needs a viewer');
+      const follows = await this.prisma.follow.findMany({
+        where: { followerId: viewerId },
+        select: { followeeId: true },
+      });
+      where.userId = { in: [viewerId, ...follows.map((f) => f.followeeId)] };
+    }
+    return where;
   }
 
   /**

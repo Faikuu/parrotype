@@ -21,8 +21,17 @@ model User {
   passwordHash String
   /// Bumped on logout. A session token carries the version it was issued with.
   tokenVersion Int      @default(0)
+  /// "user" | "admin". Only granted through scripts/admin.ts; read from the database on every request.
+  role         String   @default("user")
+  /// Set by an admin ban. A banned user cannot log in and their sessions are rejected.
+  bannedAt     DateTime?
+  banReason    String?
   createdAt    DateTime @default(now())
   results      Result[]
+  following       Follow[]  @relation("follower")
+  followers       Follow[]  @relation("followee")
+  reportsMade     Report[]  @relation("reporter")
+  reportsReceived Report[]  @relation("target")
 }
 
 model Quote {
@@ -55,4 +64,39 @@ model Result {
   createdAt      DateTime @default(now())
   @@index([userId, createdAt])
   @@index([mode, mode2, language, wpm])
+}
+
+model Follow {
+  followerId Int
+  followeeId Int
+  createdAt  DateTime @default(now())
+  follower   User @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followee   User @relation("followee", fields: [followeeId], references: [id], onDelete: Cascade)
+  @@id([followerId, followeeId])
+  @@index([followeeId])
+}
+
+model Report {
+  id         Int       @id @default(autoincrement())
+  reporterId Int
+  targetId   Int
+  reason     String // "name" | "cheating" | "other"
+  details    String?    // at most 500 characters
+  status     String    @default("open") // "open" | "resolved" | "dismissed"
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+  reporter   User @relation("reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  target     User @relation("target", fields: [targetId], references: [id], onDelete: Cascade)
+  @@index([status, createdAt])
+}
+
+/// Audit log of admin and CLI actions. No relation to User, so entries outlive deleted admins.
+model AdminAction {
+  id        Int      @id @default(autoincrement())
+  adminId   Int?     // null for CLI actions and for admins who were deleted later
+  action    String   // "ban" | "unban" | "delete_result" | "resolve_report" | "dismiss_report" | "grant_admin" | "revoke_admin"
+  target    String   // e.g. "user:42", "result:9", "report:3"
+  note      String?
+  createdAt DateTime @default(now())
+  @@index([createdAt])
 }

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { DailyModule } from './daily/daily.module';
 import { HealthController } from './health/health.controller';
@@ -23,6 +24,7 @@ import { UsersModule } from './users/users.module';
     LeaderboardModule,
     DailyModule,
     UsersModule,
+    AdminModule,
     RacesModule,
   ],
   controllers: [HealthController],

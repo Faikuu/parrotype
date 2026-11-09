@@ -1,9 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { RANKED_MODES } from '../common/domain';
-import { USERNAME_REGEX } from '../auth/auth.schemas';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildInsights, type ActivityDay, type Achievement, type Streak } from '../results/insights';
 import { bestsForUser, loadInsightRows } from '../results/results.service';
+import type { BadgeQuery } from '../results/results.schemas';
+import { FollowsService } from './follows.service';
+import { findVisibleUser } from './visible-user';
 
 export const PROFILE_RECENT_SIZE = 10;
 const NOT_FOUND = 'No user with that name';
@@ -30,6 +32,11 @@ export interface PublicProfile {
   achievements: Achievement[];
   /** Last 365 UTC days, only days with tests. */
   activity: ActivityDay[];
+  /** Followers and followees who are not suspended. */
+  followers: number;
+  following: number;
+  /** False for anonymous viewers and for your own profile. */
+  isFollowing: boolean;
 }
 
 export interface ProfileSource {
@@ -49,6 +56,9 @@ export interface ProfileSource {
   streak: Streak;
   achievements: Achievement[];
   activity: ActivityDay[];
+  followers: number;
+  following: number;
+  isFollowing: boolean;
 }
 
 /**
@@ -73,24 +83,25 @@ export function toPublicProfile(source: ProfileSource): PublicProfile {
     streak: source.streak,
     achievements: source.achievements,
     activity: source.activity,
+    followers: source.followers,
+    following: source.following,
+    isFollowing: source.isFollowing,
   };
 }
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly follows: FollowsService,
+  ) {}
 
-  /** Case-insensitive lookup. A name that can't be a username is a plain 404. */
-  async profile(name: string): Promise<PublicProfile> {
-    if (!USERNAME_REGEX.test(name)) throw new NotFoundException(NOT_FOUND);
-
-    const user = await this.prisma.user.findUnique({
-      where: { nameLower: name.toLowerCase() },
-      select: { id: true, name: true, createdAt: true },
-    });
+  /** `viewerId` is the signed-in viewer, if any. It only decides isFollowing. */
+  async profile(name: string, viewerId?: number): Promise<PublicProfile> {
+    const user = await findVisibleUser(this.prisma, name);
     if (!user) throw new NotFoundException(NOT_FOUND);
 
-    const [totals, recent, bests, insightRows] = await Promise.all([
+    const [totals, recent, bests, insightRows, social] = await Promise.all([
       this.prisma.result.aggregate({
         where: { userId: user.id },
         _count: { _all: true },
@@ -104,6 +115,7 @@ export class UsersService {
       }),
       bestsForUser(this.prisma, user.id, RANKED_MODES),
       loadInsightRows(this.prisma, user.id),
+      this.follows.socialCounts(user.id, viewerId),
     ]);
     const insights = buildInsights(insightRows, new Date());
 
@@ -117,6 +129,21 @@ export class UsersService {
       streak: insights.streak,
       achievements: insights.achievements,
       activity: insights.activity,
+      ...social,
     });
+  }
+
+  /**
+   * The best wpm of the user for one ranked filter, or null when there is no such result or the
+   * user is not visible. Throws nothing: the badge turns null into a 404 image.
+   */
+  async badgeWpm(name: string, query: BadgeQuery): Promise<number | null> {
+    const user = await findVisibleUser(this.prisma, name);
+    if (!user) return null;
+    const best = await this.prisma.result.aggregate({
+      where: { userId: user.id, mode: query.mode, mode2: query.mode2, language: query.language },
+      _max: { wpm: true },
+    });
+    return best._max.wpm ?? null;
   }
 }

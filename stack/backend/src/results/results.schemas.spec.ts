@@ -1,4 +1,4 @@
-import { leaderboardQuerySchema, resultInputSchema } from './results.schemas';
+import { badgeQuerySchema, leaderboardQuerySchema, resultInputSchema } from './results.schemas';
 
 const valid = {
   mode: 'time',
@@ -137,7 +137,7 @@ describe('leaderboardQuerySchema mode2 per mode', () => {
     expect(q('daily', '2001-2-3').success).toBe(false);
     const zen = q('zen', 'zen');
     expect(zen.success).toBe(false);
-    if (!zen.success) expect(zen.error.issues.map((i) => i.message)).toEqual(['zen, custom and weak results are not ranked']);
+    if (!zen.success) expect(zen.error.issues.map((i) => i.message)).toEqual(['zen, custom, weak and code results are not ranked']);
   });
 });
 
@@ -146,7 +146,7 @@ describe('leaderboardQuerySchema', () => {
     for (const mode of ['zen', 'custom', 'weak']) {
       const r = leaderboardQuerySchema.safeParse({ mode, mode2: 'x', language: 'en' });
       expect(r.success).toBe(false);
-      if (!r.success) expect(r.error.issues[0].message).toBe('zen, custom and weak results are not ranked');
+      if (!r.success) expect(r.error.issues[0].message).toBe('zen, custom, weak and code results are not ranked');
     }
   });
 
@@ -215,5 +215,54 @@ describe('daily and weak result validation', () => {
   it('accepts the de and es languages', () => {
     expect(resultInputSchema.safeParse({ ...valid, language: 'de' }).success).toBe(true);
     expect(resultInputSchema.safeParse({ ...valid, language: 'es' }).success).toBe(true);
+  });
+});
+
+describe('code mode', () => {
+  const code = (mode2: string, extra: Record<string, unknown> = {}) =>
+    resultInputSchema.safeParse({ ...valid, mode: 'code', mode2, ...extra });
+  const messages = (r: ReturnType<typeof resultInputSchema.safeParse>) =>
+    r.success ? [] : r.error.issues.map((i) => i.message);
+
+  it('accepts js, py, rs and go with language en', () => {
+    for (const mode2 of ['js', 'py', 'rs', 'go']) expect(code(mode2).success).toBe(true);
+  });
+
+  it('rejects other code languages and other UI languages', () => {
+    expect(messages(code('c'))).toEqual(['code results must have mode2 one of js, py, rs, go']);
+    expect(messages(code('js', { language: 'pl' }))).toEqual(['code results must have language "en"']);
+  });
+
+  it('does not accept the lesson mode, which is local only', () => {
+    expect(resultInputSchema.safeParse({ ...valid, mode: 'lesson', mode2: 'x' }).success).toBe(false);
+  });
+
+  it('is never on a leaderboard, and the badge refuses it', () => {
+    const lb = leaderboardQuerySchema.safeParse({ mode: 'code', mode2: 'js', language: 'en' });
+    expect(lb.success).toBe(false);
+    expect(badgeQuerySchema.safeParse({ mode: 'code', mode2: 'js' }).success).toBe(false);
+  });
+});
+
+describe('leaderboardQuerySchema scope', () => {
+  const base = { mode: 'time', mode2: '60', language: 'en' };
+
+  it('defaults to all and accepts following', () => {
+    expect(leaderboardQuerySchema.parse(base).scope).toBe('all');
+    expect(leaderboardQuerySchema.parse({ ...base, scope: 'following' }).scope).toBe('following');
+    expect(leaderboardQuerySchema.safeParse({ ...base, scope: 'friends' }).success).toBe(false);
+  });
+});
+
+describe('badgeQuerySchema', () => {
+  it('defaults to time, 60 and en', () => {
+    expect(badgeQuerySchema.parse({})).toEqual({ mode: 'time', mode2: '60', language: 'en' });
+  });
+
+  it('validates mode2 the way the leaderboard does', () => {
+    expect(badgeQuerySchema.safeParse({ mode: 'words', mode2: '25' }).success).toBe(true);
+    expect(badgeQuerySchema.safeParse({ mode: 'words', mode2: '60' }).success).toBe(false);
+    expect(badgeQuerySchema.safeParse({ mode: 'zen', mode2: 'zen' }).success).toBe(false);
+    expect(badgeQuerySchema.safeParse({ mode: 'daily', mode2: '2026-11-09' }).success).toBe(true);
   });
 });

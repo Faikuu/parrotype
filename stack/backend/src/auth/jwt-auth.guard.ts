@@ -7,6 +7,8 @@ import { SESSION_COOKIE } from './auth.service';
 export interface AuthUser {
   id: number;
   name: string;
+  /** Read from the database with the rest of the session check, never from the token. */
+  role: string;
 }
 
 declare global {
@@ -21,8 +23,9 @@ declare global {
 /**
  * Reads the session cookie, verifies its signature and expiry, then checks it against the
  * user's current tokenVersion (bumped on logout). Returns null when there is no cookie, the
- * token is invalid, the user no longer exists, or the token was revoked. Never trusts an
- * unverified token.
+ * token is invalid, the user no longer exists, the token was revoked, or the account is
+ * suspended (bannedAt set). Never trusts an unverified token. The role comes from the same
+ * database read, so a revoked admin loses access on the next request.
  */
 export async function readSessionUser(
   req: Request,
@@ -47,10 +50,10 @@ export async function readSessionUser(
 
   const user = await prisma.user.findUnique({
     where: { id: sub },
-    select: { id: true, name: true, tokenVersion: true },
+    select: { id: true, name: true, tokenVersion: true, role: true, bannedAt: true },
   });
-  if (!user || version !== user.tokenVersion) return null;
-  return { id: user.id, name: user.name };
+  if (!user || user.bannedAt || version !== user.tokenVersion) return null;
+  return { id: user.id, name: user.name, role: user.role };
 }
 
 @Injectable()

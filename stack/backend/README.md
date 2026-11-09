@@ -43,7 +43,7 @@ PostgreSQL and MariaDB are not started by this project. Run them yourself, or us
 ## Scripts
 - `npm run build` (generates the client, then `nest build`), `npm run start:prod` (runs `dist/main` with `.env` loaded)
 - `npm test` (unit tests)
-- `npm run test:e2e` runs the end-to-end suite. By default it uses SQLite in `prisma/test.db`, which it deletes and recreates each run. To test another engine, set `E2E_DATABASE_URL` (and optionally `E2E_DATABASE_PROVIDER`; it is inferred from the URL). The run drops the app's tables in that database first, so it has a guard (`test/e2e-guard.ts`) that runs before anything else:
+- `npm run test:e2e` runs the end-to-end suite (SQLite, PostgreSQL and MariaDB all pass it). By default it uses SQLite in `prisma/test.db`, which it deletes and recreates each run. To test another engine, set `E2E_DATABASE_URL` (and optionally `E2E_DATABASE_PROVIDER`; it is inferred from the URL). The run drops the app's tables in that database first, so it has a guard (`test/e2e-guard.ts`) that runs before anything else:
   - The default `prisma/test.db` is always allowed.
   - Any other SQLite file needs `E2E_ALLOW_RESET=1` and a file name ending in `test.db` or `e2e.db`.
   - PostgreSQL or MySQL needs `E2E_ALLOW_RESET=1`, a database name `parrotype_e2e`, `parrotype_e2e_<suffix>` or `<name>_test`, and a host of `localhost`, `127.0.0.1` or `::1`.
@@ -58,9 +58,60 @@ PostgreSQL and MariaDB are not started by this project. Run them yourself, or us
   The run also regenerates the Prisma client for the engine it runs against, so run `npm run prisma:generate` afterwards to get your own provider back.
 - `npm run lint`
 - `npm run prisma:schema` renders the per-provider schemas from the template.
+- `npm run admin -- grant|revoke <name>` and `npm run admin -- list` manage admins (see Admin CLI below).
 
 ## Daily board
 Each user is ranked on the daily board by their first result for the UTC date and language. Retries are saved but do not change the rank. The other modes rank each user by their best result.
+
+## Code mode
+`mode: "code"` saves a result for a code snippet. `mode2` is the language (`js`, `py`, `rs` or `go`) and `language` must be `en`. Code results are saved and listed on the owner's history, but they are never ranked: `GET /api/leaderboard?mode=code` is a 400, and the public profile's bests leave them out. The `lesson` mode is not accepted (lessons are local only).
+
+## Friends
+Follows are one-way. The follower's `pt_session` cookie is needed for every change.
+
+| Method | Path | Notes |
+|---|---|---|
+| `PUT` | `/api/users/:name/follow` | Idempotent. Returns `{ "following": true }`. Yourself is a 400. A user can follow at most 1000 people (400 beyond that). Suspended accounts are a 404. |
+| `DELETE` | `/api/users/:name/follow` | Idempotent. Returns `{ "following": false }`. Works for a suspended account too, so a follow can be dropped. |
+
+- `GET /api/users/:name` adds `followers`, `following` and `isFollowing`. The counts leave out suspended accounts. `isFollowing` is `false` for anonymous viewers.
+- `GET /api/leaderboard?scope=following` (with `mode`, `mode2`, `language`) covers you and the people you follow. Anonymous requests get a 401. `scope=all` is the default.
+
+## Profile badge
+`GET /api/users/:name/badge.svg?mode=time&mode2=60&language=en` is an embeddable SVG of the user's best wpm for one ranked filter (the same validation as the leaderboard; defaults `time`, `60`, `en`). It reads "parrotype" and, for example, "92 wpm · time 60". An unknown or suspended user, or no matching result, gets a 404 with a neutral "no result" badge.
+
+Headers: `Content-Type: image/svg+xml; charset=utf-8`, `Cache-Control: public, max-age=600`, `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'`, `X-Content-Type-Options: nosniff`. The badge sends `Cross-Origin-Resource-Policy: cross-origin` in place of helmet's `same-origin` default, because a same-origin policy stops other sites from loading the image. All text is XML-escaped (`renderBadge` in `src/users/badge.ts`).
+
+## Moderation
+- Any signed-in user can report another user: `POST /api/users/:name/report` with `{ "reason": "name" | "cheating" | "other", "details"?: string (at most 500 characters) }`. It is throttled to 5 a minute. You can't report yourself (400). While you have an open report against someone, another one is a 409 "You have already reported this user". The check runs in the service, not in the database, since no partial unique index works on all three engines, so a race can rarely add a second open report.
+- Admins use `/api/admin/*`, guarded by `AdminGuard`. It checks the session, then reads `role` from the database on every request, so the role in a token is never trusted and a revoked admin loses access at once. No session is 401; a signed-in non-admin is 403.
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/api/admin/reports?status=open\|resolved\|dismissed` | Default `open`, newest 100. Each report has the reporter, the target (with `bannedAt`), and the target's 5 most recent results. |
+| `POST` | `/api/admin/reports/:id/resolve` · `/dismiss` | Only an open report can be decided (409 otherwise). |
+| `POST` | `/api/admin/users/:name/ban` | Body `{ "reason" }` (1 to 200 characters). Bumps `tokenVersion`, so the user's sessions end at once. Admins can't be banned (400); a repeat is a 409. |
+| `POST` | `/api/admin/users/:name/unban` | 409 if the user is not suspended. |
+| `DELETE` | `/api/admin/results/:id` | Deletes one result. |
+| `GET` | `/api/admin/actions` | The newest 100 audit entries, with the admin's name where the admin still exists. |
+
+Every admin action writes an `AdminAction` row in the same transaction as the change.
+
+What a suspended account gets:
+- Login: 403 "This account has been suspended". This is checked after the password, so a stranger still sees the generic 401.
+- Its sessions (including the race socket's identity) are treated as signed out, so the API answers 401.
+- Profile and badge: 404. It is left out of the leaderboards, the daily board and the following board. It can't be followed or reported (404).
+
+## Admin CLI
+There is no HTTP path to become an admin. Admins are granted and revoked from the shell, on the database that `DATABASE_PROVIDER` and `DATABASE_URL` point to:
+
+```sh
+npm run admin -- grant <name>     # also accepts any letter case for the name
+npm run admin -- revoke <name>
+npm run admin -- list             # id, name, created time, "suspended" when banned
+```
+
+`scripts/admin.mjs` loads `.env` the same way `scripts/prisma.mjs` does and runs `scripts/admin.ts` through ts-node. It does not generate the Prisma client. If the generated client was made for another engine, it stops and tells you to run `npm run prisma:generate`. Each grant or revoke writes an `AdminAction` with a null `adminId` and the note `cli`. A grant does not check for suspension, so a suspended user can be made admin, but they can't use it until unbanned.
 
 ## Health
 `GET /api/health` returns `{ "ok": true, "db": "<provider>" }`.

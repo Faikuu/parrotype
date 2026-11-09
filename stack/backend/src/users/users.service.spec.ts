@@ -1,6 +1,8 @@
 import { NotFoundException } from '@nestjs/common';
 import type { PrismaService } from '../prisma/prisma.service';
+import type { FollowsService } from './follows.service';
 import { PROFILE_RECENT_SIZE, toPublicProfile, UsersService, type ProfileSource } from './users.service';
+import { badgeQuerySchema } from '../results/results.schemas';
 
 const source = (overrides: Partial<ProfileSource> = {}): ProfileSource => ({
   name: 'Typist_1',
@@ -14,6 +16,9 @@ const source = (overrides: Partial<ProfileSource> = {}): ProfileSource => ({
   streak: { current: 2, longest: 4 },
   achievements: [{ id: 'first_test', unlockedAt: '2026-01-05T10:00:00.000Z' }],
   activity: [{ date: '2026-03-01', tests: 1 }],
+  followers: 3,
+  following: 2,
+  isFollowing: true,
   ...overrides,
 });
 
@@ -33,6 +38,9 @@ describe('toPublicProfile', () => {
       streak: { current: 2, longest: 4 },
       achievements: [{ id: 'first_test', unlockedAt: '2026-01-05T10:00:00.000Z' }],
       activity: [{ date: '2026-03-01', tests: 1 }],
+      followers: 3,
+      following: 2,
+      isFollowing: true,
     });
     expect(Object.keys(profile)).not.toContain('email');
     expect(JSON.stringify(profile)).not.toContain('secret@example.com');
@@ -66,21 +74,48 @@ describe('toPublicProfile', () => {
 describe('UsersService.profile', () => {
   function setup(user: { id: number; name: string; createdAt: Date } | null) {
     const prisma = {
-      user: { findUnique: jest.fn().mockResolvedValue(user) },
+      user: { findFirst: jest.fn().mockResolvedValue(user) },
       result: {
         aggregate: jest.fn().mockResolvedValue({ _count: { _all: 0 }, _sum: { durationMs: null } }),
         findMany: jest.fn().mockResolvedValue([]),
         groupBy: jest.fn().mockResolvedValue([]),
       },
     };
-    return { service: new UsersService(prisma as unknown as PrismaService), prisma };
+    const follows = {
+      socialCounts: jest.fn().mockResolvedValue({ followers: 5, following: 1, isFollowing: false }),
+    };
+    const service = new UsersService(prisma as unknown as PrismaService, follows as unknown as FollowsService);
+    return { service, prisma, follows };
   }
 
-  it('looks the name up case-insensitively', async () => {
+  it('looks the name up case-insensitively and hides suspended accounts', async () => {
     const { service, prisma } = setup({ id: 4, name: 'Typist_1', createdAt: new Date(0) });
     const profile = await service.profile('TYPIST_1');
-    expect(prisma.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { nameLower: 'typist_1' } }));
+    expect(prisma.user.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { nameLower: 'typist_1', bannedAt: null } }),
+    );
     expect(profile.name).toBe('Typist_1');
+  });
+
+  it('adds the follow counts, and passes the viewer to decide isFollowing', async () => {
+    const { service, follows } = setup({ id: 4, name: 'typist', createdAt: new Date(0) });
+    const profile = await service.profile('typist', 9);
+    expect(follows.socialCounts).toHaveBeenCalledWith(4, 9);
+    expect(profile).toMatchObject({ followers: 5, following: 1, isFollowing: false });
+  });
+
+  it('reports the badge wpm of one filter, and null for suspended or unknown users', async () => {
+    const query = badgeQuerySchema.parse({ mode: 'words', mode2: '25', language: 'pl' });
+    const { service, prisma } = setup({ id: 4, name: 'typist', createdAt: new Date(0) });
+    (prisma.result as unknown as { aggregate: jest.Mock }).aggregate.mockResolvedValue({ _max: { wpm: 88.4 } });
+    expect(await service.badgeWpm('typist', query)).toBe(88.4);
+    expect(prisma.result.aggregate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 4, mode: 'words', mode2: '25', language: 'pl' } }),
+    );
+
+    const none = setup(null);
+    expect(await none.service.badgeWpm('typist', query)).toBeNull();
+    expect(none.prisma.result.aggregate).not.toHaveBeenCalled();
   });
 
   it('restricts bests to the ranked modes and recent to the last 10', async () => {
@@ -97,7 +132,7 @@ describe('UsersService.profile', () => {
     const { service, prisma } = setup(null);
     await expect(service.profile('ab')).rejects.toBeInstanceOf(NotFoundException);
     await expect(service.profile('bad-name!')).rejects.toBeInstanceOf(NotFoundException);
-    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(prisma.user.findFirst).not.toHaveBeenCalled();
   });
 
   it('gives a 404 with the spec message for an unknown user', async () => {
