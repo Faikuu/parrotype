@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, sanitizeSettings, useSettings } from './settings';
+import { DEFAULT_SETTINGS, sanitizeSettings, selectTestConfig, useSettings } from './settings';
 import { getTheme } from '@/themes/themes';
 
 const TOKENS = getTheme('macaw').tokens;
@@ -22,7 +22,8 @@ describe('custom theme settings', () => {
   });
 
   it('drops a custom theme that is missing a field', () => {
-    const { errorExtra: _omit, ...partial } = TOKENS;
+    const partial: Partial<typeof TOKENS> = { ...TOKENS };
+    delete partial.errorExtra;
     expect(sanitizeSettings({ customTheme: partial }).customTheme).toBeNull();
   });
 
@@ -60,16 +61,8 @@ describe('modifier settings', () => {
 
   it('are part of the test config', () => {
     useSettings.getState().setMany({ noBackspace: true, suddenDeath: true });
-    const { selectTestConfig } = useSettingsModule();
     const cfg = selectTestConfig(useSettings.getState());
     expect(cfg.noBackspace).toBe(true);
     expect(cfg.suddenDeath).toBe(true);
   });
 });
-
-function useSettingsModule() {
-  return { selectTestConfig: requireSelect() };
-}
-
-// Imported lazily so the test reads as one module above; the function is a plain export.
-import { selectTestConfig as requireSelect } from './settings';

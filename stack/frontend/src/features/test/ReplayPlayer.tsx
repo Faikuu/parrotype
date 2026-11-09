@@ -46,6 +46,8 @@ export function ReplayPlayer({ config, words, events, final }: ReplayPlayerProps
   const [pos, setPos] = useState(0);
   // The playhead, mirrored in a ref so the frame loop can read it without re-subscribing every frame.
   const posRef = useRef(0);
+  // Timestamp of the last frame that moved the playhead. Kept across speed changes, so no time is lost.
+  const lastFrameRef = useRef<number | null>(null);
 
   const cursor = useMemo(() => createReplayCursor(config, words, events), [config, words, events]);
 
@@ -62,14 +64,15 @@ export function ReplayPlayer({ config, words, events, final }: ReplayPlayerProps
   useEffect(() => {
     if (!playing) return;
     let frame = 0;
-    let last: number | null = null;
     const step = (now: number) => {
+      const last = lastFrameRef.current;
       const dt = last === null ? 0 : now - last;
-      last = now;
+      lastFrameRef.current = now;
       const next = Math.min(duration, posRef.current + dt * speed);
       posRef.current = next;
       setPos(next);
       if (next >= duration) {
+        lastFrameRef.current = null;
         setPlaying(false);
         return;
       }
@@ -81,12 +84,14 @@ export function ReplayPlayer({ config, words, events, final }: ReplayPlayerProps
 
   function togglePlay() {
     if (playing) {
+      lastFrameRef.current = null;
       setPlaying(false);
       return;
     }
     if (duration === 0) return;
     // At the end, play starts again from the top.
     if (posRef.current >= duration) seek(0);
+    lastFrameRef.current = null;
     setPlaying(true);
   }
 
@@ -98,7 +103,7 @@ export function ReplayPlayer({ config, words, events, final }: ReplayPlayerProps
   const total = (duration / 1000).toFixed(1);
 
   return (
-    <section aria-label={t('replay.title')} className="flex flex-col gap-4 rounded-[10px] bg-surface/60 p-4">
+    <section aria-label={t('replay:title')} className="flex flex-col gap-4 rounded-[10px] bg-surface/60 p-4">
       <ReplayView state={shown} smooth={!reduceMotion} />
 
       <div className="flex flex-wrap items-center gap-3">
@@ -106,8 +111,8 @@ export function ReplayPlayer({ config, words, events, final }: ReplayPlayerProps
           type="button"
           onClick={togglePlay}
           disabled={duration === 0}
-          aria-label={playing ? t('replay.pause') : t('replay.play')}
-          title={playing ? t('replay.pause') : t('replay.play')}
+          aria-label={playing ? t('replay:pause') : t('replay:play')}
+          title={playing ? t('replay:pause') : t('replay:play')}
           className={ROUND_BUTTON}
         >
           {playing ? <Pause size={18} aria-hidden="true" /> : <Play size={18} aria-hidden="true" />}
@@ -120,17 +125,17 @@ export function ReplayPlayer({ config, words, events, final }: ReplayPlayerProps
           step={1}
           value={Math.round(pos)}
           onChange={(e) => seek(Number(e.target.value))}
-          aria-label={t('replay.scrub')}
-          aria-valuetext={t('replay.time', { elapsed, total })}
+          aria-label={t('replay:scrub')}
+          aria-valuetext={t('replay:time', { elapsed, total })}
           disabled={duration === 0}
           className="min-w-[8rem] flex-1 accent-main"
         />
 
         <span className="tabular whitespace-nowrap text-[0.85rem] text-sub">
-          {t('replay.time', { elapsed, total })}
+          {t('replay:time', { elapsed, total })}
         </span>
 
-        <div role="group" aria-label={t('replay.speed')} className="flex items-center gap-0.5">
+        <div role="group" aria-label={t('replay:speed')} className="flex items-center gap-0.5">
           {SPEEDS.map((s) => (
             <button
               key={s}
@@ -139,7 +144,7 @@ export function ReplayPlayer({ config, words, events, final }: ReplayPlayerProps
               onClick={() => setSpeed(s)}
               className="rounded-[6px] px-2 py-1 text-[0.85rem] tabular text-sub transition-colors hover:text-text aria-pressed:text-main"
             >
-              {t('replay.speedValue', { speed: s })}
+              {t('replay:speedValue', { speed: s })}
             </button>
           ))}
         </div>

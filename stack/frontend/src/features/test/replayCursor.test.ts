@@ -85,7 +85,9 @@ describe('createReplayCursor', () => {
 
 describe('replayLength', () => {
   it('is finish minus start for a finished test', () => {
-    const final = run([...TYPED, { type: 'finish', at: 5000 }]);
+    // The last word is not finished by typing, so the explicit finish sets the end.
+    const final = run([...TYPED.slice(0, -1), { type: 'finish', at: 5000 }]);
+    expect(final.status).toBe('finished');
     expect(replayLength(final, final.events)).toBe(5000 - 1000);
   });
 

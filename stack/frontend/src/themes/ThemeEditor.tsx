@@ -76,16 +76,16 @@ function ThemeEditorForm() {
   }
 
   return (
-    <Modal open onClose={closeEditor} title={t('themeEditor.title')}>
+    <Modal open onClose={closeEditor} title={t('themeEditor:title')}>
       <div className="flex flex-col gap-5">
         <fieldset className="flex flex-col gap-2 border-0 p-0">
-          <legend className="mb-2 text-[0.9rem] text-sub">{t('themeEditor.colours')}</legend>
+          <legend className="mb-2 text-[0.9rem] text-sub">{t('themeEditor:colours')}</legend>
           {FIELDS.map((key, i) => {
             const id = `${idPrefix}-${key}`;
             return (
               <div key={key} className="flex items-center justify-between gap-4">
                 <label htmlFor={id} className="text-[0.95rem]">
-                  {t(`themeEditor.fields.${key}`)}
+                  {t(`themeEditor:fields.${key}`)}
                 </label>
                 <div className="flex items-center gap-3">
                   <span className="tabular text-[0.85rem] text-sub" aria-hidden="true">
@@ -108,23 +108,23 @@ function ThemeEditorForm() {
         <ContrastNotes warnings={warnings} />
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={save}>{t('themeEditor.save')}</Button>
+          <Button onClick={save}>{t('themeEditor:save')}</Button>
           <Button variant="ghost" onClick={closeEditor}>
             {t('common:cancel')}
           </Button>
           <Button variant="ghost" onClick={() => void exportCode()}>
-            {t('themeEditor.export')}
+            {t('themeEditor:export')}
           </Button>
           {copied !== null && (
             <span role="status" className="text-[0.9rem] text-sub">
-              {copied ? t('themeEditor.copied') : t('themeEditor.copyFailed')}
+              {copied ? t('themeEditor:copied') : t('themeEditor:copyFailed')}
             </span>
           )}
         </div>
         {code !== null && (
           <input
             readOnly
-            aria-label={t('themeEditor.exportedCode')}
+            aria-label={t('themeEditor:exportedCode')}
             value={code}
             onFocus={(e) => e.currentTarget.select()}
             className="w-full rounded-[6px] bg-bg px-3 py-2 text-[0.85rem] text-text outline-none [font-family:var(--font-test)]"
@@ -153,7 +153,7 @@ function ContrastNotes({ warnings }: { warnings: readonly ContrastWarning[] }) {
     <div role="status" className="flex flex-col gap-1 text-[0.9rem] text-error">
       {warnings.map((w) => (
         <p key={w.pair} className="m-0">
-          {t(w.pair === 'text' ? 'themeEditor.contrastText' : 'themeEditor.contrastSub', {
+          {t(w.pair === 'text' ? 'themeEditor:contrastText' : 'themeEditor:contrastSub', {
             ratio: w.ratio.toFixed(1),
             min: w.min,
           })}
@@ -188,7 +188,7 @@ function ImportForm({
       }}
     >
       <label htmlFor={id} className="text-[0.9rem] text-sub">
-        {t('themeEditor.importLabel')}
+        {t('themeEditor:importLabel')}
       </label>
       <div className="flex flex-wrap gap-2">
         <input
@@ -197,24 +197,24 @@ function ImportForm({
           value={value}
           autoComplete="off"
           spellCheck={false}
-          placeholder={t('themeEditor.importPlaceholder')}
+          placeholder={t('themeEditor:importPlaceholder')}
           aria-invalid={failed ? true : undefined}
           aria-describedby={failed ? errorId : undefined}
           onChange={(e) => onChange(e.target.value)}
           className="min-w-0 flex-1 rounded-[6px] bg-bg px-3 py-2 text-[0.9rem] text-text outline-none placeholder:text-sub [font-family:var(--font-test)]"
         />
         <Button type="submit" variant="ghost" disabled={value.trim() === ''}>
-          {t('themeEditor.import')}
+          {t('themeEditor:import')}
         </Button>
       </div>
       {failed && (
         <p id={errorId} role="alert" className="m-0 text-[0.9rem] text-error">
-          {t('themeEditor.importInvalid')}
+          {t('themeEditor:importInvalid')}
         </p>
       )}
       {imported && !failed && (
         <p role="status" className="m-0 text-[0.9rem] text-sub">
-          {t('themeEditor.imported')}
+          {t('themeEditor:imported')}
         </p>
       )}
     </form>
