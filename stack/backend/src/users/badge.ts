@@ -13,6 +13,15 @@ export const BADGE_HEADERS: Readonly<Record<string, string>> = {
   'Cross-Origin-Resource-Policy': 'cross-origin',
 };
 
+/**
+ * Headers for the 404 "no result" badge. Same as BADGE_HEADERS but not cached: a missing result (or
+ * an unknown user) can turn into a real badge once the user plays, so a cached 404 would hide it.
+ */
+export const BADGE_MISSING_HEADERS: Readonly<Record<string, string>> = {
+  ...BADGE_HEADERS,
+  'Cache-Control': 'no-cache',
+};
+
 /** Kea theme colours (stack/frontend/src/themes/themes.ts). */
 const COLOURS = {
   surface: '#272c22',

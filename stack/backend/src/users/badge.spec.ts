@@ -1,5 +1,5 @@
 import { badgeQuerySchema } from '../results/results.schemas';
-import { badgeValue, BADGE_HEADERS, escapeXml, renderBadge } from './badge';
+import { badgeValue, BADGE_HEADERS, BADGE_MISSING_HEADERS, escapeXml, renderBadge } from './badge';
 
 describe('escapeXml', () => {
   it('escapes markup and quotes so no tag or attribute can be opened', () => {
@@ -67,6 +67,13 @@ describe('BADGE_HEADERS', () => {
       'X-Content-Type-Options': 'nosniff',
       'Cross-Origin-Resource-Policy': 'cross-origin',
     });
+  });
+});
+
+describe('BADGE_MISSING_HEADERS', () => {
+  it('is the same as the 200 headers except that a missing badge is not cached', () => {
+    expect(BADGE_MISSING_HEADERS).toEqual({ ...BADGE_HEADERS, 'Cache-Control': 'no-cache' });
+    expect(BADGE_HEADERS['Cache-Control']).toBe('public, max-age=600');
   });
 });
 

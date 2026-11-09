@@ -8,6 +8,7 @@ import { WebSocket, type RawData } from 'ws';
 import { readSessionUser } from '../auth/jwt-auth.guard';
 import { SESSION_COOKIE } from '../auth/auth.service';
 import { getEnv } from '../config/env';
+import { UserEvents } from '../common/user-events';
 import { PrismaService } from '../prisma/prisma.service';
 import { RACE_SOCKET_LIMITS, type RaceSocketLimits } from './races.config';
 import {
@@ -34,6 +35,8 @@ interface Conn {
   /** The client IP the socket was counted under (released on close). */
   ip: string;
   identity: Promise<RaceUser | null>;
+  /** The signed-in user once identity has resolved. Null for guests and before resolution. */
+  userId: number | null;
   /** Messages are handled one at a time, in order, after the identity is known. */
   queue: Promise<void>;
   closed: boolean;
@@ -72,11 +75,13 @@ export class RacesGateway implements OnModuleInit, OnModuleDestroy, OnGatewayCon
   private heartbeat: NodeJS.Timeout | null = null;
   private readonly onChanged = (roomId: string): void => this.scheduleBroadcast(roomId);
   private readonly onClosed = (event: RoomClosedEvent): void => this.notifyClosed(event);
+  private readonly onBanned = (userId: number): void => this.evictUser(userId);
 
   constructor(
     private readonly rooms: RoomService,
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
+    private readonly userEvents: UserEvents,
     @Inject(RACE_SOCKET_LIMITS) private readonly limits: RaceSocketLimits,
   ) {
     this.limiter = new SocketLimiter({ perIp: limits.maxSocketsPerIp, total: MAX_SOCKETS_TOTAL });
@@ -85,6 +90,7 @@ export class RacesGateway implements OnModuleInit, OnModuleDestroy, OnGatewayCon
   onModuleInit(): void {
     this.rooms.on('changed', this.onChanged);
     this.rooms.on('closed', this.onClosed);
+    this.userEvents.on('banned', this.onBanned);
     this.heartbeat = setInterval(() => this.beat(), this.limits.heartbeatMs);
     this.heartbeat.unref();
   }
@@ -92,6 +98,7 @@ export class RacesGateway implements OnModuleInit, OnModuleDestroy, OnGatewayCon
   onModuleDestroy(): void {
     this.rooms.off('changed', this.onChanged);
     this.rooms.off('closed', this.onClosed);
+    this.userEvents.off('banned', this.onBanned);
     if (this.heartbeat) clearInterval(this.heartbeat);
     this.heartbeat = null;
     for (const send of this.sends.values()) {
@@ -118,7 +125,8 @@ export class RacesGateway implements OnModuleInit, OnModuleDestroy, OnGatewayCon
       id: randomUUID(),
       socket: client,
       ip,
-      identity: this.resolveUser(request),
+      identity: Promise.resolve(null),
+      userId: null,
       queue: Promise.resolve(),
       closed: false,
       windowStart: Date.now(),
@@ -128,6 +136,10 @@ export class RacesGateway implements OnModuleInit, OnModuleDestroy, OnGatewayCon
       joinTimer: null,
       alive: true,
     };
+    conn.identity = this.resolveUser(request).then((user) => {
+      conn.userId = user?.id ?? null;
+      return user;
+    });
     conn.joinTimer = setTimeout(() => this.closeConn(conn, 1008, 'Join timeout'), this.limits.joinTimeoutMs);
     this.conns.set(client, conn);
     this.connsById.set(conn.id, conn);
@@ -158,6 +170,31 @@ export class RacesGateway implements OnModuleInit, OnModuleDestroy, OnGatewayCon
   private closeConn(conn: Conn, code: number, reason: string): void {
     this.clearJoinTimer(conn);
     if (conn.socket.readyState === WebSocket.OPEN) conn.socket.close(code, reason);
+  }
+
+  /** A ban: every open socket of that user is closed, and its seats leave their rooms. */
+  private evictUser(userId: number): void {
+    for (const conn of [...this.conns.values()]) {
+      if (conn.userId === userId) this.evict(conn);
+    }
+  }
+
+  /**
+   * Ends a signed-in socket because its account is suspended. The seat is released through the room
+   * service at once (a lobby seat is removed, a race seat is disconnected); the close event later
+   * finds nothing left to do.
+   */
+  private evict(conn: Conn): void {
+    conn.closed = true;
+    this.clearJoinTimer(conn);
+    this.rooms.disconnect(conn.id);
+    this.closeConn(conn, 1008, 'Account suspended');
+  }
+
+  /** Read on join, so a ban that landed after the socket connected still stops it joining. */
+  private async isSuspended(userId: number): Promise<boolean> {
+    const row = await this.prisma.user.findUnique({ where: { id: userId }, select: { bannedAt: true } });
+    return !row || row.bannedAt !== null;
   }
 
   /** Pings every open socket. One that did not answer the previous ping is terminated. */
@@ -258,6 +295,12 @@ export class RacesGateway implements OnModuleInit, OnModuleDestroy, OnGatewayCon
   private async dispatch(conn: Conn, msg: ClientMessage, user: RaceUser | null): Promise<void> {
     switch (msg.type) {
       case 'join': {
+        if (user && (await this.isSuspended(user.id))) {
+          this.evict(conn);
+          return;
+        }
+        // The check above awaited: the socket may have been closed (a ban) in the meantime.
+        if (conn.closed) return;
         const joined = this.rooms.join(msg.room, conn.id, { user, guestName: msg.name }, msg.token);
         this.clearJoinTimer(conn);
         this.sendTo(conn, { type: 'joined', you: joined.playerId, token: joined.token });

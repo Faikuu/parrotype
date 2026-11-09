@@ -154,6 +154,8 @@ describe('friends, the following scope, badges and code results (e2e)', () => {
       const res = await svgText(request(server).get('/api/users/fr_bob/badge.svg?mode=words&mode2=50&language=pl')).expect(404);
       expect(res.headers['content-type']).toBe('image/svg+xml; charset=utf-8');
       expect(res.body).toContain('no result');
+      // A missing result is not cached: it can become a real badge once the user plays.
+      expect(res.headers['cache-control']).toBe('no-cache');
       expect(res.body.startsWith('<svg')).toBe(true);
     });
 

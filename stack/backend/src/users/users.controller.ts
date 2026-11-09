@@ -21,11 +21,13 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { badgeQuerySchema, type BadgeQuery } from '../results/results.schemas';
 import { ReportsService } from '../moderation/reports.service';
 import { reportInputSchema, type ReportInput } from '../moderation/report.schemas';
-import { BADGE_HEADERS, BADGE_LABEL, NO_RESULT_VALUE, badgeValue, renderBadge } from './badge';
+import { BADGE_HEADERS, BADGE_LABEL, BADGE_MISSING_HEADERS, NO_RESULT_VALUE, badgeValue, renderBadge } from './badge';
 import { FollowsService, type FollowState } from './follows.service';
 import { UsersService, type PublicProfile } from './users.service';
 
 const REPORT_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
+/** Embeds on busy pages fetch the badge often; this keeps one client from hammering the lookup. */
+const BADGE_THROTTLE = { default: { limit: 60, ttl: 60_000 } };
 
 @Controller('users')
 export class UsersController {
@@ -73,6 +75,7 @@ export class UsersController {
    * with a neutral "no result" badge, so an embed still shows something.
    */
   @Get(':name/badge.svg')
+  @Throttle(BADGE_THROTTLE)
   badge(
     @Param('name') name: string,
     @Query(new ZodValidationPipe(badgeQuerySchema)) query: BadgeQuery,
@@ -85,7 +88,7 @@ export class UsersController {
     const wpm = await this.users.badgeWpm(name, query);
     const value = wpm === null ? NO_RESULT_VALUE : badgeValue(wpm, query);
     res.status(wpm === null ? 404 : 200);
-    res.set(BADGE_HEADERS);
+    res.set(wpm === null ? BADGE_MISSING_HEADERS : BADGE_HEADERS);
     res.send(renderBadge({ label: BADGE_LABEL, value }));
   }
 }

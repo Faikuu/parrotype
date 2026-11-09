@@ -4,7 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { UserEvents } from '../common/user-events';
 import type { AuthUser } from '../auth/jwt-auth.guard';
 import { USERNAME_REGEX } from '../auth/auth.schemas';
 import type { ReportStatus } from './admin.schemas';
@@ -66,7 +68,10 @@ const decisionStatus: Record<ReportDecision, ReportStatus> = {
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly userEvents: UserEvents,
+  ) {}
 
   async listReports(status: ReportStatus): Promise<AdminReport[]> {
     const reports = await this.prisma.report.findMany({
@@ -121,59 +126,78 @@ export class AdminService {
     }));
   }
 
-  /** Resolve or dismiss an open report. Only open reports can be decided. */
+  /**
+   * Resolve or dismiss an open report. Only open reports can be decided. The status change is a
+   * conditional write, so two admins deciding at once get one winner: the loser's write matches
+   * nothing, gets its error from a re-read, and writes no audit row (the transaction rolls back).
+   */
   async decideReport(admin: AuthUser, reportId: number, decision: ReportDecision): Promise<{ id: number; status: string }> {
-    const report = await this.prisma.report.findUnique({
-      where: { id: reportId },
-      select: { id: true, status: true },
-    });
-    if (!report) throw new NotFoundException('No report with that id');
-    if (report.status !== 'open') throw new ConflictException(`Report is already ${report.status}`);
-
     const status = decisionStatus[decision];
     const resolvedAt = new Date();
-    await this.prisma.$transaction(async (tx) => {
-      await tx.report.update({ where: { id: reportId }, data: { status, resolvedAt } });
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.report.updateMany({
+        where: { id: reportId, status: 'open' },
+        data: { status, resolvedAt },
+      });
+      if (count === 0) {
+        const report = await tx.report.findUnique({ where: { id: reportId }, select: { status: true } });
+        if (!report) throw new NotFoundException('No report with that id');
+        throw new ConflictException(`Report is already ${report.status}`);
+      }
       await tx.adminAction.create({
         data: { adminId: admin.id, action: decisionAction[decision], target: `report:${reportId}` },
       });
+      return { id: reportId, status };
     });
-    return { id: reportId, status };
   }
 
-  /** Suspends a user: bumps tokenVersion so their sessions end now. Admins cannot be banned. */
+  /**
+   * Suspends a user: bumps tokenVersion so their sessions end now. Admins cannot be banned. The write
+   * only matches a user who is not suspended and not an admin. On a miss, a re-read names the reason.
+   * Open race sockets are closed after the commit, through the UserEvents 'banned' event.
+   */
   async ban(admin: AuthUser, name: string, reason: string): Promise<AdminUserState> {
     const target = await this.findUserOrThrow(name);
-    if (target.role === 'admin') throw new BadRequestException("Admins can't be banned");
-    if (target.bannedAt) throw new ConflictException('User is already suspended');
-
     const bannedAt = new Date();
     await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: target.id },
+      const { count } = await tx.user.updateMany({
+        where: { id: target.id, bannedAt: null, role: { not: 'admin' } },
         data: { bannedAt, banReason: reason, tokenVersion: { increment: 1 } },
       });
+      if (count === 0) await this.explainBanMiss(tx, target.id);
       await tx.adminAction.create({
         data: { adminId: admin.id, action: 'ban', target: `user:${target.id}`, note: reason },
       });
     });
+    this.userEvents.banned(target.id);
     return { id: target.id, name: target.name, bannedAt: bannedAt.toISOString(), banReason: reason };
   }
 
   async unban(admin: AuthUser, name: string): Promise<AdminUserState> {
     const target = await this.findUserOrThrow(name);
-    if (!target.bannedAt) throw new ConflictException('User is not suspended');
-
     await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: target.id },
+      const { count } = await tx.user.updateMany({
+        where: { id: target.id, bannedAt: { not: null } },
         data: { bannedAt: null, banReason: null },
       });
+      if (count === 0) {
+        const current = await tx.user.findUnique({ where: { id: target.id }, select: { id: true } });
+        if (!current) throw new NotFoundException(NOT_FOUND_USER);
+        throw new ConflictException('User is not suspended');
+      }
       await tx.adminAction.create({
         data: { adminId: admin.id, action: 'unban', target: `user:${target.id}` },
       });
     });
     return { id: target.id, name: target.name, bannedAt: null, banReason: null };
+  }
+
+  /** Throws the error that explains a ban write which matched nothing. */
+  private async explainBanMiss(tx: Prisma.TransactionClient, userId: number): Promise<never> {
+    const current = await tx.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (!current) throw new NotFoundException(NOT_FOUND_USER);
+    if (current.role === 'admin') throw new BadRequestException("Admins can't be banned");
+    throw new ConflictException('User is already suspended');
   }
 
   async deleteResult(admin: AuthUser, resultId: number): Promise<{ ok: true }> {
