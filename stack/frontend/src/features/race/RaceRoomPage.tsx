@@ -90,6 +90,8 @@ function errorMessage(error: RaceErrorInfo, t: TFunction): string {
       return t('race:errors.notFound');
     case 'expired':
       return t('race:errors.expired');
+    case 'closed':
+      return t('race:errors.closed');
     case 'started':
       return t('race:errors.started');
     case 'connection':

@@ -202,8 +202,8 @@ describe('RaceClient', () => {
     expect(MockSocket.instances).toHaveLength(1);
   });
 
-  it('treats "Race not found" and "This race has expired" as fatal too', () => {
-    for (const message of ['Race not found', 'This race has expired']) {
+  it('treats "Race not found", "This race has expired" and a moderator close as fatal too', () => {
+    for (const message of ['Race not found', 'This race has expired', 'This race was closed by a moderator']) {
       MockSocket.reset();
       const listener = makeListener();
       const client = new RaceClient('ws://host/api/races/ws', listener);

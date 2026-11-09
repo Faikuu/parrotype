@@ -151,12 +151,14 @@ export class AdminService {
 
   /**
    * The ids of results where wpm is above rawWpm. Prisma can't compare two columns in a where, so this one
-   * clause is read here (a full scan of the table, run only for the suspicious filter).
+   * clause is read here, run only for the suspicious filter. Submissions already reject wpm > rawWpm + 0.5,
+   * so these rows only come from older or imported data; the newest 1000 are enough for review and keep
+   * the IN list bounded.
    */
   private async cheatResultIds(): Promise<number[]> {
     const q = quoteIdent;
     const rows = await this.prisma.$queryRaw<Array<{ id: unknown }>>(
-      Prisma.sql`${Prisma.raw(`SELECT ${q('id')} AS ${q('id')} FROM ${q('Result')} WHERE ${q('wpm')} > ${q('rawWpm')}`)}`,
+      Prisma.sql`${Prisma.raw(`SELECT ${q('id')} AS ${q('id')} FROM ${q('Result')} WHERE ${q('wpm')} > ${q('rawWpm')} ORDER BY ${q('id')} DESC LIMIT 1000`)}`,
     );
     return rows.map((r) => Number(r.id));
   }

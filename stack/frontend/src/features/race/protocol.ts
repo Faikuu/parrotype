@@ -46,6 +46,7 @@ export type RaceErrorCode =
   | 'full'
   | 'notFound'
   | 'expired'
+  | 'closed'
   | 'started'
   | 'connection'
   | 'tooMany'
@@ -134,6 +135,7 @@ const KNOWN_ERRORS: Record<string, RaceErrorCode> = {
   'This race is full': 'full',
   'Race not found': 'notFound',
   'This race has expired': 'expired',
+  'This race was closed by a moderator': 'closed',
 };
 
 /**
