@@ -9,13 +9,16 @@ import { BestsTable } from '@/features/account/BestsTable';
 import { formatDate, formatNumber, relativeTime, splitDuration } from '@/features/account/format';
 import { languageLabel, modeLabel, optionLabel, type Tr } from '@/features/account/labels';
 import { StreakLine } from '@/features/account/Insights';
+import { useAuth } from '@/features/auth/useAuth';
 import { ApiError, usersApi } from '@/lib/api';
 import type { PublicProfile, RecentResult } from '@/lib/api/types';
+import { FollowButton, LoginToFollow, ReportButton } from './Friends';
 
 export default function ProfilePage() {
   const { t, i18n } = useTranslation();
   const lang = i18n.resolvedLanguage ?? 'en';
   const { name = '' } = useParams();
+  const { user } = useAuth();
 
   const query = useQuery({
     queryKey: ['profile', name],
@@ -51,19 +54,41 @@ export default function ProfilePage() {
   }
 
   const p: PublicProfile = query.data;
+  const queryKey = ['profile', name];
+  const isOwn = user !== null && user.name.toLowerCase() === p.name.toLowerCase();
 
   return (
     <div className="pb-16">
-      <header className="pt-10">
-        <h1 className="text-[2rem] font-semibold text-text">{p.name}</h1>
-        <p className="text-sub">{t('profile:joined', { date: formatDate(p.createdAt, lang) })}</p>
+      <header className="flex flex-wrap items-start justify-between gap-4 pt-10">
+        <div>
+          <h1 className="text-[2rem] font-semibold text-text">{p.name}</h1>
+          <p className="text-sub">{t('profile:joined', { date: formatDate(p.createdAt, lang) })}</p>
+        </div>
+        {!isOwn && (
+          <div className="flex flex-wrap items-center gap-4">
+            {user ? (
+              <>
+                <FollowButton name={p.name} queryKey={queryKey} following={p.isFollowing} />
+                <ReportButton name={p.name} />
+              </>
+            ) : (
+              <LoginToFollow name={p.name} />
+            )}
+          </div>
+        )}
       </header>
 
       <section aria-labelledby="profile-totals" className="mt-8">
         <h2 id="profile-totals" className="sr-only">
           {t('account:stats.heading')}
         </h2>
-        <Totals totalTests={p.totalTests} totalTimeMs={p.totalTimeMs} lang={lang} />
+        <Totals
+          totalTests={p.totalTests}
+          totalTimeMs={p.totalTimeMs}
+          followers={p.followers}
+          following={p.following}
+          lang={lang}
+        />
         <div className="mt-6">
           <StreakLine streak={p.streak} />
         </div>
@@ -116,7 +141,19 @@ function NotFound() {
   );
 }
 
-function Totals({ totalTests, totalTimeMs, lang }: { totalTests: number; totalTimeMs: number; lang: string }) {
+function Totals({
+  totalTests,
+  totalTimeMs,
+  followers,
+  following,
+  lang,
+}: {
+  totalTests: number;
+  totalTimeMs: number;
+  followers: number;
+  following: number;
+  lang: string;
+}) {
   const { t } = useTranslation();
   const { hours, minutes } = splitDuration(totalTimeMs);
   const time = hours > 0
@@ -125,6 +162,8 @@ function Totals({ totalTests, totalTimeMs, lang }: { totalTests: number; totalTi
   const items = [
     { value: formatNumber(totalTests, lang), label: t('account:stats.tests') },
     { value: time, label: t('account:stats.time') },
+    { value: formatNumber(followers, lang), label: t('profile:counts.followers', { count: followers }) },
+    { value: formatNumber(following, lang), label: t('profile:counts.following', { count: following }) },
   ];
   return (
     <div className="flex flex-wrap gap-x-12 gap-y-6">

@@ -47,7 +47,9 @@ afterEach(() => {
 
 describe('ProfilePage', () => {
   it('renders the name, totals, bests and recent results', async () => {
-    const fetchMock = vi.fn<(input: RequestInfo | URL) => Promise<Response>>(async () => json(PROFILE));
+    const fetchMock = vi.fn<(input: RequestInfo | URL) => Promise<Response>>(async (input) =>
+      String(input).endsWith('/auth/me') ? json({ message: 'Unauthorized' }, 401) : json(PROFILE),
+    );
     vi.stubGlobal('fetch', fetchMock);
     renderProfile('/u/kea');
 
@@ -70,7 +72,7 @@ describe('ProfilePage', () => {
 
     expect(within(recentTable!).getByText('Words, 25 words, Polski')).toBeInTheDocument();
 
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/users/kea');
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/users/kea'))).toBe(true);
   });
 
   it('shows the not-found state with a link to the leaderboard for an unknown user', async () => {

@@ -25,7 +25,8 @@ const FONT_SIZE = 11;
 /** Average glyph width of the font stack below at 11px, plus padding on each side. */
 const CHAR_WIDTH = 6.8;
 const PADDING = 8;
-const FONT = 'Verdana, "DejaVu Sans", Geneva, sans-serif';
+// Single quotes inside: the value goes into a double-quoted XML attribute.
+const FONT = "Verdana, 'DejaVu Sans', Geneva, sans-serif";
 
 export const NO_RESULT_VALUE = 'no result';
 export const BADGE_LABEL = 'parrotype';

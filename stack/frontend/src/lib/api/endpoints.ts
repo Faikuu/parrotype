@@ -1,7 +1,14 @@
 import type { Language, QuoteLength } from '@/lib/engine/types';
 import { api, apiBlob } from './client';
 import type {
+  AdminAuditEntry,
+  AdminDecision,
+  AdminReport,
+  AdminUserState,
   ExportFormat,
+  FollowState,
+  ReportInput,
+  ReportStatus,
   Insights,
   LeaderboardEntry,
   LeaderboardQuery,
@@ -43,11 +50,35 @@ export const resultsApi = {
 };
 
 export const leaderboardApi = {
-  get: (query: LeaderboardQuery, signal?: AbortSignal) =>
-    api<LeaderboardEntry[]>(`/leaderboard?${new URLSearchParams(query).toString()}`, { signal }),
+  get: (query: LeaderboardQuery, signal?: AbortSignal) => {
+    // `scope` is only sent when it is set, so the default request is unchanged.
+    const params: Record<string, string> = { mode: query.mode, mode2: query.mode2, language: query.language };
+    if (query.scope) params.scope = query.scope;
+    return api<LeaderboardEntry[]>(`/leaderboard?${new URLSearchParams(params).toString()}`, { signal });
+  },
 };
 
+const userPath = (name: string) => `/users/${encodeURIComponent(name)}`;
+
 export const usersApi = {
-  profile: (name: string, signal?: AbortSignal) =>
-    api<PublicProfile>(`/users/${encodeURIComponent(name)}`, { signal }),
+  profile: (name: string, signal?: AbortSignal) => api<PublicProfile>(userPath(name), { signal }),
+  follow: (name: string) => api<FollowState>(`${userPath(name)}/follow`, { method: 'PUT' }),
+  unfollow: (name: string) => api<FollowState>(`${userPath(name)}/follow`, { method: 'DELETE' }),
+  report: (name: string, input: ReportInput) =>
+    api<{ ok: true }>(`${userPath(name)}/report`, { method: 'POST', body: input }),
+};
+
+const adminPath = (rest: string) => `/admin${rest}`;
+
+export const adminApi = {
+  reports: (status: ReportStatus, signal?: AbortSignal) =>
+    api<AdminReport[]>(adminPath(`/reports?status=${status}`), { signal }),
+  resolveReport: (id: number) => api<AdminDecision>(adminPath(`/reports/${id}/resolve`), { method: 'POST' }),
+  dismissReport: (id: number) => api<AdminDecision>(adminPath(`/reports/${id}/dismiss`), { method: 'POST' }),
+  ban: (name: string, reason: string) =>
+    api<AdminUserState>(adminPath(`/users/${encodeURIComponent(name)}/ban`), { method: 'POST', body: { reason } }),
+  unban: (name: string) =>
+    api<AdminUserState>(adminPath(`/users/${encodeURIComponent(name)}/unban`), { method: 'POST' }),
+  deleteResult: (id: number) => api<{ ok: true }>(adminPath(`/results/${id}`), { method: 'DELETE' }),
+  actions: (signal?: AbortSignal) => api<AdminAuditEntry[]>(adminPath('/actions'), { signal }),
 };

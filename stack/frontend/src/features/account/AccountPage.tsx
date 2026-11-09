@@ -8,6 +8,7 @@ import { resultsApi } from '@/lib/api';
 import type { Result } from '@/lib/api/types';
 import { AchievementsGrid } from './AchievementsGrid';
 import { BestsTable } from './BestsTable';
+import { BadgeEmbed } from './BadgeEmbed';
 import { ChangePasswordForm } from './ChangePassword';
 import { DataExport } from './DataExport';
 import { DeleteAccountForm } from './DeleteAccount';
@@ -152,6 +153,13 @@ export default function AccountPage() {
           <RecentTable results={list.slice(0, 50)} lang={lang} />
         </section>
       ) : null}
+
+      <section aria-labelledby="account-badge" className="mt-12">
+        <h2 id="account-badge" className="mb-4 text-[1.1rem] font-semibold text-text">
+          {t('account:badge.heading')}
+        </h2>
+        <BadgeEmbed name={user.name} />
+      </section>
 
       <section aria-labelledby="account-settings" className="mt-16 border-t border-surface pt-10">
         <h2 id="account-settings" className="text-[1.1rem] font-semibold text-text">

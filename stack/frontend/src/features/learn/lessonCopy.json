@@ -1,0 +1,118 @@
+{
+ "en": {
+  "home-fj": {
+   "title": "Home row: f and j",
+   "hint": "Keep your index fingers on the bumps of F and J."
+  },
+  "home-dk": {
+   "title": "Home row: d and k",
+   "hint": "Your middle fingers rest on D and K."
+  },
+  "home-sl": {
+   "title": "Home row: s and l",
+   "hint": "Your ring fingers rest on S and L."
+  },
+  "home-a-semi": {
+   "title": "Home row: a and ;",
+   "hint": "Your little fingers rest on A and semicolon."
+  },
+  "reach-ei": {
+   "title": "Upper row: e and i",
+   "hint": "Reach up with the middle fingers, then return to the home row."
+  },
+  "reach-ru": {
+   "title": "Upper row: r and u",
+   "hint": "Reach up with the index fingers for R and U."
+  },
+  "centre-gh": {
+   "title": "Centre: g and h",
+   "hint": "Move the index fingers sideways to G and H."
+  },
+  "reach-ty": {
+   "title": "Upper row: t and y",
+   "hint": "Reach up with the index fingers for T and Y."
+  },
+  "bottom-cmvn": {
+   "title": "Bottom row: c, m, v and n",
+   "hint": "Reach down from the home row for C, V, M and N."
+  },
+  "bottom-xzb": {
+   "title": "Bottom row: x, z and b",
+   "hint": "Reach down for X, Z and B. Z is typed with the little finger."
+  },
+  "top-wo": {
+   "title": "Top row: w and o",
+   "hint": "W is typed with the left ring finger, O with the right ring finger."
+  },
+  "top-qp": {
+   "title": "Top row: q and p",
+   "hint": "Q and P are typed with the little fingers."
+  },
+  "capitals": {
+   "title": "Capital letters with Shift",
+   "hint": "Hold Shift with the opposite hand before each capital."
+  },
+  "punctuation": {
+   "title": "Punctuation and real words",
+   "hint": "Full stop, comma, apostrophe and hyphen. Keep the rest of the row steady."
+  }
+ },
+ "pl": {
+  "home-fj": {
+   "title": "Rząd domowy: f i j",
+   "hint": "Palce wskazujące trzymaj na wypukłościach F i J."
+  },
+  "home-dk": {
+   "title": "Rząd domowy: d i k",
+   "hint": "Palce środkowe spoczywają na D i K."
+  },
+  "home-sl": {
+   "title": "Rząd domowy: s i l",
+   "hint": "Palce serdeczne spoczywają na S i L."
+  },
+  "home-a-semi": {
+   "title": "Rząd domowy: a i ;",
+   "hint": "Małe palce spoczywają na A i średniku."
+  },
+  "reach-ei": {
+   "title": "Górny rząd: e i i",
+   "hint": "Sięgnij palcami środkowymi w górę, potem wróć do rzędu domowego."
+  },
+  "reach-ru": {
+   "title": "Górny rząd: r i u",
+   "hint": "Sięgnij palcami wskazującymi w górę po R i U."
+  },
+  "centre-gh": {
+   "title": "Środek: g i h",
+   "hint": "Przesuń palce wskazujące w bok, do G i H."
+  },
+  "reach-ty": {
+   "title": "Górny rząd: t i y",
+   "hint": "Sięgnij palcami wskazującymi po T i Y."
+  },
+  "bottom-cmvn": {
+   "title": "Dolny rząd: c, m, v i n",
+   "hint": "Sięgnij w dół z rzędu domowego po C, V, M i N."
+  },
+  "bottom-xzb": {
+   "title": "Dolny rząd: x, z i b",
+   "hint": "Sięgnij w dół po X, Z i B. Z pisz małym palcem."
+  },
+  "top-wo": {
+   "title": "Górny rząd: w i o",
+   "hint": "W pisz lewym palcem serdecznym, O prawym palcem serdecznym."
+  },
+  "top-qp": {
+   "title": "Górny rząd: q i p",
+   "hint": "Q i P pisz małymi palcami."
+  },
+  "capitals": {
+   "title": "Wielkie litery z Shift",
+   "hint": "Przytrzymaj Shift drugą ręką przed każdą wielką literą."
+  },
+  "punctuation": {
+   "title": "Interpunkcja i prawdziwe słowa",
+   "hint": "Kropka, przecinek, apostrof i myślnik. Reszta rzędu bez zmian."
+  }
+ }
+}

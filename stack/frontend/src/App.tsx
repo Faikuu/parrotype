@@ -13,6 +13,8 @@ const LeaderboardPage = lazy(() => import('@/features/leaderboard/LeaderboardPag
 const ProfilePage = lazy(() => import('@/features/profile/ProfilePage'));
 const RaceLobbyPage = lazy(() => import('@/features/race/RaceLobbyPage'));
 const RaceRoomPage = lazy(() => import('@/features/race/RaceRoomPage'));
+const LearnPage = lazy(() => import('@/features/learn/LearnPage'));
+const AdminPage = lazy(() => import('@/features/admin/AdminPage'));
 
 export default function App() {
   useApplySettings();
@@ -61,6 +63,22 @@ export default function App() {
             element={
               <Suspense fallback={null}>
                 <RaceRoomPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="learn"
+            element={
+              <Suspense fallback={null}>
+                <LearnPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="admin"
+            element={
+              <Suspense fallback={null}>
+                <AdminPage />
               </Suspense>
             }
           />

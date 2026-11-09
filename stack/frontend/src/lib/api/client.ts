@@ -1,4 +1,6 @@
-const BASE: string = import.meta.env.VITE_API_URL ?? '/api';
+/** The API base: a path (default /api) or an absolute URL from VITE_API_URL. */
+export const API_BASE: string = import.meta.env.VITE_API_URL ?? '/api';
+const BASE = API_BASE;
 const NETWORK_MESSAGE = "Couldn't reach the server. Check that the backend is running.";
 
 export class ApiError extends Error {

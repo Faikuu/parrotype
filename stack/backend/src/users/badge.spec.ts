@@ -69,3 +69,22 @@ describe('BADGE_HEADERS', () => {
     });
   });
 });
+
+describe('renderBadge markup', () => {
+  // Every tag must be a name followed by well-formed name="value" attributes. A stray double
+  // quote inside a value (e.g. a quoted font name) would break this and make browsers refuse the SVG.
+  const TAG = /^<\/?[\w:-]+(\s+[\w:-]+="[^"<]*")*\s*\/?>$/;
+
+  it.each([
+    { label: 'parrotype', value: '92 wpm · time 60' },
+    { label: 'parrotype', value: '<script>&"\'' },
+  ])('produces well-formed tags for %o', (input) => {
+    const svg = renderBadge(input);
+    const tags = svg.match(/<[^>]+>/g) ?? [];
+    expect(tags.length).toBeGreaterThan(3);
+    for (const tag of tags) {
+      if (tag.startsWith('<?') || tag.startsWith('<!')) continue;
+      expect(tag).toMatch(TAG);
+    }
+  });
+});

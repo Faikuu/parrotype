@@ -45,22 +45,37 @@ export default function LeaderboardPage() {
   const { t, i18n } = useTranslation();
   const lang = i18n.resolvedLanguage ?? 'en';
   const [params, setParams] = useSearchParams();
-  const filters = parseFilters(params);
+  const parsed = parseFilters(params);
   const { user } = useAuth();
+  // Following needs a session: a link to it while signed out shows everyone.
+  const filters: BoardFilters = { ...parsed, scope: user && parsed.scope === 'following' ? 'following' : 'all' };
   // Daily pills are dates relative to the current UTC day, so they follow midnight UTC.
   const now = useNow();
   const board = apiMode2(filters, now);
 
   const query = useQuery({
-    queryKey: ['leaderboard', filters.mode, board, filters.language],
+    queryKey: ['leaderboard', filters.scope, filters.mode, board, filters.language],
     queryFn: ({ signal }) =>
-      leaderboardApi.get({ mode: filters.mode, mode2: board, language: filters.language }, signal),
+      leaderboardApi.get(
+        {
+          mode: filters.mode,
+          mode2: board,
+          language: filters.language,
+          scope: filters.scope === 'following' ? 'following' : undefined,
+        },
+        signal,
+      ),
     placeholderData: keepPreviousData,
   });
 
   function update(next: BoardFilters) {
     setParams(
-      { mode: next.mode, mode2: next.mode2, language: next.language },
+      {
+        mode: next.mode,
+        mode2: next.mode2,
+        language: next.language,
+        ...(next.scope === 'following' ? { scope: 'following' } : {}),
+      },
       { replace: true },
     );
   }
@@ -94,6 +109,22 @@ export default function LeaderboardPage() {
       <h1 className="pt-10 text-[1.6rem] font-semibold text-text">{t('leaderboard:title')}</h1>
 
       <div className="mt-6 flex flex-wrap gap-3">
+        {user && (
+          <PillGroup label={t('leaderboard:scope.label')}>
+            <Pill
+              active={filters.scope === 'all'}
+              onClick={() => update({ ...filters, scope: 'all' })}
+            >
+              {t('leaderboard:scope.everyone')}
+            </Pill>
+            <Pill
+              active={filters.scope === 'following'}
+              onClick={() => update({ ...filters, scope: 'following' })}
+            >
+              {t('leaderboard:scope.following')}
+            </Pill>
+          </PillGroup>
+        )}
         <PillGroup label={t('leaderboard:filters.mode')}>
           {modeOptions.map((o) => (
             <Pill
@@ -140,7 +171,9 @@ export default function LeaderboardPage() {
             </Button>
           </div>
         ) : query.data.length === 0 ? (
-          <p className="text-text">{t('leaderboard:empty')}</p>
+          <p className="text-text">
+            {filters.scope === 'following' ? t('leaderboard:followingEmpty') : t('leaderboard:empty')}
+          </p>
         ) : (
           <Table entries={query.data} lang={lang} viewer={user?.name ?? null} />
         )}

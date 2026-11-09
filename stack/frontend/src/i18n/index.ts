@@ -6,10 +6,12 @@ import pl from './pl.json';
 import { testLocale } from '@/features/test/locale';
 import { pagesLocale } from '@/features/auth/locale';
 import { raceLocale } from '@/features/race/locale';
+import { learnLocale } from '@/features/learn/locale';
+import { adminLocale } from '@/features/admin/locale';
 
 export const resources = {
-  en: { ...en, ...testLocale.en, ...pagesLocale.en, ...raceLocale.en },
-  pl: { ...pl, ...testLocale.pl, ...pagesLocale.pl, ...raceLocale.pl },
+  en: { ...en, ...testLocale.en, ...pagesLocale.en, ...raceLocale.en, ...learnLocale.en, ...adminLocale.en },
+  pl: { ...pl, ...testLocale.pl, ...pagesLocale.pl, ...raceLocale.pl, ...learnLocale.pl, ...adminLocale.pl },
 };
 
 void i18n.use(initReactI18next).init({

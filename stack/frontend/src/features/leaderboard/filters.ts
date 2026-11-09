@@ -6,11 +6,15 @@ export const DAY_OPTIONS = ['today', 'yesterday'] as const;
 export type DayOption = (typeof DAY_OPTIONS)[number];
 export type BoardMode = 'time' | 'words' | 'daily';
 
+export type BoardScope = 'all' | 'following';
+
 export interface BoardFilters {
   mode: BoardMode;
   /** time: "15"|"30"|"60"|"120"; words: "10"|"25"|"50"|"100"; daily: "today"|"yesterday". */
   mode2: string;
   language: BoardLanguage;
+  /** `following` needs a session. The page falls back to `all` when signed out. */
+  scope: BoardScope;
 }
 
 const DEFAULT_OPTION: Record<BoardMode, string> = { time: '60', words: '25', daily: 'today' };
@@ -31,7 +35,8 @@ export function parseFilters(params: URLSearchParams): BoardFilters {
   const language: BoardLanguage = (BOARD_LANGUAGES as readonly string[]).includes(rawLang ?? '')
     ? (rawLang as BoardLanguage)
     : 'en';
-  return { mode, mode2, language };
+  const scope: BoardScope = params.get('scope') === 'following' ? 'following' : 'all';
+  return { mode, mode2, language, scope };
 }
 
 /** The UTC calendar date (YYYY-MM-DD) `daysAgo` days before `now`. */

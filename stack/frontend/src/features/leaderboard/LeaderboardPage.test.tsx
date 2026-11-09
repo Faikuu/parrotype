@@ -65,26 +65,31 @@ describe('LeaderboardPage', () => {
       mode: 'words',
       mode2: '50',
       language: 'pl',
+      scope: 'all',
     });
     expect(parseFilters(new URLSearchParams('mode=words&mode2=60'))).toEqual({
       mode: 'words',
       mode2: '25',
       language: 'en',
+      scope: 'all',
     });
     expect(parseFilters(new URLSearchParams('mode=zen&mode2=abc&language=fr'))).toEqual({
       mode: 'time',
       mode2: '60',
       language: 'en',
+      scope: 'all',
     });
     expect(parseFilters(new URLSearchParams('mode=daily&mode2=yesterday&language=de'))).toEqual({
       mode: 'daily',
       mode2: 'yesterday',
       language: 'de',
+      scope: 'all',
     });
     expect(parseFilters(new URLSearchParams('mode=daily&mode2=2026-11-01&language=es'))).toEqual({
       mode: 'daily',
       mode2: 'today',
       language: 'es',
+      scope: 'all',
     });
   });
 
