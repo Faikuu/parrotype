@@ -10,6 +10,8 @@ A minimal typing test, named after the bird that repeats what it hears. You type
 
 ## What it does
 
+- **Events.** Admins schedule typing events with a fixed text and a time window. Everyone types the same text, and each event has its own verified leaderboard.
+- **Notifications and announcements.** A bell tells you about new followers, friends beating your best, and the outcome of your reports. Admins can post site-wide announcements.
 - **Multiplayer races.** Create a race, share the link, and up to eight people type the same quote live. Each player is a parrot moving along a lane. Guests can join with a nickname. The server checks every finish, so nobody can claim a time they didn't type.
 - **Nine modes**: time (15/30/60/120 s), words (10/25/50/100), quote, zen (free typing, finish with Shift+Enter), pangram, custom text, **daily**, **weak keys** and **code**. Punctuation and numbers can be mixed into time and words tests.
 - **Dynamic pangrams.** Pangram mode builds a fresh sentence that uses every letter of the alphabet, each time. It runs a randomised greedy set cover over the word list, keeps the shortest candidates and checks every result. Works in all four languages, including Polish ą–ż and German ä ö ü ß.
@@ -20,21 +22,24 @@ A minimal typing test, named after the bird that repeats what it hears. You type
 - **Keyboard layout emulation.** Practise Dvorak, Colemak, Colemak-DH, Workman, AZERTY or QWERTZ on a physical QWERTY keyboard.
 - **Ghost races.** Race a replay of your previous run of the same text. In daily mode, you automatically race your first attempt of the day.
 - **Pace caret.** A faint second caret runs at your personal best, your recent average or a set speed.
-- **Replays.** Watch any test play back keystroke by keystroke, at half, normal or double speed, with a scrubber.
+- **Verified results.** Every saved result carries its keystroke log, and the server replays it with the same engine the browser uses to check the speed, accuracy and timing. Daily, quote and event texts are also checked against the server's copy. Verified results get a mark, and the leaderboard can show verified results only.
+- **Replays.** Watch any test play back keystroke by keystroke, at half, normal or double speed, with a scrubber. Verified leaderboard runs can be watched by anyone at `/replay/<id>`.
 - **Slowest words and letter pairs.** The results list the words and letter pairs (bigrams) that cost you the most time, with one click to practise them.
 - **Share cards.** Download your result as an image in your theme, or share it straight from your phone.
 - **Modifiers**: no backspace, and sudden death (the first mistake ends the test).
 - **Tape mode** (one scrolling line), **typing sounds** (three synthesised profiles, no audio files), **copy result**, and a "New personal best" message that works without an account.
 - **Command line.** Press `Esc`, `Ctrl/Cmd+Shift+P` or `Ctrl/Cmd+K` to search every setting and action: mode, time, language, theme (with a live preview), font, caret and pace caret, tape mode, sounds, blind mode, focus mode, stop on error, quick restart key, interface language, custom text and navigation. Searching at the top level also reaches nested options, so typing "cockatoo" finds the theme directly.
 - **Results** with wpm, raw wpm, accuracy, consistency, a per-second chart with error markers, and character counts. Signed-in results are saved automatically.
-- **Accounts**: personal bests per mode, a progress chart with a 10-test moving average, an activity calendar, a wpm histogram, speed by hour of day, streaks, 16 achievements, recent results, CSV/JSON export, password change and account deletion. Each user has a **public profile** at `/u/<name>`, where others can **follow** them, and there's a **leaderboard** per mode and language, with a friends-only view. You can embed a **badge** with your best speed (for example in a GitHub README): `![ParroType](https://your-host/api/users/<name>/badge.svg)`.
-- **Admin panel with permission groups.** A full admin area (`/admin`) with a dashboard, user management (search, rename, sign out everywhere, suspend, delete, change groups), permission groups you can create, edit and delete, an editable **permissions matrix** (groups × 17 permissions), reports, a result search that flags suspicious results, quote management, live race rooms, and a filterable audit log. Each section appears only to people whose groups grant it.
+- **Accounts**: personal bests per mode, a progress chart with a 10-test moving average, an activity calendar, a wpm histogram, speed by hour of day, streaks, 16 achievements, recent results, CSV/JSON export, password change and account deletion. Accounts support **password reset by email**, **email verification** (needed to appear on leaderboards), and **two-factor authentication** with an authenticator app and recovery codes. Each user has a **public profile** at `/u/<name>`, where others can **follow** them, and there's a **leaderboard** per mode and language, with a friends-only view. You can embed a **badge** with your best speed (for example in a GitHub README): `![ParroType](https://your-host/api/users/<name>/badge.svg)`.
+- **Admin panel with permission groups.** A full admin area (`/admin`) with a dashboard, user management (search, rename, sign out everywhere, suspend, delete, change groups), permission groups you can create, edit and delete, an editable **permissions matrix** (groups × 20 permissions), reports, a result search that flags suspicious results, quote management, live race rooms, and a filterable audit log. Each section appears only to people whose groups grant it.
   - Two groups ship with the app: **Administrators** (every permission, can't be edited or emptied) and **Moderators** (a starter set you can change).
   - You can only grant permissions you hold yourself, and only manage users whose permissions are a subset of yours (a suspension doesn't lower anyone's rank).
   - Users can report others, and every admin action goes into the audit log.
   - The first admin is made from the command line: `npm --workspace stack/backend run admin -- grant <name>`.
 - **Four languages to type in**: English, Polish, German and Spanish, each with word lists, pangrams and public-domain quotes. The interface is available in English, Polish, German and Spanish.
 - **Eight themes named after parrots** (Kea, Kākāpō, Macaw, Cockatoo, Galah, Lorikeet, Budgie, Black Cockatoo), five monospace fonts, adjustable text size and caret style. You can also build your own theme with the theme editor (with a contrast check) and share it as a short code.
+- **Accessibility.** A high-contrast theme, the OpenDyslexic font for the test text or the whole interface, interface scaling, an on-screen keyboard with finger hints, screen-reader announcements for the start, finish and save of a test, and reduced-motion support.
+- **Funbox.** Mirror the text, reverse every word, hide upcoming words (memory) or add random capitals. Funbox results aren't saved.
 - **Works offline.** ParroType installs as an app (PWA), and the typing test keeps working without a connection.
 
 ### Keyboard
@@ -48,6 +53,7 @@ A minimal typing test, named after the bird that repeats what it hears. You type
 
 ## Stack
 
+- **Engine** (`stack/engine`): the typing engine, text generators, pangram generator, layouts and lessons as a pure TypeScript package shared by the browser and the server.
 - **Frontend** (`stack/frontend`): React 19, Vite 6, TypeScript (strict), Tailwind 4, TanStack Query, zustand, react-i18next, chart.js. The typing engine is a pure reducer in the shared workspace `stack/engine` (`@parrotype/engine`, also used by the backend), with its own test suite.
 - **Backend** (`stack/backend`): NestJS 11, Prisma 6 and zod validation. Runs on SQLite (default), PostgreSQL or MySQL/MariaDB.
 
