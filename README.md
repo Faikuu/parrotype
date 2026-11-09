@@ -48,7 +48,7 @@ A minimal typing test, named after the bird that repeats what it hears. You type
 
 ## Stack
 
-- **Frontend** (`stack/frontend`): React 19, Vite 6, TypeScript (strict), Tailwind 4, TanStack Query, zustand, react-i18next, chart.js. The typing engine is a pure reducer in `src/lib/engine` with its own test suite.
+- **Frontend** (`stack/frontend`): React 19, Vite 6, TypeScript (strict), Tailwind 4, TanStack Query, zustand, react-i18next, chart.js. The typing engine is a pure reducer in the shared workspace `stack/engine` (`@parrotype/engine`, also used by the backend), with its own test suite.
 - **Backend** (`stack/backend`): NestJS 11, Prisma 6 and zod validation. Runs on SQLite (default), PostgreSQL or MySQL/MariaDB.
 
 ## Getting started

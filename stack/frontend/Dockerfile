@@ -8,8 +8,11 @@ FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY stack/backend/package.json stack/backend/
+# The frontend bundles the engine's TypeScript source through its aliases (stack/engine/src), so the engine is copied in full.
+COPY stack/engine ./stack/engine
 COPY stack/frontend ./stack/frontend
 RUN npm ci --workspace stack/frontend --include-workspace-root=false
+RUN npm run build --workspace stack/engine
 RUN npm run build --workspace stack/frontend
 
 FROM nginx:alpine AS runtime

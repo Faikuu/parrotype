@@ -18,9 +18,12 @@ RUN apk add --no-cache python3 make g++
 # Only the manifests of the other workspaces are needed for npm to resolve the lockfile.
 COPY package.json package-lock.json ./
 COPY stack/frontend/package.json stack/frontend/
+# @parrotype/engine is a dependency of the backend, so its source is copied in full and built before the backend.
+COPY stack/engine ./stack/engine
 COPY stack/backend ./stack/backend
 # postinstall runs `prisma:generate` for DATABASE_PROVIDER.
 RUN npm ci --workspace stack/backend --include-workspace-root=false
+RUN npm run build --workspace stack/engine
 RUN npm run build --workspace stack/backend
 # Keep the production dependencies only. The Prisma CLI is one of them, because the container runs migrations.
 RUN npm prune --omit=dev
@@ -43,6 +46,9 @@ COPY --from=build /app/stack/backend/package.json ./package.json
 COPY --from=build /app/stack/backend/dist ./dist
 COPY --from=build /app/stack/backend/prisma ./prisma
 COPY --from=build /app/stack/backend/scripts ./scripts
+# node_modules/@parrotype/engine is a symlink to stack/engine, so the built package must exist at the same place.
+COPY --from=build /app/stack/engine/package.json /app/stack/engine/package.json
+COPY --from=build /app/stack/engine/dist /app/stack/engine/dist
 
 USER node
 EXPOSE 3000
