@@ -2,7 +2,7 @@
   "compilerOptions": {
     "module": "commonjs",
     "target": "ES2021",
-    "lib": ["ES2021"],
+    "lib": ["ES2022"],
     "outDir": "./dist",
     "sourceMap": true,
     "strict": true,
@@ -11,6 +11,9 @@
     "experimentalDecorators": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "incremental": false
+    "incremental": false,
+    "paths": {
+      "@parrotype/engine": ["../engine/src/index.ts"]
+    }
   }
 }

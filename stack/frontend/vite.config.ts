@@ -5,6 +5,9 @@ import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath, URL } from 'node:url';
 
+// The shared typing engine (stack/engine), consumed as source through the aliases below.
+const engineSrc = fileURLToPath(new URL('../engine/src', import.meta.url));
+
 export default defineConfig({
   plugins: [
     react(),
@@ -44,7 +47,14 @@ export default defineConfig({
     }),
   ],
   resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    // Order matters: the engine aliases come before the generic '@'. The shared engine lives in
+    // stack/engine and is consumed as TypeScript source (the same files the backend builds).
+    alias: [
+      { find: /^@\/lib\/engine$/, replacement: `${engineSrc}/index.ts` },
+      { find: /^@\/lib\/engine\/(.*)$/, replacement: `${engineSrc}/engine/$1` },
+      { find: /^@\/lib\/text\/(.*)$/, replacement: `${engineSrc}/text/$1` },
+      { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
+    ],
   },
   server: {
     port: 5173,

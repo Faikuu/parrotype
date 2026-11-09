@@ -17,7 +17,12 @@
     "allowImportingTsExtensions": false,
     "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"],
     "baseUrl": ".",
-    "paths": { "@/*": ["src/*"] }
+    "paths": {
+      "@/lib/engine": ["../engine/src/index"],
+      "@/lib/engine/*": ["../engine/src/engine/*"],
+      "@/lib/text/*": ["../engine/src/text/*"],
+      "@/*": ["src/*"]
+    }
   },
   "include": ["src", "vite.config.ts"]
 }

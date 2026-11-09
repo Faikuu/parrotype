@@ -5,11 +5,11 @@
     "./stack/*"
   ],
   "scripts": {
-    "setup": "npm install && node scripts/init-env.mjs && npm --workspace stack/backend run prisma:generate && npm --workspace stack/backend run prisma:deploy && npm --workspace stack/backend run seed",
+    "setup": "npm install && npm --workspace stack/engine run build && node scripts/init-env.mjs && npm --workspace stack/backend run prisma:generate && npm --workspace stack/backend run prisma:deploy && npm --workspace stack/backend run seed",
     "dev": "concurrently -n api,web -c yellow,green \"npm --workspace stack/backend run start:dev\" \"npm --workspace stack/frontend run dev\"",
-    "build": "npm --workspace stack/backend run build && npm --workspace stack/frontend run build",
-    "test": "npm --workspace stack/backend test && npm --workspace stack/frontend test",
-    "lint": "npm --workspace stack/backend run lint && npm --workspace stack/frontend run lint"
+    "build": "npm --workspace stack/engine run build && npm --workspace stack/backend run build && npm --workspace stack/frontend run build",
+    "test": "npm --workspace stack/engine test && npm --workspace stack/backend test && npm --workspace stack/frontend test",
+    "lint": "npm --workspace stack/engine run lint && npm --workspace stack/backend run lint && npm --workspace stack/frontend run lint"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
