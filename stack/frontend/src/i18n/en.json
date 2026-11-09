@@ -41,7 +41,8 @@
       "pangram": "Pangram",
       "custom": "Custom",
       "daily": "Daily",
-      "weak": "Weak keys"
+      "weak": "Weak keys",
+      "code": "Code"
     },
     "seconds_one": "{{count}} second",
     "seconds_other": "{{count}} seconds",
@@ -173,7 +174,10 @@
     "noBackspace": "No backspace",
     "suddenDeath": "Sudden death",
     "themeCustom": "Custom",
-    "customiseTheme": "Customise theme…"
+    "customiseTheme": "Customise theme…",
+    "codeLanguage": "Code language",
+    "layout": "Keyboard layout",
+    "ghost": "Ghost caret"
   },
   "replay": {
     "title": "Replay",

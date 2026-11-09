@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { CodeLanguage, TestConfig } from '@/lib/engine/types';
+import { LAYOUT_IDS, type LayoutId } from '@/lib/text/layouts';
 import { DEFAULT_THEME, FONT_IDS, THEME_IDS, type FontId, type ThemeChoice, type ThemeTokens } from '@/themes/themes';
 import { normaliseTokens } from '@/themes/themeCode';
 import { safeStorage } from './storage';
@@ -31,6 +32,10 @@ export interface SettingsData extends TestConfig {
   tapeMode: boolean; // one scrolling line instead of three
   sound: SoundProfile;
   soundVolume: number; // 0–1
+  /** Keyboard layout emulation: the physical QWERTY keys type the characters of this layout. */
+  layout: LayoutId;
+  /** Ghost carets: the daily ghost and "Race your ghost". */
+  ghost: boolean;
 }
 
 export interface Settings extends SettingsData {
@@ -79,6 +84,8 @@ export const DEFAULT_SETTINGS: SettingsData = {
   tapeMode: false,
   sound: 'off',
   soundVolume: 0.5,
+  layout: 'qwerty',
+  ghost: true,
 };
 
 const DATA_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof SettingsData)[];
@@ -105,6 +112,7 @@ const ALLOWED: Partial<Record<keyof SettingsData, readonly unknown[]>> = {
   uiLanguage: ['en', 'pl'],
   paceCaret: ['off', 'pb', 'average', 'custom'],
   sound: ['off', 'click', 'soft', 'typewriter'],
+  layout: LAYOUT_IDS,
 };
 
 /** Numeric keys and their allowed range. */
@@ -146,7 +154,11 @@ export function sanitizeSettings(input: unknown): SettingsData {
   return out;
 }
 
-/** Settings schema version. 1: the 2.0 keys. 2: pace caret, tape mode, sound, daily/weak, de/es. */
+/**
+ * Settings schema version. 1: the 2.0 keys. 2: pace caret, tape mode, sound, daily/weak, de/es. The 2.3
+ * keys (code mode, layout, ghost) are new keys with defaults, so they need no bump: sanitizeSettings
+ * migrates any stored version.
+ */
 export const SETTINGS_VERSION = 2;
 
 export const useSettings = create<Settings>()(

@@ -41,7 +41,8 @@
       "pangram": "Pangram",
       "custom": "Własny",
       "daily": "Dzienny",
-      "weak": "Słabe litery"
+      "weak": "Słabe litery",
+      "code": "Kod"
     },
     "seconds_one": "{{count}} sekunda",
     "seconds_few": "{{count}} sekundy",
@@ -179,7 +180,10 @@
     "noBackspace": "Bez backspace",
     "suddenDeath": "Nagła śmierć",
     "themeCustom": "Własny",
-    "customiseTheme": "Dostosuj motyw…"
+    "customiseTheme": "Dostosuj motyw…",
+    "codeLanguage": "Język kodu",
+    "layout": "Układ klawiatury",
+    "ghost": "Kursor ducha"
   },
   "replay": {
     "title": "Powtórka",

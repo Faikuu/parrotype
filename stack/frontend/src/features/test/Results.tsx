@@ -3,17 +3,21 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import { CategoryScale, Chart as ChartJS, LineController, LineElement, LinearScale, PointElement, ScatterController, Tooltip, type ChartData, type ChartOptions } from 'chart.js';
 import { Chart } from 'react-chartjs-2';
-import { ChevronRight, Copy, PlayCircle, RotateCcw } from 'lucide-react';
+import { ChevronRight, Copy, Ghost, PlayCircle, RotateCcw, Share2 } from 'lucide-react';
+import { bigramWords, slowestBigrams } from '@/lib/engine/bigrams';
 import { slowestWords } from '@/lib/engine/timings';
 import type { EngineState, TestConfig } from '@/lib/engine/types';
+import { useBigramStats } from '@/store/bigramStats';
 import { foldKeyStats } from '@/store/keyStats';
 import { useSettings } from '@/store/settings';
 import { useUi } from '@/store/ui';
 import { KeyHeatmap } from './KeyHeatmap';
 import { ReplayPlayer } from './ReplayPlayer';
+import { SlowestPairs } from './SlowestPairs';
 import { SlowestWords } from './SlowestWords';
 import { copyText, summaryText } from './copySummary';
 import { practiceText } from './practice';
+import { shareResultCard } from './shareCard';
 import type { FinishedResult, SaveState } from './useTypingTest';
 
 ChartJS.register(CategoryScale, LinearScale, LineController, LineElement, PointElement, ScatterController, Tooltip);
@@ -62,10 +66,16 @@ function usePalette(): Palette {
   return palette;
 }
 
+/** Snippet language names, as they are written (not translated). */
+const CODE_NAMES: Record<TestConfig['codeLanguage'], string> = { js: 'JavaScript', py: 'Python', rs: 'Rust', go: 'Go' };
+
 function testLabel(cfg: TestConfig, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const mode = t(`settings:modes.${cfg.mode}`).toLowerCase();
   let value = '';
   switch (cfg.mode) {
+    case 'code':
+      value = CODE_NAMES[cfg.codeLanguage];
+      break;
     case 'time':
       value = String(cfg.time);
       break;
@@ -81,12 +91,14 @@ function testLabel(cfg: TestConfig, t: (key: string, opts?: Record<string, unkno
     default:
       break;
   }
+  // Code snippets are not in a spoken language, so the language is left out of their label.
+  const code = cfg.mode === 'code';
   return [
     mode,
     value,
-    cfg.language,
-    cfg.punctuation ? t('results:punctuationOn') : '',
-    cfg.numbers ? t('results:numbersOn') : '',
+    code ? '' : cfg.language,
+    !code && cfg.punctuation ? t('results:punctuationOn') : '',
+    !code && cfg.numbers ? t('results:numbersOn') : '',
   ]
     .filter((p) => p.length > 0)
     .join(' ');
@@ -111,21 +123,31 @@ interface ResultsProps {
   saveState: SaveState;
   onNext: () => void;
   onRepeat: () => void;
+  /** Restart with the same words, racing this run as a ghost. */
+  onRaceGhost?: () => void;
+  /** The signed-in user's name, drawn on the share card. */
+  username?: string | null;
 }
 
 /** How long "Copied" stays after a copy. */
 const COPIED_MS = 2000;
 
-export function Results({ config, result, state, date, saveState, onNext, onRepeat }: ResultsProps) {
-  const { t } = useTranslation();
+export function Results({ config, result, state, date, saveState, onNext, onRepeat, onRaceGhost, username = null }: ResultsProps) {
+  const { t, i18n } = useTranslation();
   const palette = usePalette();
   const samples = result.samples;
   const { correct, incorrect, extra, missed } = result.charStats;
   const [copied, setCopied] = useState(false);
   const [replayOpen, setReplayOpen] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [shareFailed, setShareFailed] = useState(false);
+  const ghostOn = useSettings((s) => s.ghost);
+  const layout = useSettings((s) => s.layout);
   const missedKeys = useMemo(() => foldKeyStats(result.keyStats, config.language), [result.keyStats, config.language]);
   const hasKeys = Object.keys(missedKeys).length > 0;
   const slowest = useMemo(() => slowestWords(state, 5), [state]);
+  const bigramTotals = useBigramStats((s) => s.byLanguage[config.language]);
+  const pairs = useMemo(() => slowestBigrams(bigramTotals ?? {}, 5, 3), [bigramTotals]);
   const hasEvents = state.events.length > 0;
   const failed = result.failed;
 
@@ -245,6 +267,36 @@ export function Results({ config, result, state, date, saveState, onNext, onRepe
     useUi.getState().restart();
   }
 
+  // Custom text of words that contain the slow letter pairs, then a restart in custom mode.
+  function practicePairs() {
+    const words = bigramWords(pairs.map((p) => p.pair), config.language, 40);
+    useSettings.getState().setMany({ customText: words.join(' '), mode: 'custom' });
+    useUi.getState().restart();
+  }
+
+  async function onShare() {
+    setSharing(true);
+    setShareFailed(false);
+    try {
+      const shownDate = new Intl.DateTimeFormat(i18n.language, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
+        new Date(`${date}T00:00:00Z`),
+      );
+      await shareResultCard({
+        wpm: result.wpm,
+        accuracy: result.accuracy,
+        testLabel: testLabel(config, t),
+        date: shownDate,
+        username,
+        samples,
+        labels: { brand: 'parrotype', wpm: t('results:wpm'), acc: t('results:acc') },
+      });
+    } catch {
+      setShareFailed(true);
+    } finally {
+      setSharing(false);
+    }
+  }
+
   return (
     <section aria-label={t('results:title')} className="flex flex-col gap-8 py-2">
       <div className="grid items-center gap-8 md:grid-cols-[minmax(0,12rem)_1fr]">
@@ -290,7 +342,7 @@ export function Results({ config, result, state, date, saveState, onNext, onRepe
 
       {replayOpen && hasEvents && (
         <div id="replay-panel">
-          <ReplayPlayer config={state.config} words={state.words} events={state.events} final={state} />
+          <ReplayPlayer config={state.config} words={state.words} events={state.events} final={state} code={state.code} />
         </div>
       )}
 
@@ -307,9 +359,11 @@ export function Results({ config, result, state, date, saveState, onNext, onRepe
         <Stat label={t('results:test')} value={testLabel(config, t)} muted={failed} />
       </dl>
 
-      {hasKeys && <KeyHeatmap stats={missedKeys} language={config.language} />}
+      {hasKeys && <KeyHeatmap stats={missedKeys} language={config.language} layout={layout} />}
 
       {slowest.length > 0 && <SlowestWords words={slowest} onPractice={practice} />}
+
+      {pairs.length > 0 && <SlowestPairs pairs={pairs} onPractice={practicePairs} />}
 
       <div className="flex flex-wrap items-center gap-3">
         <button
@@ -339,6 +393,27 @@ export function Results({ config, result, state, date, saveState, onNext, onRepe
         >
           <Copy size={18} aria-hidden="true" />
         </button>
+        {ghostOn && hasEvents && onRaceGhost && (
+          <button
+            type="button"
+            onClick={onRaceGhost}
+            title={t('results:raceGhostTitle')}
+            aria-label={t('results:raceGhost')}
+            className={ACTION_BUTTON}
+          >
+            <Ghost size={18} aria-hidden="true" />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => void onShare()}
+          disabled={sharing}
+          title={t('results:shareTitle')}
+          aria-label={t('results:share')}
+          className={ACTION_BUTTON}
+        >
+          <Share2 size={18} aria-hidden="true" />
+        </button>
         {hasEvents && (
           <button
             type="button"
@@ -354,6 +429,7 @@ export function Results({ config, result, state, date, saveState, onNext, onRepe
         )}
         <span role="status" aria-live="polite" className="text-[0.9rem] text-main">
           {copied ? t('results:copied') : ''}
+          {shareFailed ? <span className="text-error">{t('results:shareError')}</span> : null}
         </span>
         <SaveStatus saveState={saveState} />
       </div>

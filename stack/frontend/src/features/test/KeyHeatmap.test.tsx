@@ -49,3 +49,18 @@ describe('KeyHeatmap', () => {
     expect(keyEl('q').style.opacity).toBe('1');
   });
 });
+
+describe('KeyHeatmap with a layout', () => {
+  it('labels each physical key with the layout character (Dvorak: the QWERTY S key is o)', () => {
+    render(<KeyHeatmap stats={{}} language="en" layout="dvorak" />);
+    const row = keyEl('o').parentElement!;
+    // Dvorak's home row starts a, o, e, u, i, ...: the QWERTY A, S, D, F keys.
+    expect(Array.from(row.children).slice(0, 4).map((el) => el.getAttribute('data-key'))).toEqual(['a', 'o', 'e', 'u']);
+    expect(document.querySelector('[data-key="s"]')).toBeNull();
+  });
+
+  it('keeps the QWERTY letters for the default layout', () => {
+    render(<KeyHeatmap stats={{}} language="en" />);
+    expect(document.querySelector('[data-key="s"]')).not.toBeNull();
+  });
+});

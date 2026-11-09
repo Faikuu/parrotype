@@ -23,8 +23,9 @@ import {
   ZoomIn,
   type LucideIcon,
 } from 'lucide-react';
-import type { Language, Mode, PangramCount, QuoteLength, TestConfig, TimeOption, WordsOption } from '@/lib/engine/types';
+import type { CodeLanguage, Language, Mode, PangramCount, QuoteLength, TestConfig, TimeOption, WordsOption } from '@/lib/engine/types';
 import { LANGUAGES as LANGUAGE_LIST } from '@/lib/text/languages';
+import { LAYOUT_IDS, LAYOUTS } from '@/lib/text/layouts';
 import { FONT_IDS, FONTS, THEMES, type ThemeChoice } from '@/themes/themes';
 import type {
   CaretStyle,
@@ -70,7 +71,16 @@ export interface CommandContext {
   previewTheme: (id: ThemeChoice | null) => void;
 }
 
-type BooleanKey = 'punctuation' | 'numbers' | 'smoothCaret' | 'blindMode' | 'focusMode' | 'tapeMode' | 'noBackspace' | 'suddenDeath';
+type BooleanKey =
+  | 'punctuation'
+  | 'numbers'
+  | 'smoothCaret'
+  | 'blindMode'
+  | 'focusMode'
+  | 'tapeMode'
+  | 'noBackspace'
+  | 'suddenDeath'
+  | 'ghost';
 
 interface Option<V> {
   value: V;
@@ -124,7 +134,13 @@ function choice<K extends keyof SettingsData>(ctx: CommandContext, spec: ChoiceS
   };
 }
 
-const MODES: Mode[] = ['time', 'words', 'quote', 'zen', 'pangram', 'custom', 'daily', 'weak'];
+const MODES: Mode[] = ['time', 'words', 'quote', 'zen', 'pangram', 'custom', 'daily', 'weak', 'code'];
+const CODE_LANGUAGES: { value: CodeLanguage; label: string }[] = [
+  { value: 'js', label: 'JavaScript' },
+  { value: 'py', label: 'Python' },
+  { value: 'rs', label: 'Rust' },
+  { value: 'go', label: 'Go' },
+];
 const TIMES: TimeOption[] = [15, 30, 60, 120];
 const WORDS: WordsOption[] = [10, 25, 50, 100];
 const QUOTE_LENGTHS: QuoteLength[] = ['short', 'medium', 'long', 'any'];
@@ -200,6 +216,22 @@ export function buildCommands(ctx: CommandContext): Command[] {
     }),
     toggle(ctx, 'punctuation', 'punctuation', t('commands:punctuation'), g.test),
     toggle(ctx, 'numbers', 'numbers', t('commands:numbers'), g.test),
+    choice(ctx, {
+      id: 'codeLanguage',
+      key: 'codeLanguage',
+      label: t('commands:codeLanguage'),
+      group: g.test,
+      keywords: ['code', 'snippet', 'programming'],
+      options: CODE_LANGUAGES,
+    }),
+    choice(ctx, {
+      id: 'layout',
+      key: 'layout',
+      label: t('commands:layout'),
+      group: g.test,
+      keywords: ['keyboard', 'dvorak', 'colemak', 'workman', 'azerty', 'qwertz', 'emulate'],
+      options: LAYOUT_IDS.map((id) => ({ value: id, label: LAYOUTS[id].name })),
+    }),
     choice(ctx, {
       id: 'language',
       key: 'language',
@@ -312,6 +344,7 @@ export function buildCommands(ctx: CommandContext): Command[] {
     toggle(ctx, 'blindMode', 'blindMode', t('commands:blindMode'), g.appearance),
     toggle(ctx, 'focusMode', 'focusMode', t('commands:focusMode'), g.appearance),
     toggle(ctx, 'tapeMode', 'tapeMode', t('commands:tapeMode'), g.appearance),
+    toggle(ctx, 'ghost', 'ghost', t('commands:ghost'), g.test),
     {
       id: 'paceCaret',
       label: t('commands:paceCaret'),

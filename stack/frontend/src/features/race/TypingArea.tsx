@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Words } from '@/features/test/Words';
+import { useLayoutKeydown } from '@/features/test/useLayoutInput';
 import { createInitialState, engineReducer } from '@/lib/engine/engine';
 import { computeResult } from '@/lib/engine/stats';
 import type { EngineAction, EngineState, TestConfig } from '@/lib/engine/types';
@@ -94,6 +95,9 @@ export function TypingArea({ text, open, onChange, onFinish }: TypingAreaProps) 
     [apply],
   );
 
+  // Keyboard layout emulation, the same as in the typing test.
+  const handleLayoutKey = useLayoutKeydown((ch) => typeText(ch));
+
   // Native input events: beforeinput for desktop and most mobile keyboards, composition, and an input fallback.
   useEffect(() => {
     const el = inputRef.current;
@@ -146,6 +150,7 @@ export function TypingArea({ text, open, onChange, onFinish }: TypingAreaProps) 
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    if (handleLayoutKey(e.nativeEvent)) return;
     const mod = e.ctrlKey || e.altKey || e.metaKey;
     if (e.key === 'Backspace') {
       e.preventDefault();

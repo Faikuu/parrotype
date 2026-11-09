@@ -2,6 +2,7 @@
 export const testLocale = {
   en: {
     test: {
+      codeSource: '— {{title}}',
       inputLabel: 'Typing input',
       focusHint: 'Click or start typing to focus',
       restart: 'Restart test',
@@ -28,6 +29,14 @@ export const testLocale = {
       suddenDeathTitle: 'The first wrong letter ends the test',
     },
     results: {
+      raceGhost: 'Race your ghost',
+      raceGhostTitle: 'Restart with the same words and race a replay of this run',
+      share: 'Share',
+      shareTitle: 'Share this result as an image',
+      shareError: "Couldn't share the image.",
+      slowestPairs: 'Slowest pairs',
+      pairMs: '{{ms}} ms',
+      practicePairs: 'Practice these pairs',
       title: 'Results',
       wpm: 'wpm',
       acc: 'acc',
@@ -77,6 +86,7 @@ export const testLocale = {
   },
   pl: {
     test: {
+      codeSource: '— {{title}}',
       inputLabel: 'Pole do pisania',
       focusHint: 'Kliknij albo zacznij pisać, żeby skupić',
       restart: 'Zacznij test od nowa',
@@ -103,6 +113,14 @@ export const testLocale = {
       suddenDeathTitle: 'Pierwszy błędny znak kończy test',
     },
     results: {
+      raceGhost: 'Ścig się z duchem',
+      raceGhostTitle: 'Zacznij od tych samych słów i ścigaj się z powtórką tego przebiegu',
+      share: 'Udostępnij',
+      shareTitle: 'Udostępnij wynik jako obraz',
+      shareError: 'Nie udało się udostępnić obrazu.',
+      slowestPairs: 'Najwolniejsze pary',
+      pairMs: '{{ms}} ms',
+      practicePairs: 'Ćwicz te pary',
       title: 'Wynik',
       wpm: 'wpm',
       acc: 'dokł.',

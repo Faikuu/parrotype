@@ -5,12 +5,19 @@ import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/components/cn';
 import { LANGUAGE_NAMES, LANGUAGES } from '@/lib/text/languages';
 import { utcDateString } from '@/lib/text/daily';
-import type { Mode, PangramCount, QuoteLength, TimeOption, WordsOption } from '@/lib/engine/types';
+import type { CodeLanguage, Mode, PangramCount, QuoteLength, TimeOption, WordsOption } from '@/lib/engine/types';
 import { useKeyStats, weakLetters } from '@/store/keyStats';
 import { useSettings } from '@/store/settings';
 import { useUi } from '@/store/ui';
 
-const MODES: readonly Mode[] = ['time', 'words', 'quote', 'zen', 'pangram', 'custom', 'daily', 'weak'];
+const MODES: readonly Mode[] = ['time', 'words', 'quote', 'zen', 'pangram', 'custom', 'daily', 'weak', 'code'];
+/** Snippet languages for code mode. Language names are shown as they are written, so they are not translated. */
+const CODE_LANGUAGES: readonly { id: CodeLanguage; name: string }[] = [
+  { id: 'js', name: 'JavaScript' },
+  { id: 'py', name: 'Python' },
+  { id: 'rs', name: 'Rust' },
+  { id: 'go', name: 'Go' },
+];
 const TIMES: readonly TimeOption[] = [15, 30, 60, 120];
 const WORD_COUNTS: readonly WordsOption[] = [10, 25, 50, 100];
 const QUOTE_LENGTHS: readonly QuoteLength[] = ['short', 'medium', 'long', 'any'];
@@ -74,6 +81,7 @@ export function ConfigBar() {
       focusMode: s.focusMode,
       noBackspace: s.noBackspace,
       suddenDeath: s.suddenDeath,
+      codeLanguage: s.codeLanguage,
     })),
   );
   const set = useSettings((s) => s.set);
@@ -125,6 +133,13 @@ export function ConfigBar() {
           {shortDate(utcDateString(), i18n.language)}
         </time>
       );
+      break;
+    case 'code':
+      sub = CODE_LANGUAGES.map((l) => (
+        <Opt key={l.id} pressed={cfg.codeLanguage === l.id} onPick={() => set('codeLanguage', l.id)}>
+          {l.name}
+        </Opt>
+      ));
       break;
     case 'weak': {
       const letters = weakLetters(langStats, cfg.language);
@@ -206,7 +221,7 @@ export function ConfigBar() {
         </>
       )}
 
-      {cfg.mode !== 'custom' && cfg.mode !== 'zen' && (
+      {cfg.mode !== 'custom' && cfg.mode !== 'zen' && cfg.mode !== 'code' && (
         <>
           <Divider />
           <Opt

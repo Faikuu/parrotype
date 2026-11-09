@@ -19,6 +19,22 @@
   column-gap: 0.5em;
 }
 
+/* Code mode: one column of lines. A zero-height item forces the break after each line's last word, and the
+   gap between words is a real space in the monospace font. */
+.test-lines[data-code] {
+  column-gap: 1ch;
+}
+
+.code-break {
+  flex: 0 0 100%;
+  height: 0;
+}
+
+.code-eol {
+  margin-inline-start: 0.5ch;
+  user-select: none;
+}
+
 .word-error {
   text-decoration: underline wavy var(--error) 2px;
   text-underline-offset: 6px;
@@ -44,6 +60,17 @@
   pointer-events: none;
   border-radius: 1px;
   background: color-mix(in srgb, var(--sub) 60%, transparent);
+  will-change: transform;
+}
+
+.test-ghost-caret {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2px;
+  pointer-events: none;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--sub) 50%, transparent);
   will-change: transform;
 }
 
@@ -81,7 +108,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .test-caret,
-  .test-pace-caret {
+  .test-pace-caret,
+  .test-ghost-caret {
     transition: none !important;
     animation: none !important;
   }

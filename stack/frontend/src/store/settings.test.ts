@@ -96,3 +96,25 @@ describe('sanitizeSettings: code mode', () => {
     expect(sanitizeSettings({ codeLanguage: 3 }).codeLanguage).toBe('js');
   });
 });
+
+describe('sanitizeSettings: 2.3 keys', () => {
+  it('defaults to QWERTY with ghosts on', () => {
+    expect(DEFAULT_SETTINGS).toMatchObject({ layout: 'qwerty', ghost: true, codeLanguage: 'js' });
+  });
+
+  it('keeps a known layout and falls back for an unknown one', () => {
+    expect(sanitizeSettings({ layout: 'dvorak' }).layout).toBe('dvorak');
+    expect(sanitizeSettings({ layout: 'hunt-and-peck' }).layout).toBe('qwerty');
+    expect(sanitizeSettings({ layout: 42 }).layout).toBe('qwerty');
+  });
+
+  it('keeps the ghost flag only when it is a boolean', () => {
+    expect(sanitizeSettings({ ghost: false }).ghost).toBe(false);
+    expect(sanitizeSettings({ ghost: 'no' }).ghost).toBe(true);
+  });
+
+  it('accepts code mode and its languages', () => {
+    expect(sanitizeSettings({ mode: 'code', codeLanguage: 'rs' })).toMatchObject({ mode: 'code', codeLanguage: 'rs' });
+    expect(sanitizeSettings({ codeLanguage: 'cobol' }).codeLanguage).toBe('js');
+  });
+});

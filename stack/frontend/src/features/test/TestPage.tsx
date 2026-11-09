@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RotateCw } from 'lucide-react';
 import { cn } from '@/components/cn';
+import { useAuth } from '@/features/auth/useAuth';
 import { useSettings } from '@/store/settings';
 import { useUi } from '@/store/ui';
 import { ConfigBar } from './ConfigBar';
@@ -14,6 +15,7 @@ import { useTypingTest } from './useTypingTest';
 export default function TestPage() {
   const { t } = useTranslation();
   const test = useTypingTest();
+  const { user } = useAuth();
   const [focused, setFocused] = useState(false);
   const focusMode = useSettings((s) => s.focusMode);
   const typing = useUi((s) => s.isTyping);
@@ -64,6 +66,8 @@ export default function TestPage() {
             saveState={test.saveState}
             onNext={test.restart}
             onRepeat={test.repeat}
+            onRaceGhost={test.raceGhost}
+            username={user?.name ?? null}
           />
         ) : (
           <div className="flex flex-col gap-4">
@@ -72,7 +76,7 @@ export default function TestPage() {
             {/* Tapping the words must not move focus away from the hidden input: that would hide the
                 keyboard, and the overlay would then appear under the finger and swallow the click. */}
             <div className="relative" onMouseDown={(e) => e.preventDefault()}>
-              <Words state={test.state} onActivate={focusInput} pace={test.pace} />
+              <Words state={test.state} onActivate={focusInput} pace={test.pace} ghost={test.ghost} />
               {!focused && !finished && !overlayOpen && (
                 <button
                   type="button"
@@ -88,6 +92,9 @@ export default function TestPage() {
               <p className="text-center text-[0.9rem] text-sub">
                 {t('test:quoteSource', { source: test.quote.source })}
               </p>
+            )}
+            {test.snippetTitle && (
+              <p className="text-center text-[0.9rem] text-sub">{t('test:codeSource', { title: test.snippetTitle })}</p>
             )}
             {quoteMode && test.quote.fallback && (
               <p className="text-center text-[0.9rem] text-sub">{t('test:quoteFallback')}</p>

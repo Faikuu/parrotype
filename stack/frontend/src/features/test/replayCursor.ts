@@ -1,6 +1,6 @@
 import { createInitialState, engineReducer } from '@/lib/engine/engine';
 import { eventAction } from '@/lib/engine/replay';
-import type { EngineEvent, EngineState, TestConfig } from '@/lib/engine/types';
+import type { EngineEvent, EngineExtras, EngineState, TestConfig } from '@/lib/engine/types';
 
 /** The length of a replay in ms: finish minus start, or the last logged event when the test has no finish time. */
 export function replayLength(final: EngineState, events: readonly EngineEvent[]): number {
@@ -34,15 +34,16 @@ export function createReplayCursor(
   config: TestConfig,
   words: readonly string[],
   events: readonly EngineEvent[],
+  extras?: EngineExtras,
 ): ReplayCursor {
   let applied = 0;
-  let state = createInitialState(config, [...words]);
+  let state = createInitialState(config, [...words], extras);
   return {
     at(count) {
       const n = Math.max(0, Math.min(count, events.length));
       if (n < applied) {
         applied = 0;
-        state = createInitialState(config, [...words]);
+        state = createInitialState(config, [...words], extras);
       }
       while (applied < n) {
         state = engineReducer(state, eventAction(events[applied]!));

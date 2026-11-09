@@ -17,9 +17,13 @@ import { ApiError, quotesApi, resultsApi } from '@/lib/api';
 import type { Quote, ResultInput, Summary } from '@/lib/api/types';
 import { createInitialState, engineReducer, needsMoreWords } from '@/lib/engine/engine';
 import { computeResult } from '@/lib/engine/stats';
-import type { EngineAction, EngineState, Mode, QuoteLength, TestConfig, TestResult } from '@/lib/engine/types';
+import { computeBigrams } from '@/lib/engine/bigrams';
+import type { EngineAction, EngineExtras, EngineState, Mode, QuoteLength, TestConfig, TestResult } from '@/lib/engine/types';
+import { codeForConfig } from '@/lib/text/code';
 import { utcDateString } from '@/lib/text/daily';
 import { generateWords, quoteToWords, wordsForConfig } from '@/lib/text/generator';
+import { useBigramStats } from '@/store/bigramStats';
+import { getDailyGhost, saveDailyGhost } from '@/store/dailyGhost';
 import { useKeyStats, weakLetters } from '@/store/keyStats';
 import {
   bestKey,
@@ -31,7 +35,9 @@ import {
 import { selectTestConfig, useSettings, type PaceCaret } from '@/store/settings';
 import { useUi } from '@/store/ui';
 import { pickBuiltinQuote } from './builtinQuotes';
+import type { GhostRun } from './GhostCaret';
 import { playKeySound } from './sound';
+import { useLayoutKeydown } from './useLayoutInput';
 
 /** Tab then Enter within this window restarts the test. */
 const TAB_WINDOW_MS = 1000;
@@ -78,6 +84,12 @@ export interface TypingTest {
   typeText: (text: string) => void;
   restart: () => void;
   repeat: () => void;
+  /** Restarts with the same words, racing a ghost of this run. */
+  raceGhost: () => void;
+  /** The ghost to draw during the test: the daily ghost, or a run being raced. Null when ghosts are off. */
+  ghost: GhostRun | null;
+  /** Title of the code snippet being typed (code mode), or null. */
+  snippetTitle: string | null;
   focusInput: () => void;
 }
 
@@ -231,6 +243,11 @@ export function useTypingTest(): TypingTest {
   const composingRef = useRef(false);
   const [saveState, setSaveState] = useState<SaveState>({ status: 'idle' });
   const [quote, setQuote] = useState<QuoteInfo>({ loading: false, source: null, fallback: false });
+  // Code mode: the line structure of the words (kept for restarts), and the snippet title to show.
+  const extrasRef = useRef<EngineExtras>({});
+  const [snippetTitle, setSnippetTitle] = useState<string | null>(null);
+  const ghostOn = useSettings((s) => s.ghost);
+  const [ghostRun, setGhostRun] = useState<GhostRun | null>(null);
 
   const focusInput = useCallback(() => {
     inputRef.current?.focus({ preventScroll: true });
@@ -239,20 +256,38 @@ export function useTypingTest(): TypingTest {
   // Regenerate the test whenever the config or the restart token changes.
   useLayoutEffect(() => {
     const cfg = selectTestConfig(useSettings.getState());
+    const ghostsOn = useSettings.getState().ghost;
     runRef.current += 1;
     setSaveState({ status: 'idle' });
+    setSnippetTitle(null);
+    extrasRef.current = {};
 
     if (cfg.mode !== 'quote') {
       const now = Date.now();
-      const weakKeys = cfg.mode === 'weak' ? weakLetters(useKeyStats.getState().byLanguage[cfg.language], cfg.language) : [];
-      const words = wordsForConfig(cfg, Math.random, { weakKeys, now });
+      const date = utcDateString(now);
+      let words: string[];
+      let extras: EngineExtras = {};
+      if (cfg.mode === 'code') {
+        const sel = codeForConfig(cfg, Math.random);
+        words = sel.words;
+        extras = { code: { breaks: sel.breaks, indent: sel.indent } };
+        setSnippetTitle(sel.snippet.title);
+      } else {
+        const weakKeys = cfg.mode === 'weak' ? weakLetters(useKeyStats.getState().byLanguage[cfg.language], cfg.language) : [];
+        words = wordsForConfig(cfg, Math.random, { weakKeys, now });
+      }
       initialWordsRef.current = words;
-      setRunDate(utcDateString(now));
-      dispatch({ type: 'reset', words, config: cfg });
+      extrasRef.current = extras;
+      setRunDate(date);
+      // The daily text is the same for everyone today: race the first attempt of it, if there is one.
+      const first = cfg.mode === 'daily' && ghostsOn ? getDailyGhost(date, cfg.language) : null;
+      setGhostRun(first ? { config: cfg, words: first.words, events: first.events } : null);
+      dispatch({ type: 'reset', words, config: cfg, extras });
       setQuote({ loading: false, source: null, fallback: false });
       return;
     }
     setRunDate(utcDateString());
+    setGhostRun(null);
 
     const ctrl = new AbortController();
     initialWordsRef.current = [];
@@ -335,7 +370,15 @@ export function useTypingTest(): TypingTest {
     if (!skipReason(result)) {
       useLocalBests.getState().record(bestKey(state.config, mode2Of(state.config, runDate)), result);
     }
-  }, [status, result, state.config, runDate]);
+    // Code snippets are not English text, so their pairs stay out of the letter statistics.
+    if (state.config.mode !== 'code') {
+      useBigramStats.getState().record(computeBigrams(state), state.config.language);
+    }
+    // The first attempt at today's daily text is kept as the ghost for the later attempts.
+    if (state.config.mode === 'daily' && state.events.length > 0) {
+      saveDailyGhost(runDate, state.config.language, { words: state.words, events: state.events });
+    }
+  }, [status, result, state, runDate]);
 
   // Save a finished test once auth has settled. Each run is submitted at most once.
   const submittedRun = useRef(-1);
@@ -430,6 +473,9 @@ export function useTypingTest(): TypingTest {
     [canType, playable, apply],
   );
 
+  // Keyboard layout emulation: mapped physical keys type the layout's characters (see useLayoutInput).
+  const handleLayoutKey = useLayoutKeydown((ch) => typeText(ch));
+
   const backspace = useCallback(
     (word: boolean) => {
       if (!canType()) return;
@@ -454,9 +500,17 @@ export function useTypingTest(): TypingTest {
     const cfg = selectTestConfig(useSettings.getState());
     runRef.current += 1;
     setSaveState({ status: 'idle' });
-    dispatch({ type: 'reset', words: initialWordsRef.current, config: cfg });
+    dispatch({ type: 'reset', words: initialWordsRef.current, config: cfg, extras: extrasRef.current });
     focusInput();
   }, [focusInput]);
+
+  // Race your ghost: the same words again, with this run's keystrokes replayed as a caret.
+  const raceGhost = useCallback(() => {
+    const s = stateRef.current;
+    if (s.status !== 'finished' || s.events.length === 0) return;
+    setGhostRun({ config: s.config, words: s.words, events: s.events, ...(s.code ? { code: s.code } : {}) });
+    repeat();
+  }, [repeat]);
 
   // Native input listeners: beforeinput (desktop + most mobile), composition, and an input fallback.
   useEffect(() => {
@@ -512,6 +566,7 @@ export function useTypingTest(): TypingTest {
   const onKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLInputElement>) => {
       if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+      if (handleLayoutKey(e.nativeEvent)) return;
       const mod = e.ctrlKey || e.altKey || e.metaKey;
       switch (e.key) {
         case 'Backspace':
@@ -526,13 +581,14 @@ export function useTypingTest(): TypingTest {
           // Quick restart (tab + enter) is handled on window.
           if (quickRestartPending(tabAtRef.current)) return;
           e.preventDefault();
-          if (e.shiftKey) newline();
+          // Zen finishes on Shift+Enter only. Elsewhere Enter is the line break of a code test (or a no-op).
+          if (e.shiftKey || stateRef.current.config.mode !== 'zen') newline();
           return;
         default:
           return;
       }
     },
-    [backspace, typeText, newline],
+    [backspace, typeText, newline, handleLayoutKey],
   );
 
   // Window keys: quick restart, and redirecting typing to the input when nothing is focused.
@@ -567,6 +623,12 @@ export function useTypingTest(): TypingTest {
         (target instanceof HTMLElement && target.dataset.typingRedirect !== undefined);
       if (!onBody) return;
 
+      // A remapped key types its character here and moves focus to the input for what follows.
+      if (handleLayoutKey(e)) {
+        focusInput();
+        return;
+      }
+
       if (e.key === ' ') {
         e.preventDefault();
         focusInput();
@@ -580,7 +642,7 @@ export function useTypingTest(): TypingTest {
     };
     window.addEventListener('keydown', onWindowKey);
     return () => window.removeEventListener('keydown', onWindowKey);
-  }, [canType, focusInput, restart]);
+  }, [canType, focusInput, restart, handleLayoutKey]);
 
   return {
     state,
@@ -594,6 +656,9 @@ export function useTypingTest(): TypingTest {
     typeText,
     restart,
     repeat,
+    raceGhost,
+    ghost: ghostOn ? ghostRun : null,
+    snippetTitle,
     focusInput,
   };
 }

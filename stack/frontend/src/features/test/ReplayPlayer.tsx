@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pause, Play } from 'lucide-react';
 import { useReducedMotion } from '@/components/useMediaQuery';
-import type { EngineEvent, EngineState, TestConfig } from '@/lib/engine/types';
+import type { CodeLines, EngineEvent, EngineState, TestConfig } from '@/lib/engine/types';
 import { Words } from './Words';
 import { createReplayCursor, eventCountAt, replayLength } from './replayCursor';
 
@@ -31,13 +31,15 @@ export interface ReplayPlayerProps {
   events: readonly EngineEvent[];
   /** The live state when the test finished. Shown once the playhead reaches the end. */
   final: EngineState;
+  /** Line breaks and indentation of a code test. */
+  code?: CodeLines;
 }
 
 /**
  * Plays a finished test back keystroke by keystroke, driven by the event log. The playhead moves on
  * requestAnimationFrame; the state is recomputed only when the number of events passed changes.
  */
-export function ReplayPlayer({ config, words, events, final }: ReplayPlayerProps) {
+export function ReplayPlayer({ config, words, events, final, code }: ReplayPlayerProps) {
   const { t } = useTranslation();
   const reduceMotion = useReducedMotion();
   const duration = replayLength(final, events);
@@ -49,7 +51,10 @@ export function ReplayPlayer({ config, words, events, final }: ReplayPlayerProps
   // Timestamp of the last frame that moved the playhead. Kept across speed changes, so no time is lost.
   const lastFrameRef = useRef<number | null>(null);
 
-  const cursor = useMemo(() => createReplayCursor(config, words, events), [config, words, events]);
+  const cursor = useMemo(
+    () => createReplayCursor(config, words, events, code ? { code } : undefined),
+    [config, words, events, code],
+  );
 
   const seek = useCallback(
     (ms: number) => {

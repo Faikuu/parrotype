@@ -4,6 +4,7 @@ import '@/i18n';
 import { createInitialState, engineReducer } from '@/lib/engine/engine';
 import { computeResult } from '@/lib/engine/stats';
 import type { EngineState } from '@/lib/engine/types';
+import { useBigramStats } from '@/store/bigramStats';
 import { DEFAULT_SETTINGS, useSettings } from '@/store/settings';
 import { useUi } from '@/store/ui';
 import { Results } from './Results';
@@ -127,5 +128,80 @@ describe('Results: slowest words', () => {
     expect(words).toHaveLength(30);
     expect(new Set(words)).toEqual(new Set(shown));
     expect(useUi.getState().restartToken).toBe(before + 1);
+  });
+});
+
+describe('Results: slowest pairs', () => {
+  beforeEach(() => {
+    useBigramStats.setState({
+      byLanguage: { en: { th: { total: 900, count: 3 }, qz: { total: 1200, count: 3 }, ab: { total: 900, count: 1 } } },
+    });
+  });
+
+  afterEach(() => {
+    useBigramStats.setState({ byLanguage: {} });
+  });
+
+  it('lists up to five pairs with at least three samples, slowest first, with the average ms', () => {
+    renderResults(runTyping(['cat', 'dog', 'fox'], 'cat dog fox'));
+    expect(screen.getByRole('heading', { name: 'Slowest pairs' })).toBeInTheDocument();
+    const list = screen.getByRole('heading', { name: 'Slowest pairs' }).parentElement!.querySelector('ul')!;
+    const items = within(list).getAllByRole('listitem').map((li) => li.textContent);
+    // qz 400 ms, th 300 ms. "ab" is left out: one sample is below the minimum of three.
+    expect(items).toEqual(['qz400 ms', 'th300 ms']);
+  });
+
+  it('"Practice these pairs" sets a custom text from words with those pairs and restarts in custom mode', () => {
+    const before = useUi.getState().restartToken;
+    renderResults(runTyping(['cat', 'dog', 'fox'], 'cat dog fox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Practice these pairs' }));
+
+    const settings = useSettings.getState();
+    expect(settings.mode).toBe('custom');
+    expect(settings.customText.split(' ')).toHaveLength(40);
+    expect(useUi.getState().restartToken).toBe(before + 1);
+  });
+
+  it('shows the share and race-your-ghost buttons, and the ghost button calls its handler', () => {
+    const onRaceGhost = vi.fn();
+    const state = runTyping(['cat', 'dog', 'fox'], 'cat dog fox');
+    render(
+      <MemoryRouter>
+        <Results
+          config={state.config}
+          result={{ ...computeResult(state), isPersonalBest: false }}
+          state={state}
+          date="2026-01-01"
+          saveState={{ status: 'idle' }}
+          onNext={vi.fn()}
+          onRepeat={vi.fn()}
+          onRaceGhost={onRaceGhost}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('button', { name: 'Share' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Race your ghost' }));
+    expect(onRaceGhost).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the race-your-ghost button when ghosts are off', () => {
+    useSettings.setState({ ghost: false });
+    const state = runTyping(['cat', 'dog', 'fox'], 'cat dog fox');
+    render(
+      <MemoryRouter>
+        <Results
+          config={state.config}
+          result={{ ...computeResult(state), isPersonalBest: false }}
+          state={state}
+          date="2026-01-01"
+          saveState={{ status: 'idle' }}
+          onNext={vi.fn()}
+          onRepeat={vi.fn()}
+          onRaceGhost={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('button', { name: 'Race your ghost' })).toBeNull();
+    useSettings.setState({ ghost: true });
   });
 });
