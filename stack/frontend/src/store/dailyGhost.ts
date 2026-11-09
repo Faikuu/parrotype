@@ -78,11 +78,13 @@ export function readDailyGhosts(): DailyGhostMap {
   }
 }
 
-function writeDailyGhosts(map: DailyGhostMap): void {
+/** Returns false when the write failed (storage blocked or full): the ghost is then not kept. */
+function writeDailyGhosts(map: DailyGhostMap): boolean {
   try {
     window.localStorage.setItem(DAILY_GHOST_KEY, JSON.stringify(map));
+    return true;
   } catch {
-    // storage unavailable or full: the ghost just isn't kept
+    return false;
   }
 }
 
@@ -93,12 +95,11 @@ export function getDailyGhost(date: string, language: Language): DailyGhostRun |
 
 /**
  * Keeps `run` as the daily ghost when there is none yet for this date and language (the first attempt
- * wins). Returns true when it was stored.
+ * wins). Returns true only when it was stored: false when there was already a ghost or the write failed.
  */
 export function saveDailyGhost(date: string, language: Language, run: DailyGhostRun): boolean {
   const map = readDailyGhosts();
   const key = dailyGhostKey(date, language);
   if (map[key]) return false;
-  writeDailyGhosts(pruneDailyGhosts({ ...map, [key]: run }));
-  return true;
+  return writeDailyGhosts(pruneDailyGhosts({ ...map, [key]: run }));
 }

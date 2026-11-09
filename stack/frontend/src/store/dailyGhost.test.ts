@@ -90,4 +90,17 @@ describe('saveDailyGhost and getDailyGhost', () => {
     expect(() => saveDailyGhost('2026-06-01', 'en', run('x'))).not.toThrow();
     expect(getDailyGhost('2026-06-01', 'en')).toBeNull();
   });
+
+  it('reports false when the write fails, and keeps nothing', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('full', 'QuotaExceededError');
+    });
+    expect(saveDailyGhost('2026-07-01', 'en', run('x'))).toBe(false);
+    expect(readDailyGhosts()).toEqual({});
+  });
+
+  it('reports true when the write succeeds, and false for a second attempt the same day', () => {
+    expect(saveDailyGhost('2026-07-02', 'en', run('x'))).toBe(true);
+    expect(saveDailyGhost('2026-07-02', 'en', run('y'))).toBe(false);
+  });
 });

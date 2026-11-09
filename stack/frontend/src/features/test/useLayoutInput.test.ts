@@ -2,8 +2,12 @@ import { renderHook } from '@testing-library/react';
 import { layoutCharFor, useLayoutKeydown } from './useLayoutInput';
 import { DEFAULT_SETTINGS, useSettings } from '@/store/settings';
 
-function keyEvent(init: KeyboardEventInit): KeyboardEvent {
-  return new KeyboardEvent('keydown', { cancelable: true, ...init });
+function keyEvent(init: KeyboardEventInit, capsLock = false): KeyboardEvent {
+  const e = new KeyboardEvent('keydown', { cancelable: true, ...init });
+  Object.defineProperty(e, 'getModifierState', {
+    value: (key: string) => key === 'CapsLock' && capsLock,
+  });
+  return e;
 }
 
 beforeEach(() => {
@@ -32,6 +36,45 @@ describe('layoutCharFor', () => {
     expect(layoutCharFor('dvorak', { ...base, isComposing: true })).toBeNull();
     expect(layoutCharFor('dvorak', { ...base, code: 'Space' })).toBeNull();
     expect(layoutCharFor('dvorak', { ...base, code: 'Enter' })).toBeNull();
+  });
+});
+
+describe('CapsLock', () => {
+  const base = { shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, isComposing: false };
+
+  it('CapsLock alone uppercases letters', () => {
+    expect(layoutCharFor('dvorak', { ...base, code: 'KeyS', getModifierState: (k) => k === 'CapsLock' })).toBe('O');
+  });
+
+  it('CapsLock with Shift gives lowercase letters, as native typing does', () => {
+    expect(layoutCharFor('dvorak', { ...base, code: 'KeyS', shiftKey: true, getModifierState: (k) => k === 'CapsLock' })).toBe('o');
+  });
+
+  it('CapsLock does not change digits or punctuation', () => {
+    const caps = (k: string) => k === 'CapsLock';
+    expect(layoutCharFor('dvorak', { ...base, code: 'Digit1', getModifierState: caps })).toBe('1');
+    expect(layoutCharFor('dvorak', { ...base, code: 'Digit1', shiftKey: true, getModifierState: caps })).toBe('!');
+  });
+
+  it('is honoured through the keydown handler', () => {
+    useSettings.setState({ layout: 'dvorak' });
+    const onChar = vi.fn();
+    const { result } = renderHook(() => useLayoutKeydown(onChar));
+    expect(result.current(keyEvent({ code: 'KeyS', key: 'S' }, true))).toBe(true);
+    expect(result.current(keyEvent({ code: 'KeyS', key: 's', shiftKey: true }, true))).toBe(true);
+    expect(result.current(keyEvent({ code: 'Digit1', key: '1' }, true))).toBe(true);
+    expect(onChar.mock.calls.map((c) => c[0])).toEqual(['O', 'o', '1']);
+  });
+
+  it('leaves AltGr (Ctrl+Alt) and Option (Alt) combinations to native input', () => {
+    const onChar = vi.fn();
+    useSettings.setState({ layout: 'dvorak' });
+    const { result } = renderHook(() => useLayoutKeydown(onChar));
+    const altgr = keyEvent({ code: 'KeyS', key: 'ß', ctrlKey: true, altKey: true });
+    expect(result.current(altgr)).toBe(false);
+    expect(altgr.defaultPrevented).toBe(false);
+    expect(result.current(keyEvent({ code: 'KeyS', key: 'ß', altKey: true }))).toBe(false);
+    expect(onChar).not.toHaveBeenCalled();
   });
 });
 

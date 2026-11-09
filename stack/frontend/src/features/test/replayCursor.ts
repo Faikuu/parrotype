@@ -53,3 +53,23 @@ export function createReplayCursor(
     },
   };
 }
+
+/**
+ * The same answer as `ghostPosition` (the word and char index of a replayed caret), but read through a
+ * cursor, so a caret that is read every tick applies only the events that came since the last read.
+ * Going back in time starts again from the beginning, as createReplayCursor does.
+ */
+export function createPositionCursor(
+  config: TestConfig,
+  words: readonly string[],
+  events: readonly EngineEvent[],
+  extras?: EngineExtras,
+): { at(elapsedMs: number): { word: number; char: number } } {
+  const cursor = createReplayCursor(config, words, events, extras);
+  return {
+    at(elapsedMs) {
+      const state = cursor.at(eventCountAt(events, elapsedMs));
+      return { word: state.current, char: state.typed[state.current]?.length ?? 0 };
+    },
+  };
+}

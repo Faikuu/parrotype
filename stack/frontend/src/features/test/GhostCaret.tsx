@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useReducer, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react';
 import { elapsedMs } from '@/lib/engine/engine';
-import { ghostPosition } from '@/lib/engine/ghost';
 import type { CodeLines, EngineEvent, EngineState, TestConfig } from '@/lib/engine/types';
 import { wordAnchor } from './caretGeometry';
+import { createPositionCursor } from './replayCursor';
 
 /** A finished run that a ghost replays: its settings, target words, events and (code mode) line structure. */
 export interface GhostRun {
@@ -41,6 +41,13 @@ export function GhostCaret({ viewportRef, state, ghost, shift, tapeX }: GhostCar
   const [, placeAgain] = useReducer((n: number) => n + 1, 0);
   useEffect(() => placeAgain(), []);
 
+  // Replays the ghost's events incrementally: each tick applies only the events since the last one. A new
+  // ghost (different events, words or config) starts a new cursor.
+  const positions = useMemo(
+    () => createPositionCursor(ghost.config, ghost.words, ghost.events, ghost.code ? { code: ghost.code } : undefined),
+    [ghost.config, ghost.words, ghost.events, ghost.code],
+  );
+
   // Its own clock while the test runs, like the pace caret.
   useEffect(() => {
     if (!running) return;
@@ -54,7 +61,7 @@ export function GhostCaret({ viewportRef, state, ghost, shift, tapeX }: GhostCar
     const el = ref.current;
     if (!vp || !el) return;
 
-    const pos = ghostPosition(ghost.config, ghost.words, ghost.events, elapsedMs(state, now), ghost.code);
+    const pos = positions.at(elapsedMs(state, now));
     const targetLen = state.words[pos.word]?.length ?? ghost.words[pos.word]?.length ?? 0;
     const box = wordAnchor(vp, pos.word, Math.min(pos.char, targetLen), targetLen);
     if (!box) {

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createInitialState, engineReducer } from '@/lib/engine/engine';
 import { replayStateAt } from '@/lib/engine/replay';
 import type { EngineAction, EngineEvent, EngineState, TestConfig } from '@/lib/engine/types';
-import { createReplayCursor, eventCountAt, replayLength } from './replayCursor';
+import { ghostPosition } from '@/lib/engine/ghost';
+import { createPositionCursor, createReplayCursor, eventCountAt, replayLength } from './replayCursor';
 
 const CONFIG: TestConfig = {
   mode: 'custom', time: 30, words: 25, quoteLength: 'any', pangramCount: 1, punctuation: false, numbers: false,
@@ -95,5 +96,29 @@ describe('replayLength', () => {
     const state = run(TYPED);
     expect(replayLength(state, state.events)).toBe(1100);
     expect(replayLength(createInitialState(CONFIG, WORDS), [])).toBe(0);
+  });
+});
+
+describe('createPositionCursor', () => {
+  it('gives the same position as ghostPosition at several times', () => {
+    const events = run(TYPED).events;
+    const cursor = createPositionCursor(CONFIG, WORDS, events);
+    for (const ms of [0, 50, 999, 1000, 1100, 1250, 1300, 1450, 1500, 1800, 1900, 2100, 5000]) {
+      expect(cursor.at(ms)).toEqual(ghostPosition(CONFIG, WORDS, events, ms));
+    }
+  });
+
+  it('gives the same positions when read backwards in time', () => {
+    const events = run(TYPED).events;
+    const cursor = createPositionCursor(CONFIG, WORDS, events);
+    for (const ms of [2100, 1250, 0, 1900, 1000]) {
+      expect(cursor.at(ms)).toEqual(ghostPosition(CONFIG, WORDS, events, ms));
+    }
+  });
+
+  it('reads a finished replay at its end', () => {
+    const final = run(TYPED);
+    const cursor = createPositionCursor(CONFIG, WORDS, final.events);
+    expect(cursor.at(60_000)).toEqual({ word: final.current, char: final.typed[final.current]?.length ?? 0 });
   });
 });
