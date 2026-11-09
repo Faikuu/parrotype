@@ -79,13 +79,13 @@ export function WpmHistogram({ buckets }: { buckets: HistogramBucket[] }) {
     () =>
       barOptions(palette, (i) => {
         const count = filled[i]?.count ?? 0;
-        return t('insights.histogram.count', { count });
+        return t('insights:histogram.count', { count });
       }),
     [filled, palette, t],
   );
 
   return (
-    <div className="h-[220px] w-full" role="img" aria-label={t('insights.histogram.label')}>
+    <div className="h-[220px] w-full" role="img" aria-label={t('insights:histogram.label')}>
       <Bar data={data} options={options} />
     </div>
   );
@@ -116,14 +116,14 @@ export function HourChart({ hours }: { hours: HourBucket[] }) {
     () =>
       barOptions(palette, (i) => {
         const h = hours[i];
-        if (!h || h.tests === 0) return t('insights.byHour.none');
-        return t('insights.byHour.tooltip', { count: h.tests, wpm: h.avgWpm });
+        if (!h || h.tests === 0) return t('insights:byHour.none');
+        return t('insights:byHour.tooltip', { count: h.tests, wpm: h.avgWpm });
       }),
     [hours, palette, t],
   );
 
   return (
-    <div className="h-[200px] w-full" role="img" aria-label={t('insights.byHour.label')}>
+    <div className="h-[200px] w-full" role="img" aria-label={t('insights:byHour.label')}>
       <Bar data={data} options={options} />
     </div>
   );

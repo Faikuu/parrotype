@@ -71,7 +71,7 @@ export default function ProfilePage() {
 
       <section aria-labelledby="profile-achievements" className="mt-12">
         <h2 id="profile-achievements" className="mb-4 text-[1.1rem] font-semibold text-text">
-          {t('achievements.heading')}
+          {t('achievements:heading')}
         </h2>
         <AchievementsGrid achievements={p.achievements} onlyUnlocked />
       </section>
@@ -96,7 +96,7 @@ export default function ProfilePage() {
 
       <section aria-labelledby="profile-activity" className="mt-12">
         <h2 id="profile-activity" className="mb-4 text-[1.1rem] font-semibold text-text">
-          {t('insights.calendar.heading')}
+          {t('insights:calendar.heading')}
         </h2>
         <ActivityCalendar activity={p.activity} />
       </section>

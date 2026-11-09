@@ -230,20 +230,20 @@ describe('RaceRoomPage: countdown and racing', () => {
     expect(lanes[1]).toHaveAttribute('data-progress', '30.0');
   });
 
-  it('does not finish while an earlier word is wrong, and finishes once it is fixed', async () => {
+  it('blocks the space after a wrong word, and finishes once the word is fixed', async () => {
     stubSession({ id: 1, name: 'alice' });
     renderRoom();
     await joinWith(room({ status: 'racing', text, startsAt: Date.now() - 100, players: [player('p1', 'alice')] }));
     await typeKeys('ax cd e');
     expect(socket().sentMessages().some((m) => m.type === 'finish')).toBe(false);
+    // The space after "ax" was refused, so "cd" and "e" never went in.
+    const progress = socket().sentMessages().filter((m) => m.type === 'progress');
+    expect(progress.every((m) => (m.chars as number) < text.length)).toBe(true);
 
     const user = userEvent.setup();
-    const input = document.querySelector<HTMLInputElement>('[data-typing-input]')!;
-    // Backspace back through the last word, into the wrong one, and retype it.
-    await user.keyboard('{Backspace>7/}');
-    await user.keyboard('b');
-    await user.keyboard(' cd e');
-    expect(input).toBeInTheDocument();
+    // Refused letters went into the same word, so clear all of it before retyping.
+    await user.keyboard('{Backspace}'.repeat(10));
+    await user.keyboard('ab cd e');
     expect(socket().sentMessages().some((m) => m.type === 'finish')).toBe(true);
   });
 

@@ -25,7 +25,7 @@ afterEach(() => {
 
 describe('DataExport', () => {
   it('fetches the CSV export with credentials, then saves it through an object URL', async () => {
-    const fetchMock = vi.fn(
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
       async () =>
         new Response('createdAt,mode\r\n', {
           status: 200,
@@ -41,15 +41,16 @@ describe('DataExport', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Download CSV' }));
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('/api/results/me/export?format=csv');
-    expect(init.credentials).toBe('include');
-    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('/api/results/me/export?format=csv');
+    expect(fetchMock.mock.calls[0]?.[1]?.credentials).toBe('include');
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(downloads).toEqual([{ name: 'parrotype-results.csv', href: 'blob:mock-url' }]);
   });
 
   it('exports JSON with its own format', async () => {
-    const fetchMock = vi.fn(async () => json([]));
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      async () => json([]),
+    );
     vi.stubGlobal('fetch', fetchMock);
     render(<DataExport />);
 

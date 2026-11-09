@@ -20,7 +20,7 @@ export function AchievementsGrid({
   const ids = ACHIEVEMENT_IDS.filter((id) => !onlyUnlocked || unlocked.has(id));
 
   if (ids.length === 0) {
-    return <p className="text-sub">{t('achievements.empty')}</p>;
+    return <p className="text-sub">{t('achievements:empty')}</p>;
   }
 
   return (
@@ -43,13 +43,13 @@ export function AchievementsGrid({
             />
             <div className="min-w-0">
               <p className={`font-medium ${isUnlocked ? 'text-text' : 'text-sub'}`}>
-                {t(`achievements.items.${id}.name`)}
+                {t(`achievements:items.${id}.name`)}
               </p>
-              <p className="text-[0.9rem] text-sub">{t(`achievements.items.${id}.description`)}</p>
+              <p className="text-[0.9rem] text-sub">{t(`achievements:items.${id}.description`)}</p>
               {isUnlocked ? (
                 <p className="text-[0.85rem] text-sub">
                   <time dateTime={unlockedAt}>
-                    {t('achievements.unlockedOn', { date: formatUtcDay(unlockedAt, lang) })}
+                    {t('achievements:unlockedOn', { date: formatUtcDay(unlockedAt, lang) })}
                   </time>
                 </p>
               ) : null}

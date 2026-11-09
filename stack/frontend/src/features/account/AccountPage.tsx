@@ -19,9 +19,10 @@ import {
   splitDuration,
 } from './format';
 import { languageLabel, modeLabel, optionLabel, type Tr } from './labels';
-import { useInsights, InsightsSection } from './Insights';
+import { InsightsSection } from './Insights';
 import { LoadError } from './LoadError';
 import { ProgressChart } from './ProgressChart';
+import { useInsights } from './useInsights';
 
 const RECENT_LIMIT = 100;
 
@@ -116,7 +117,7 @@ export default function AccountPage() {
 
       <section aria-labelledby="account-achievements" className="mt-12">
         <h2 id="account-achievements" className="mb-4 text-[1.1rem] font-semibold text-text">
-          {t('achievements.heading')}
+          {t('achievements:heading')}
         </h2>
         {insights.isPending ? (
           <p className="text-sub">{t('common:loading')}</p>

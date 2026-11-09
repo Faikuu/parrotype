@@ -8,6 +8,7 @@ import { quoteToWords } from '@/lib/text/generator';
 import { selectTestConfig, useSettings } from '@/store/settings';
 import { allWordsCorrect, correctCharsOf } from './raceProgress';
 import type { FinishPayload } from './raceClient';
+import { MAX_REPORTED_WPM } from './protocol';
 
 export interface TypingAreaProps {
   /** The room's quote, exactly as the server counts it. */
@@ -29,10 +30,19 @@ const TICK_MS = 250;
 export function TypingArea({ text, open, onChange, onFinish }: TypingAreaProps) {
   const { t } = useTranslation();
   const words = useMemo(() => quoteToWords(text), [text]);
-  const config = useMemo<TestConfig>(
-    () => ({ ...selectTestConfig(useSettings.getState()), mode: 'quote', noBackspace: false, suddenDeath: false }),
-    [],
-  );
+  // A race can only finish with every word right, and backspace can't step back into a correct word.
+  // So a wrong word has to be fixed before the space that leaves it: stop on error is 'word' unless
+  // the racer picked 'letter' (which already blocks wrong letters).
+  const config = useMemo<TestConfig>(() => {
+    const settings = selectTestConfig(useSettings.getState());
+    return {
+      ...settings,
+      mode: 'quote',
+      noBackspace: false,
+      suddenDeath: false,
+      stopOnError: settings.stopOnError === 'letter' ? 'letter' : 'word',
+    };
+  }, []);
 
   const [state, setState] = useState<EngineState>(() => createInitialState(config, words));
   const stateRef = useRef(state);
@@ -172,7 +182,7 @@ export function TypingArea({ text, open, onChange, onFinish }: TypingAreaProps) 
   useEffect(() => {
     if (state.status === 'idle') return;
     const chars = correctCharsOf(state);
-    const wpm = state.keystrokes.length > 0 ? computeResult(state).wpm : 0;
+    const wpm = state.keystrokes.length > 0 ? Math.min(computeResult(state).wpm, MAX_REPORTED_WPM) : 0;
     onChangeRef.current(chars, wpm);
   }, [state]);
 
@@ -183,7 +193,8 @@ export function TypingArea({ text, open, onChange, onFinish }: TypingAreaProps) 
     const result = computeResult(state);
     onFinishRef.current({
       chars: correctCharsOf(state),
-      wpm: result.wpm,
+      // Above the server's limit the finish would be refused and the racer stuck until the time limit.
+      wpm: Math.min(result.wpm, MAX_REPORTED_WPM),
       accuracy: result.accuracy,
       durationMs: result.durationMs,
     });

@@ -63,7 +63,7 @@ export function ActivityCalendar({ activity, today }: { activity: ActivityDay[];
       <div
         ref={scrollRef}
         role="region"
-        aria-label={t('insights.calendar.label')}
+        aria-label={t('insights:calendar.label')}
         tabIndex={0}
         className="overflow-x-auto pb-2"
       >
@@ -102,11 +102,11 @@ export function ActivityCalendar({ activity, today }: { activity: ActivityDay[];
                   key={cell.date}
                   title={
                     cell.tests > 0
-                      ? t('insights.calendar.cell', {
+                      ? t('insights:calendar.cell', {
                           count: cell.tests,
                           date: formatUtcDay(cell.date, lang),
                         })
-                      : t('insights.calendar.none', { date: formatUtcDay(cell.date, lang) })
+                      : t('insights:calendar.none', { date: formatUtcDay(cell.date, lang) })
                   }
                   className="rounded-[2px]"
                   style={{
@@ -122,7 +122,7 @@ export function ActivityCalendar({ activity, today }: { activity: ActivityDay[];
       </div>
 
       <div aria-hidden="true" className="mt-2 flex items-center gap-1 text-[0.75rem] text-sub">
-        <span className="mr-1">{t('insights.calendar.less')}</span>
+        <span className="mr-1">{t('insights:calendar.less')}</span>
         {LEVEL_COLOR.map((color, i) => (
           <span
             key={i}
@@ -130,25 +130,25 @@ export function ActivityCalendar({ activity, today }: { activity: ActivityDay[];
             style={{ width: CELL, height: CELL, background: color }}
           />
         ))}
-        <span className="ml-1">{t('insights.calendar.more')}</span>
+        <span className="ml-1">{t('insights:calendar.more')}</span>
       </div>
 
       <details className="mt-4 text-[0.95rem]">
         <summary className="cursor-pointer text-main underline underline-offset-4">
-          {t('insights.calendar.tableSummary')}
+          {t('insights:calendar.tableSummary')}
         </summary>
         {days.length === 0 ? (
-          <p className="mt-3 text-sub">{t('insights.calendar.tableEmpty')}</p>
+          <p className="mt-3 text-sub">{t('insights:calendar.tableEmpty')}</p>
         ) : (
           <div className="mt-3 max-h-[320px] overflow-auto">
             <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="text-sub">
                   <th scope="col" className="py-1 pr-4 font-normal">
-                    {t('insights.calendar.tableDate')}
+                    {t('insights:calendar.tableDate')}
                   </th>
                   <th scope="col" className="py-1 text-right font-normal">
-                    {t('insights.calendar.tableTests')}
+                    {t('insights:calendar.tableTests')}
                   </th>
                 </tr>
               </thead>

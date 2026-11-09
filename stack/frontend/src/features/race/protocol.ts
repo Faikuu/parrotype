@@ -36,6 +36,9 @@ export type ServerMessage =
   | { type: 'room'; room: RaceRoom }
   | { type: 'error'; message: string };
 
+/** The server rejects a finish or progress above this wpm (MAX_WPM on the backend). */
+export const MAX_REPORTED_WPM = 350;
+
 export type RaceErrorCode = 'full' | 'notFound' | 'expired' | 'connection' | 'rejected';
 
 export interface RaceErrorInfo {

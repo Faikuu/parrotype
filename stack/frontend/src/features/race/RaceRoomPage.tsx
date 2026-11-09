@@ -136,7 +136,10 @@ function RoomBody({ room, race }: { room: RaceRoom; race: UseRace }) {
   if (room.status === 'finished') {
     return (
       <section className="flex flex-col gap-8 py-10">
-        <h1 className="font-sans text-[2rem] font-semibold">{t('race:lobby.heading')}</h1>
+        <header className="flex flex-col gap-1">
+          <h1 className="font-sans text-[2rem] font-semibold">{t('race:lobby.heading')}</h1>
+          <h2 className="text-[1.05rem] font-medium text-sub">{t('race:results.heading')}</h2>
+        </header>
         <ResultsTable players={room.players} you={race.you} />
         <div className="flex flex-wrap items-center gap-3">
           {isHost ? (
