@@ -6,7 +6,7 @@ import type { PublicUser } from '@/lib/api/types';
 export const ME_QUERY_KEY = ['me'] as const;
 
 /** Cached queries that hold one user's data. Dropped whenever the signed-in user changes. */
-const USER_SCOPED_QUERY_KEYS = [['results'], ['summary']] as const;
+const USER_SCOPED_QUERY_KEYS = [['results'], ['summary'], ['insights']] as const;
 
 function clearUserScopedQueries(qc: QueryClient): void {
   for (const queryKey of USER_SCOPED_QUERY_KEYS) void qc.removeQueries({ queryKey });

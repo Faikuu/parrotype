@@ -361,6 +361,7 @@ export function useTypingTest(): TypingTest {
         setSaveState({ status: 'saved' });
         void qc.invalidateQueries({ queryKey: ['results'] });
         void qc.invalidateQueries({ queryKey: ['summary'] });
+        void qc.invalidateQueries({ queryKey: ['insights'] });
       },
       (err: unknown) => {
         if (runRef.current !== run) return;

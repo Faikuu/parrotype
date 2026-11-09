@@ -250,7 +250,7 @@ export function Results({ config, result, state, date, saveState, onNext, onRepe
       <div className="grid items-center gap-8 md:grid-cols-[minmax(0,12rem)_1fr]">
         <div className="flex flex-col gap-3">
           {failed ? (
-            <p role="status" className="m-0 text-[2.5rem] leading-tight text-error">
+            <p role="status" className="m-0 text-[2rem] leading-tight text-error">
               {t('results:failedAt', { word: state.current + 1 })}
             </p>
           ) : null}

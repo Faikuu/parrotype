@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
 import { Button } from '@/components/Button';
@@ -35,6 +35,7 @@ function ThemeEditorForm() {
   const [importText, setImportText] = useState('');
   const [importFailed, setImportFailed] = useState(false);
   const [imported, setImported] = useState(false);
+  const exportRef = useRef<HTMLButtonElement>(null);
 
   // Live preview: the page shows the draft while the editor is open.
   useEffect(() => {
@@ -43,6 +44,16 @@ function ThemeEditorForm() {
 
   // Closing the editor by any route (Save, Cancel, Esc, unmount) drops the draft, so the saved theme comes back.
   useEffect(() => () => setDraft(null), [setDraft]);
+
+  // Escape is handled by the dialog, but focus can leave it (the clipboard fallback removes a textarea that had
+  // focus). The dialog marks an Escape it handled with preventDefault, so this only catches the rest.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) closeEditor();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [closeEditor]);
 
   const warnings = useMemo(() => contrastWarnings(tokens), [tokens]);
 
@@ -61,6 +72,8 @@ function ThemeEditorForm() {
     const text = encodeThemeCode(tokens);
     setCode(text);
     setCopied(await copyText(text));
+    // The copy fallback moves focus; put it back on the button that started the export.
+    exportRef.current?.focus();
   }
 
   function importCode() {
@@ -112,7 +125,7 @@ function ThemeEditorForm() {
           <Button variant="ghost" onClick={closeEditor}>
             {t('common:cancel')}
           </Button>
-          <Button variant="ghost" onClick={() => void exportCode()}>
+          <Button ref={exportRef} variant="ghost" onClick={() => void exportCode()}>
             {t('themeEditor:export')}
           </Button>
           {copied !== null && (
