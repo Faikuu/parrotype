@@ -170,7 +170,7 @@ function QuoteForm({ target, onClose, onDone }: { target: AdminQuote | 'new'; on
   return (
     <form className="flex flex-col gap-4" onSubmit={submit}>
       <div className="grid gap-4 sm:grid-cols-[10rem_1fr]">
-        <SelectField id="quote-language" label={t('admin:quotes.form.language')} value={language} onChange={setLanguage}>
+        <SelectField id="quote-language" label={t('admin:quotes.form.language')} value={language} onChange={setLanguage} className="bg-bg">
           {LANGUAGES.map((l) => (
             <option key={l} value={l}>
               {languageLabel(l)}

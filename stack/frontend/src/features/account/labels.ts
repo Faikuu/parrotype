@@ -13,7 +13,7 @@ export const LANGUAGE_NAMES: Record<BoardLanguage, string> = {
 
 export type Tr = (k: string, o?: Record<string, unknown>) => string;
 
-const SETTINGS_MODES = ['time', 'words', 'quote', 'zen', 'pangram', 'custom'];
+const SETTINGS_MODES = ['time', 'words', 'quote', 'zen', 'pangram', 'custom', 'code'];
 const QUOTE_LENGTHS = ['short', 'medium', 'long', 'any'];
 const DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 

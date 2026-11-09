@@ -152,7 +152,7 @@ export default function ResultsPage() {
           sort={sort}
           onSort={(s) => update({ sort: s.key, order: s.order })}
           pagination={query.data ? { page, pageSize: PAGE_SIZE, total: query.data.total, onPageChange: (p) => update({ page: String(p) }) } : undefined}
-          minWidth="min-w-[860px]"
+          minWidth="min-w-[760px]"
         />
       )}
     </div>

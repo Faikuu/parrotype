@@ -17,6 +17,7 @@ export function SelectField({
   onChange,
   children,
   disabled,
+  className,
 }: {
   id: string;
   label: string;
@@ -24,6 +25,8 @@ export function SelectField({
   onChange: (value: string) => void;
   children: ReactNode;
   disabled?: boolean;
+  /** Background override, e.g. bg-bg inside a dialog whose own background is --surface. */
+  className?: string;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -35,7 +38,7 @@ export function SelectField({
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className="h-9 min-w-[9rem] rounded-[6px] bg-surface px-2.5 text-[0.95rem] text-text outline-none disabled:opacity-50"
+        className={`h-9 min-w-[9rem] rounded-[6px] px-2.5 text-[0.95rem] text-text outline-none disabled:opacity-50 ${className ?? 'bg-surface'}`}
       >
         {children}
       </select>
