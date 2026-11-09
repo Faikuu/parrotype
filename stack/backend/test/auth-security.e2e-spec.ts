@@ -76,6 +76,20 @@ describe('password reset and email verification (e2e)', () => {
     expect(me.body.user).toMatchObject({ emailVerified: false, twoFactorEnabled: false });
   });
 
+  it('a failed verification email does not fail the registration', async () => {
+    const server = app.getHttpServer();
+    const send = jest.spyOn(mail, 'send').mockRejectedValueOnce(new Error('smtp is down'));
+    try {
+      await request(server)
+        .post('/api/auth/register')
+        .send({ name: 'mf_nomail', email: 'mf-nomail@example.com', password: 'nomail-password-1' })
+        .expect(201);
+      expect(send).toHaveBeenCalledTimes(1);
+    } finally {
+      send.mockRestore();
+    }
+  });
+
   it('verifies the email from the link; the link works once', async () => {
     const server = app.getHttpServer();
     const token = tokenIn(mail.latestTo(A.email)!.text);

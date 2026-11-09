@@ -133,8 +133,11 @@ describe('ParroType API (e2e)', () => {
       data: { language: 'en', text, source: 'Ralph Waldo Emerson, Self-Reliance (1841)', length: text.length },
     });
 
+    // Other files may leave short English quotes behind, so check the one served is one of them.
     const quote = await request(server).get('/api/quotes/random?language=en&length=short').expect(200);
-    expect(quote.body).toMatchObject({ language: 'en', text });
+    const shortEnglish = await app.get(PrismaService).quote.findMany({ where: { language: 'en', length: { lt: 100 } } });
+    expect(quote.body).toMatchObject({ language: 'en' });
+    expect(shortEnglish.map((q) => q.text)).toContain(quote.body.text);
     expect(quote.body.length).toBeLessThan(100);
 
     // No Polish quotes were seeded, so this bucket is empty.
