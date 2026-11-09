@@ -1,19 +1,20 @@
 {
-  "name": "base",
+  "name": "parrotype",
   "private": true,
   "workspaces": [
     "./stack/*"
   ],
   "scripts": {
-    "initialize": "npm install && npm --prefix ./stack/backend install && npm --prefix ./stack/frontend install && npm run move:env",
-    "move:env": "cp .env.sample .env && cp ./stack/backend/.env.sample ./stack/backend/.env && cp ./stack/frontend/.env.sample ./stack/frontend/.env",
-    "start:dev": "npx concurrently \"docker compose up\" \"npm --prefix ./stack/frontend run start:dev\" \"npm --prefix ./stack/backend run start:dev\"",
-    "start:database": "docker compose up",
-    "start:backend:prod": "npm --prefix ./stack/backend run start:prod",
-    "start": "npx concurrently \"docker compose up\" \"npm --prefix ./stack/frontend start\" \"npm --prefix ./stack/backend run start\"",
-    "install:packages": "npm install && npm --prefix ./stack/backend install && npm --prefix ./stack/frontend install"
+    "setup": "npm install && npm --workspace stack/engine run build && node scripts/init-env.mjs && npm --workspace stack/backend run prisma:generate && npm --workspace stack/backend run prisma:deploy && npm --workspace stack/backend run seed",
+    "dev": "concurrently -n api,web -c yellow,green \"npm --workspace stack/backend run start:dev\" \"npm --workspace stack/frontend run dev\"",
+    "build": "npm --workspace stack/engine run build && npm --workspace stack/backend run build && npm --workspace stack/frontend run build",
+    "test": "npm --workspace stack/engine test && npm --workspace stack/backend test && npm --workspace stack/frontend test",
+    "lint": "npm --workspace stack/engine run lint && npm --workspace stack/backend run lint && npm --workspace stack/frontend run lint"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

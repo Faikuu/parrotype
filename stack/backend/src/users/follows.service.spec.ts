@@ -1,0 +1,175 @@
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { NotificationsService } from '../notifications/notifications.service';
+import { FollowsService, MAX_FOLLOWS } from './follows.service';
+
+type Mock = jest.Mock;
+
+function setup(opts: {
+  target?: { id: number; name: string } | null;
+  existing?: boolean;
+  count?: number;
+  createError?: unknown;
+} = {}) {
+  const prisma = {
+    user: {
+      findFirst: jest.fn().mockResolvedValue(opts.target === undefined ? { id: 2, name: 'bob', createdAt: new Date(0) } : opts.target),
+      findUnique: jest.fn().mockResolvedValue(opts.target === undefined ? { id: 2 } : opts.target),
+    },
+    follow: {
+      findUnique: jest.fn().mockResolvedValue(opts.existing ? { followerId: 1 } : null),
+      count: jest.fn().mockResolvedValue(opts.count ?? 0),
+      create: opts.createError
+        ? jest.fn().mockRejectedValue(opts.createError)
+        : jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+  };
+  // Interactive transactions run against the same mocks, so the count and create are checked together.
+  const withTx = Object.assign(prisma, {
+    writeTx: jest.fn((...args: unknown[]) => (args[0] as (tx: typeof prisma) => Promise<unknown>)(prisma)),
+  });
+  const notifications = { notifyFollow: jest.fn().mockResolvedValue(true) };
+  return { service: new FollowsService(withTx as unknown as PrismaService, notifications as unknown as NotificationsService), prisma: withTx, notifications };
+}
+
+const p2034 = () =>
+  new Prisma.PrismaClientKnownRequestError('Transaction failed due to a write conflict or a deadlock', {
+    code: 'P2034',
+    clientVersion: 'test',
+  });
+
+describe('FollowsService.follow', () => {
+  it('creates the follow and reports following', async () => {
+    const { service, prisma } = setup();
+    expect(await service.follow(1, 'bob')).toEqual({ following: true });
+    expect(prisma.follow.create).toHaveBeenCalledWith({ data: { followerId: 1, followeeId: 2 } });
+  });
+
+  it('is idempotent: an existing follow is not counted again or recreated', async () => {
+    const { service, prisma } = setup({ existing: true, count: MAX_FOLLOWS });
+    expect(await service.follow(1, 'bob')).toEqual({ following: true });
+    expect(prisma.follow.count).not.toHaveBeenCalled();
+    expect(prisma.follow.create).not.toHaveBeenCalled();
+  });
+
+  it('notifies the followee of a new follow, with the follower\'s name', async () => {
+    const { service, prisma, notifications } = setup();
+    (prisma.user.findUnique as Mock).mockResolvedValueOnce({ name: 'alice' });
+    await service.follow(1, 'bob');
+    expect(notifications.notifyFollow).toHaveBeenCalledWith(2, 'alice');
+  });
+
+  it('does not notify again for a follow that already exists', async () => {
+    const { service, notifications } = setup({ existing: true });
+    await service.follow(1, 'bob');
+    expect(notifications.notifyFollow).not.toHaveBeenCalled();
+  });
+
+  it('still follows when the notification fails', async () => {
+    const { service, prisma, notifications } = setup();
+    (prisma.user.findUnique as Mock).mockResolvedValueOnce({ name: 'alice' });
+    notifications.notifyFollow.mockRejectedValueOnce(new Error('db down'));
+    expect(await service.follow(1, 'bob')).toEqual({ following: true });
+    expect(prisma.follow.create).toHaveBeenCalled();
+  });
+
+  it('refuses to follow yourself with 400', async () => {
+    const { service, prisma } = setup({ target: { id: 1, name: 'alice' } });
+    await expect(service.follow(1, 'alice')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.follow.create).not.toHaveBeenCalled();
+  });
+
+  it('allows up to 1000 follows and refuses the 1001st with 400', async () => {
+    expect(MAX_FOLLOWS).toBe(1000);
+    const atLimit = setup({ count: 999 });
+    await expect(atLimit.service.follow(1, 'bob')).resolves.toEqual({ following: true });
+
+    const over = setup({ count: 1000 });
+    const err = await over.service.follow(1, 'bob').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as BadRequestException).message).toBe("You can follow at most 1000 people");
+    expect(over.prisma.follow.create).not.toHaveBeenCalled();
+  });
+
+  it('counts and inserts in one serializable transaction', async () => {
+    const { service, prisma } = setup({ count: 3 });
+    await service.follow(1, 'bob');
+    expect(prisma.writeTx).toHaveBeenCalledTimes(1);
+    expect(prisma.writeTx.mock.calls[0][1]).toEqual({ isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  });
+
+  it('retries a write conflict (P2034) so two racing follows cannot both pass the limit', async () => {
+    const { service, prisma } = setup({ count: 999 });
+    prisma.follow.create.mockRejectedValueOnce(p2034()).mockResolvedValueOnce({});
+    await expect(service.follow(1, 'bob')).resolves.toEqual({ following: true });
+    expect(prisma.writeTx).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after three conflicts, and rethrows the last one', async () => {
+    const { service, prisma } = setup({ count: 3 });
+    prisma.follow.create.mockRejectedValue(p2034());
+    await expect(service.follow(1, 'bob')).rejects.toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+    expect(prisma.writeTx).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retry the limit refusal: the count at the limit is a 400 inside the transaction', async () => {
+    const { service, prisma } = setup({ count: 1000 });
+    await expect(service.follow(1, 'bob')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.writeTx).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a concurrent duplicate insert as success', async () => {
+    const dup = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: 'test',
+    });
+    const { service } = setup({ createError: dup });
+    await expect(service.follow(1, 'bob')).resolves.toEqual({ following: true });
+  });
+
+  it('gives a 404 for an unknown or suspended user (the lookup excludes suspended accounts)', async () => {
+    const { service, prisma } = setup({ target: null });
+    await expect(service.follow(1, 'nobody')).rejects.toBeInstanceOf(NotFoundException);
+    expect((prisma.user.findFirst as Mock).mock.calls[0][0].where).toEqual({ nameLower: 'nobody', bannedAt: null });
+  });
+});
+
+describe('FollowsService.unfollow', () => {
+  it('removes the follow and is idempotent when there is none', async () => {
+    const { service, prisma } = setup();
+    expect(await service.unfollow(1, 'bob')).toEqual({ following: false });
+    expect(prisma.follow.deleteMany).toHaveBeenCalledWith({ where: { followerId: 1, followeeId: 2 } });
+  });
+
+  it('still removes a follow of a suspended user, but an unknown name is 404', async () => {
+    const { service, prisma } = setup({ target: { id: 2, name: 'bob' } });
+    await service.unfollow(1, 'Bob');
+    expect((prisma.user.findUnique as Mock).mock.calls[0][0].where).toEqual({ nameLower: 'bob' });
+
+    const none = setup({ target: null });
+    await expect(none.service.unfollow(1, 'nobody')).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('FollowsService.socialCounts', () => {
+  it('counts only non-suspended followers and followees, and is false for anonymous viewers', async () => {
+    const { service, prisma } = setup();
+    (prisma.follow as unknown as { count: Mock }).count
+      .mockResolvedValueOnce(4)
+      .mockResolvedValueOnce(2);
+    const counts = await service.socialCounts(2);
+    expect(counts).toEqual({ followers: 4, following: 2, isFollowing: false });
+    expect(prisma.follow.count.mock.calls[0][0]).toEqual({ where: { followeeId: 2, follower: { bannedAt: null } } });
+    expect(prisma.follow.count.mock.calls[1][0]).toEqual({ where: { followerId: 2, followee: { bannedAt: null } } });
+    expect(prisma.follow.count).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports isFollowing for a signed-in viewer, and never for yourself', async () => {
+    const { service, prisma } = setup();
+    prisma.follow.count.mockResolvedValue(1);
+    expect((await service.socialCounts(2, 1)).isFollowing).toBe(true);
+    expect((await service.socialCounts(2, 2)).isFollowing).toBe(false);
+  });
+});

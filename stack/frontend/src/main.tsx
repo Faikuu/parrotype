@@ -1,28 +1,31 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
-import { BrowserRouter } from 'react-router-dom';
-// import { ReactQueryDevtools } from '@tanstack/react-query-devtools'; 
-import { AppRouter } from './router';
-import './index.css'
-import './i18n.ts'
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import './index.css';
+import './i18n';
+import './themes/fonts';
+import App from './App';
+import { useSettings } from './store/settings';
+import { applyTestFont, applyTheme, applyUiFont, applyUiScale, resolveTheme } from './themes/themes';
 
+// Apply the stored appearance before the first render so there's no flash of the default theme.
+const initial = useSettings.getState();
+applyTheme(resolveTheme(initial.theme, initial.customTheme));
+applyTestFont(initial.font, initial.fontSize);
+applyUiFont(initial.uiFont);
+applyUiScale(initial.uiScale);
+document.documentElement.lang = initial.uiLanguage;
 
 const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        refetchOnWindowFocus: false,
-      },
-    },
+  defaultOptions: {
+    queries: { staleTime: 30_000, refetchOnWindowFocus: false },
+  },
 });
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-    <BrowserRouter>
-        <React.StrictMode>
-            <QueryClientProvider client={queryClient}>
-                <AppRouter />
-                {/* <ReactQueryDevtools initialIsOpen={false}/> */}
-            </QueryClientProvider>
-        </React.StrictMode>
-    </BrowserRouter>
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
+  </StrictMode>,
 );

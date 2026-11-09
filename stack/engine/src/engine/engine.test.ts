@@ -1,0 +1,550 @@
+import { describe, it, expect } from 'vitest';
+import {
+  createInitialState,
+  engineReducer,
+  getCharStates,
+  isWordCorrect,
+  needsMoreWords,
+  elapsedMs,
+  timeLeftMs,
+  MAX_EXTRA_CHARS,
+} from './engine';
+import type { EngineState, TestConfig } from './types';
+
+const base: TestConfig = {
+  mode: 'words', time: 15, words: 10, quoteLength: 'short', pangramCount: 1,
+  punctuation: false, numbers: false, language: 'en', customText: '', stopOnError: 'off',
+  noBackspace: false, suddenDeath: false, codeLanguage: 'js',
+};
+
+function make(words: string[], config: Partial<TestConfig> = {}): EngineState {
+  return createInitialState({ ...base, ...config }, words);
+}
+
+function typeText(state: EngineState, text: string, at: number, step = 100): EngineState {
+  let s = state;
+  let t = at;
+  for (const ch of text) {
+    if (ch === ' ') s = engineReducer(s, { type: 'space', at: t });
+    else s = engineReducer(s, { type: 'char', char: ch, at: t });
+    t += step;
+  }
+  return s;
+}
+
+describe('start and basic typing', () => {
+  it('starts the test on the first char', () => {
+    const s = engineReducer(make(['cat']), { type: 'char', char: 'c', at: 100 });
+    expect(s.status).toBe('running');
+    expect(s.startedAt).toBe(100);
+    expect(s.keystrokes).toEqual([{ at: 100, correct: true, expected: 'c' }]);
+    expect(s.typed[0]).toBe('c');
+  });
+
+  it('ignores space on an empty word', () => {
+    const s = make(['cat']);
+    expect(engineReducer(s, { type: 'space', at: 5 })).toBe(s);
+  });
+
+  it('records a keystroke for every char with correctness', () => {
+    const s = typeText(make(['cat']), 'cx', 0);
+    expect(s.keystrokes.map((k) => k.correct)).toEqual([true, false]);
+  });
+
+  it('space moves to the next word and marks untyped chars of the left word as missed', () => {
+    const s = typeText(make(['hello', 'world']), 'hel ', 0);
+    expect(s.current).toBe(1);
+    const states = getCharStates(s, 0).map((c) => c.state);
+    expect(states).toEqual(['correct', 'correct', 'correct', 'missed', 'missed']);
+  });
+
+  it('isWordCorrect is true only for an exact match', () => {
+    const s = typeText(make(['cat', 'dog']), 'cat ', 0);
+    expect(isWordCorrect(s, 0)).toBe(true);
+    const wrong = typeText(make(['cat', 'dog']), 'cxt ', 0);
+    expect(isWordCorrect(wrong, 0)).toBe(false);
+  });
+});
+
+describe('extra characters', () => {
+  it('allows at most 20 extra chars per word', () => {
+    let s = typeText(make(['abc', 'def']), 'a', 0);
+    for (let i = 0; i < 30; i++) s = engineReducer(s, { type: 'char', char: 'z', at: 200 + i });
+    expect(s.typed[0]).toBe('a' + 'z'.repeat(MAX_EXTRA_CHARS + 2));
+    expect(s.typed[0]?.length).toBe(3 + MAX_EXTRA_CHARS);
+    expect(s.keystrokes.length).toBe(31);
+    const extras = getCharStates(s, 0).filter((c) => c.state === 'extra');
+    expect(extras).toHaveLength(MAX_EXTRA_CHARS);
+  });
+});
+
+describe('backspace', () => {
+  it('removes the last char of the current word', () => {
+    const s = engineReducer(typeText(make(['cat']), 'ca', 0), { type: 'backspace', at: 500 });
+    expect(s.typed[0]).toBe('c');
+  });
+
+  it('on an empty word goes back to an incorrect previous word and keeps its text', () => {
+    const s = typeText(make(['cat', 'dog']), 'cx ', 0);
+    expect(s.current).toBe(1);
+    const back = engineReducer(s, { type: 'backspace', at: 500 });
+    expect(back.current).toBe(0);
+    expect(back.typed[0]).toBe('cx');
+    expect(back.typed).toHaveLength(1);
+  });
+
+  it('on an empty word does not go back to a correct previous word', () => {
+    const s = typeText(make(['cat', 'dog']), 'cat ', 0);
+    expect(engineReducer(s, { type: 'backspace', at: 500 })).toBe(s);
+  });
+
+  it('word backspace clears the current word', () => {
+    const s = engineReducer(typeText(make(['cat', 'dog']), 'cat do', 0), { type: 'backspace', at: 900, word: true });
+    expect(s.current).toBe(1);
+    expect(s.typed[1]).toBe('');
+  });
+
+  it('word backspace on an empty word goes back to the incorrect previous word and clears it', () => {
+    const s = typeText(make(['cat', 'dog']), 'cx ', 0);
+    const back = engineReducer(s, { type: 'backspace', at: 500, word: true });
+    expect(back.current).toBe(0);
+    expect(back.typed[0]).toBe('');
+  });
+
+  it('word backspace on an empty word does not go back to a correct word', () => {
+    const s = typeText(make(['cat', 'dog']), 'cat ', 0);
+    expect(engineReducer(s, { type: 'backspace', at: 500, word: true })).toBe(s);
+  });
+});
+
+describe('stopOnError', () => {
+  it("'letter': a wrong char is recorded as an error but not inserted", () => {
+    const s = engineReducer(make(['cat'], { stopOnError: 'letter' }), { type: 'char', char: 'x', at: 0 });
+    expect(s.typed[0]).toBe('');
+    expect(s.keystrokes).toEqual([{ at: 0, correct: false, expected: 'c' }]);
+    const ok = engineReducer(s, { type: 'char', char: 'c', at: 100 });
+    expect(ok.typed[0]).toBe('c');
+  });
+
+  it("'word': space is blocked while the current word is wrong", () => {
+    let s = typeText(make(['cat', 'dog'], { stopOnError: 'word' }), 'cx', 0);
+    const blocked = engineReducer(s, { type: 'space', at: 500 });
+    expect(blocked.current).toBe(0);
+    s = engineReducer(s, { type: 'backspace', at: 600 });
+    s = engineReducer(s, { type: 'backspace', at: 650 });
+    s = engineReducer(s, { type: 'space', at: 700 });
+    expect(s.current).toBe(0);
+    s = typeText(s, 'cat', 1000);
+    s = engineReducer(s, { type: 'space', at: 1500 });
+    expect(s.current).toBe(1);
+  });
+
+  it("'word': a wrong word with extra chars also blocks space", () => {
+    const s = typeText(make(['cat', 'dog'], { stopOnError: 'word' }), 'catz', 0);
+    expect(engineReducer(s, { type: 'space', at: 500 }).current).toBe(0);
+  });
+});
+
+describe('finishing in words mode', () => {
+  it('finishes on the last correct char of the last word', () => {
+    const s = typeText(make(['hi', 'yo']), 'hi yo', 1000, 100);
+    expect(s.status).toBe('finished');
+    expect(s.finishedAt).toBe(1000 + 4 * 100);
+  });
+
+  it('does not finish on a wrong last char until space', () => {
+    let s = typeText(make(['hi']), 'hx', 0);
+    expect(s.status).toBe('running');
+    s = engineReducer(s, { type: 'space', at: 500 });
+    expect(s.status).toBe('finished');
+  });
+
+  it('does not finish on the last char of a non-last word', () => {
+    const s = typeText(make(['hi', 'yo']), 'hi', 0);
+    expect(s.status).toBe('running');
+    expect(s.current).toBe(0);
+  });
+
+  it('custom, quote and pangram modes finish like words mode', () => {
+    for (const mode of ['custom', 'quote', 'pangram'] as const) {
+      const s = typeText(make(['ok'], { mode }), 'ok', 0);
+      expect(s.status).toBe('finished');
+    }
+  });
+
+  it('ignores actions after finished, except reset', () => {
+    const done = typeText(make(['hi']), 'hi', 0);
+    expect(engineReducer(done, { type: 'char', char: 'x', at: 900 })).toBe(done);
+    expect(engineReducer(done, { type: 'backspace', at: 900 })).toBe(done);
+    expect(engineReducer(done, { type: 'finish', at: 900 })).toBe(done);
+    const reset = engineReducer(done, { type: 'reset', words: ['new'], config: base });
+    expect(reset.status).toBe('idle');
+    expect(reset.words).toEqual(['new']);
+  });
+
+  it('explicit finish ends a running test and is ignored when idle', () => {
+    const idle = make(['cat']);
+    expect(engineReducer(idle, { type: 'finish', at: 10 })).toBe(idle);
+    const running = typeText(make(['cat']), 'c', 0);
+    const done = engineReducer(running, { type: 'finish', at: 700 });
+    expect(done.status).toBe('finished');
+    expect(done.finishedAt).toBe(700);
+  });
+
+  it('newline is ignored outside zen mode', () => {
+    const s = typeText(make(['cat']), 'ca', 0);
+    expect(engineReducer(s, { type: 'newline', at: 300 })).toBe(s);
+  });
+});
+
+describe('time mode', () => {
+  const time15 = { mode: 'time' as const, time: 15 as const };
+
+  it('does not finish on the last word', () => {
+    const s = typeText(make(['hi'], time15), 'hi', 0);
+    expect(s.status).toBe('running');
+  });
+
+  it('finishes on tick once the time has elapsed', () => {
+    let s = typeText(make(['hello'], time15), 'h', 0);
+    s = engineReducer(s, { type: 'tick', at: 14999 });
+    expect(s.status).toBe('running');
+    s = engineReducer(s, { type: 'tick', at: 15000 });
+    expect(s.status).toBe('finished');
+    expect(s.finishedAt).toBe(15000);
+  });
+
+  it('clamps finishedAt to startedAt + time when a late tick arrives', () => {
+    let s = typeText(make(['hello'], time15), 'h', 1000);
+    s = engineReducer(s, { type: 'tick', at: 1000 + 16500 });
+    expect(s.status).toBe('finished');
+    expect(s.finishedAt).toBe(1000 + 15000);
+  });
+
+  it('records one sample per whole second with wpm/raw from that second', () => {
+    let s = make(['hello', 'world'], { ...time15, time: 60 });
+    s = typeText(s, 'hel', 100, 200); // keystrokes at rel 0, 200, 400
+    s = engineReducer(s, { type: 'tick', at: 1100 });
+    expect(s.samples).toHaveLength(1);
+    expect(s.samples[0]).toEqual({ second: 1, wpm: 36, raw: 36, errors: 0 });
+    s = engineReducer(s, { type: 'char', char: 'l', at: 1500 }); // rel 1400
+    s = engineReducer(s, { type: 'tick', at: 2200 });
+    expect(s.samples).toHaveLength(2);
+    expect(s.samples[1]).toEqual({ second: 2, wpm: 12, raw: 12, errors: 0 });
+  });
+
+  it('puts errors from the last second on its sample and then resets the counter', () => {
+    let s = make(['hello'], { ...time15, time: 60 });
+    s = engineReducer(s, { type: 'char', char: 'x', at: 200 }); // wrong
+    expect(s.errorsThisSecond).toBe(1);
+    s = engineReducer(s, { type: 'tick', at: 1200 });
+    expect(s.samples[0]?.errors).toBe(1);
+    expect(s.samples[0]?.wpm).toBe(0);
+    expect(s.samples[0]?.raw).toBe(12);
+    expect(s.errorsThisSecond).toBe(0);
+  });
+
+  it('ignores ticks when not running', () => {
+    const s = make(['hello'], time15);
+    expect(engineReducer(s, { type: 'tick', at: 99999 })).toBe(s);
+  });
+
+  it('needsMoreWords is true when fewer than 40 words remain', () => {
+    expect(needsMoreWords(make(new Array<string>(50).fill('a'), time15))).toBe(false);
+    expect(needsMoreWords(make(new Array<string>(30).fill('a'), time15))).toBe(true);
+    expect(needsMoreWords(make(new Array<string>(30).fill('a'), { mode: 'words' }))).toBe(false);
+  });
+
+  it('append adds words', () => {
+    const s = engineReducer(make(['a'], time15), { type: 'append', words: ['b', 'c'] });
+    expect(s.words).toEqual(['a', 'b', 'c']);
+  });
+
+  it('elapsedMs and timeLeftMs', () => {
+    const idle = make(['a'], time15);
+    expect(elapsedMs(idle, 5000)).toBe(0);
+    expect(timeLeftMs(idle, 5000)).toBe(15000);
+    const s = typeText(make(['hello'], time15), 'h', 1000);
+    expect(elapsedMs(s, 4000)).toBe(3000);
+    expect(timeLeftMs(s, 4000)).toBe(12000);
+    expect(timeLeftMs(s, 1000 + 60000)).toBe(0);
+    expect(timeLeftMs(make(['a'], { mode: 'words' }), 0)).toBeNull();
+  });
+});
+
+describe('getCharStates', () => {
+  it('shows pending chars on the current word and extras after the target', () => {
+    const s = typeText(make(['ab']), 'ax', 0);
+    expect(getCharStates(s, 0).map((c) => c.state)).toEqual(['correct', 'incorrect']);
+    const over = engineReducer(s, { type: 'char', char: 'q', at: 500 });
+    expect(getCharStates(over, 0).at(-1)).toEqual({ char: 'q', state: 'extra' });
+    const future = getCharStates(make(['ab', 'cd']), 1).map((c) => c.state);
+    expect(future).toEqual(['pending', 'pending']);
+  });
+});
+
+describe('zen mode', () => {
+  const zen = { mode: 'zen' as const };
+
+  it('uses the typed text as the target and never marks chars wrong', () => {
+    let s = make([], zen);
+    expect(s.words).toEqual(['']);
+    s = typeText(s, 'hi x', 0);
+    expect(s.words).toEqual(['hi', 'x']);
+    expect(s.typed).toEqual(['hi', 'x']);
+    expect(s.keystrokes.every((k) => k.correct)).toBe(true);
+    expect(getCharStates(s, 0).every((c) => c.state === 'correct')).toBe(true);
+    expect(s.status).toBe('running');
+  });
+
+  it('space does not finish, and space on an empty word is a no-op', () => {
+    const s = typeText(make([], zen), 'hi ', 0);
+    expect(s.status).toBe('running');
+    const twice = engineReducer(s, { type: 'space', at: 900 });
+    expect(twice).toBe(s);
+  });
+
+  it('backspace keeps words in step with typed', () => {
+    const s = engineReducer(typeText(make([], zen), 'hi', 0), { type: 'backspace', at: 300 });
+    expect(s.typed[0]).toBe('h');
+    expect(s.words).toEqual(['h']);
+  });
+
+  it('keeps words equal to the typed words, without a trailing empty word, after a space', () => {
+    const s = typeText(make([], zen), 'hi ', 0);
+    expect(s.typed).toEqual(['hi', '']);
+    expect(s.words).toEqual(['hi']);
+    expect(s.current).toBe(1);
+  });
+
+  it('backspace on an empty word goes back over the typed space', () => {
+    const s = typeText(make([], zen), 'hi ', 0);
+    const back = engineReducer(s, { type: 'backspace', at: 300 });
+    expect(back.current).toBe(0);
+    expect(back.typed).toEqual(['hi']);
+    expect(back.words).toEqual(['hi']);
+    // Typing again continues the same word.
+    const more = engineReducer(back, { type: 'char', char: 'x', at: 400 });
+    expect(more.typed).toEqual(['hix']);
+    expect(more.words).toEqual(['hix']);
+  });
+
+  it('word backspace on an empty word goes back over the space and clears the word', () => {
+    const s = typeText(make([], zen), 'hi there ', 0);
+    const back = engineReducer(s, { type: 'backspace', at: 900, word: true });
+    expect(back.current).toBe(1);
+    expect(back.typed).toEqual(['hi', '']);
+    expect(back.words).toEqual(['hi']);
+    const again = engineReducer(back, { type: 'backspace', at: 950, word: true });
+    expect(again.current).toBe(0);
+    expect(again.typed).toEqual(['']);
+    expect(again.words).toEqual(['']);
+  });
+
+  it('backspace does nothing on the first empty word', () => {
+    const s = make([], zen);
+    expect(engineReducer(s, { type: 'backspace', at: 5 })).toBe(s);
+  });
+
+  it('shift+enter (newline) finishes', () => {
+    const s = engineReducer(typeText(make([], zen), 'hi', 0), { type: 'newline', at: 500 });
+    expect(s.status).toBe('finished');
+    expect(s.finishedAt).toBe(500);
+  });
+
+  it('newline on idle zen does nothing', () => {
+    const s = make([], zen);
+    expect(engineReducer(s, { type: 'newline', at: 5 })).toBe(s);
+  });
+});
+
+describe('reducer purity', () => {
+  it('does not mutate the previous state', () => {
+    const s = make(['cat', 'dog']);
+    const snapshot = JSON.stringify(s);
+    typeText(s, 'cat d', 0);
+    expect(JSON.stringify(s)).toBe(snapshot);
+  });
+});
+
+describe('keystroke.expected', () => {
+  it('is the target char at the cursor, for correct and wrong keys alike', () => {
+    const s = typeText(make(['cat']), 'cx', 0);
+    expect(s.keystrokes.map((k) => [k.expected, k.correct])).toEqual([
+      ['c', true],
+      ['a', false],
+    ]);
+  });
+
+  it("is '' for extra chars typed past the end of a word", () => {
+    const s = typeText(make(['ab', 'cd']), 'abz', 0);
+    expect(s.keystrokes.map((k) => k.expected)).toEqual(['a', 'b', '']);
+    expect(s.keystrokes[2]?.correct).toBe(false);
+  });
+
+  it("is '' in zen", () => {
+    const s = typeText(createInitialState({ ...base, mode: 'zen' }, []), 'hi', 0);
+    expect(s.keystrokes.map((k) => k.expected)).toEqual(['', '']);
+  });
+
+  it('is the cursor target with stopOnError letter (the wrong char is not inserted)', () => {
+    let s = make(['cat'], { stopOnError: 'letter' });
+    s = engineReducer(s, { type: 'char', char: 'x', at: 0 });
+    s = engineReducer(s, { type: 'char', char: 'c', at: 100 });
+    expect(s.keystrokes.map((k) => k.expected)).toEqual(['c', 'c']);
+  });
+
+  it('keeps the original case of the target', () => {
+    const s = typeText(make(['Hi']), 'h', 0);
+    expect(s.keystrokes[0]?.expected).toBe('H');
+  });
+});
+
+describe('daily and weak modes finish like words mode', () => {
+  for (const mode of ['daily', 'weak'] as const) {
+    it(`${mode}: finishes when the last char of the last word is typed`, () => {
+      const s = typeText(make(['cat', 'dog'], { mode }), 'cat dog', 0);
+      expect(s.status).toBe('finished');
+      expect(s.finishedAt).toBe(600);
+    });
+
+    it(`${mode}: finishes on space over the last word`, () => {
+      const s = typeText(make(['cat', 'dog'], { mode }), 'cat dog ', 0);
+      expect(s.status).toBe('finished');
+    });
+
+    it(`${mode}: does not finish on the time limit (only time mode does)`, () => {
+      let s = typeText(make(['cat', 'dog'], { mode, time: 15 }), 'ca', 0);
+      s = engineReducer(s, { type: 'tick', at: 60_000 });
+      expect(s.status).toBe('running');
+    });
+  }
+});
+
+describe('event log', () => {
+  it('starts empty and records the starting char at t=0', () => {
+    const s0 = make(['cat']);
+    expect(s0.events).toEqual([]);
+    expect(s0.failed).toBe(false);
+    const s = engineReducer(s0, { type: 'char', char: 'c', at: 500 });
+    expect(s.events).toEqual([{ t: 0, k: 'c', ch: 'c' }]);
+  });
+
+  it('records every accepted action with its time relative to the start', () => {
+    let s = make(['ab', 'cd']);
+    s = engineReducer(s, { type: 'char', char: 'a', at: 1000 });
+    s = engineReducer(s, { type: 'char', char: 'x', at: 1150 });
+    s = engineReducer(s, { type: 'backspace', at: 1200 });
+    s = engineReducer(s, { type: 'backspace', at: 1300, word: true });
+    s = engineReducer(s, { type: 'char', char: 'a', at: 1400 });
+    s = engineReducer(s, { type: 'char', char: 'b', at: 1500 });
+    s = engineReducer(s, { type: 'space', at: 1600 });
+    expect(s.events).toEqual([
+      { t: 0, k: 'c', ch: 'a' },
+      { t: 150, k: 'c', ch: 'x' },
+      { t: 200, k: 'b' },
+      { t: 300, k: 'B' },
+      { t: 400, k: 'c', ch: 'a' },
+      { t: 500, k: 'c', ch: 'b' },
+      { t: 600, k: 's' },
+    ]);
+  });
+
+  it('does not log actions that change nothing, idle or running', () => {
+    let s = make(['a']);
+    s = engineReducer(s, { type: 'space', at: 1 });      // idle: no-op
+    s = engineReducer(s, { type: 'backspace', at: 2 });  // idle: no-op
+    s = engineReducer(s, { type: 'newline', at: 3 });    // idle: no-op
+    expect(s.events).toEqual([]);
+    s = engineReducer(s, { type: 'char', char: 'z', at: 10 });  // wrong char, logged
+    s = engineReducer(s, { type: 'backspace', at: 20 });        // removes z, logged
+    expect(s.events.map((e) => e.k)).toEqual(['c', 'b']);
+    const noop = engineReducer(s, { type: 'backspace', at: 30 }); // nothing left in the only word
+    expect(noop).toBe(s);
+    s = engineReducer(s, { type: 'space', at: 40 });    // empty word: no-op
+    expect(s.events.map((e) => e.k)).toEqual(['c', 'b']);
+    s = engineReducer(s, { type: 'char', char: 'a', at: 50 }); // finishes words mode
+    expect(s.status).toBe('finished');
+    expect(s.events.map((e) => e.k)).toEqual(['c', 'b', 'c']);
+    const after = engineReducer(s, { type: 'char', char: 'a', at: 60 });
+    expect(after).toBe(s);
+  });
+
+  it('does not log finish or tick', () => {
+    const s = typeText(make(['ab']), 'a', 0);
+    const finished = engineReducer(s, { type: 'finish', at: 500 });
+    expect(finished.events).toEqual(s.events);
+  });
+});
+
+describe('noBackspace', () => {
+  const cfgNB: Partial<TestConfig> = { noBackspace: true };
+
+  it('makes backspace and word backspace no-ops', () => {
+    const s = typeText(make(['cat', 'dog'], cfgNB), 'cx', 0);
+    const b = engineReducer(s, { type: 'backspace', at: 500 });
+    expect(b.typed).toEqual(s.typed);
+    expect(b.current).toBe(s.current);
+    const w = engineReducer(s, { type: 'backspace', at: 600, word: true });
+    expect(w.typed).toEqual(s.typed);
+  });
+
+  it('does not step back into the previous word', () => {
+    const s = typeText(make(['cat', 'dog'], cfgNB), 'cxt ', 0);
+    expect(engineReducer(s, { type: 'backspace', at: 900 }).current).toBe(1);
+  });
+
+  it('does not log the ignored backspace', () => {
+    const s = typeText(make(['cat'], cfgNB), 'c', 0);
+    expect(engineReducer(s, { type: 'backspace', at: 100 }).events).toEqual(s.events);
+  });
+});
+
+describe('sudden death', () => {
+  const sd: Partial<TestConfig> = { suddenDeath: true };
+
+  it('finishes on the first wrong char with failed=true', () => {
+    const s = typeText(make(['cat', 'dog'], sd), 'cx', 0);
+    expect(s.status).toBe('finished');
+    expect(s.failed).toBe(true);
+    expect(s.finishedAt).toBe(100);
+    expect(s.typed[0]).toBe('cx');
+  });
+
+  it('fails on an extra char past the end of the word', () => {
+    const s = typeText(make(['cat', 'dog'], sd), 'catt', 0);
+    expect(s.status).toBe('finished');
+    expect(s.failed).toBe(true);
+    expect(s.finishedAt).toBe(300);
+  });
+
+  it('fails in letter mode too, without inserting the wrong char', () => {
+    const s = typeText(make(['cat', 'dog'], { ...sd, stopOnError: 'letter' }), 'cx', 0);
+    expect(s.status).toBe('finished');
+    expect(s.failed).toBe(true);
+    expect(s.typed[0]).toBe('c');
+  });
+
+  it('a wrong space on an incomplete word does not fail', () => {
+    const s = typeText(make(['cat', 'dog'], sd), 'c ', 0);
+    expect(s.status).toBe('running');
+    expect(s.failed).toBe(false);
+  });
+
+  it('a clean run is not failed, and finishing normally keeps failed false', () => {
+    const s = typeText(make(['ab'], sd), 'ab', 0);
+    expect(s.status).toBe('finished');
+    expect(s.failed).toBe(false);
+  });
+
+  it('is not triggered in zen, where every char is a correct char', () => {
+    const s = typeText(make([], { ...sd, mode: 'zen' }), 'abc', 0);
+    expect(s.status).toBe('running');
+    expect(s.failed).toBe(false);
+  });
+
+  it('logs the failing char as an event', () => {
+    const s = typeText(make(['cat'], sd), 'cx', 0);
+    expect(s.events).toEqual([{ t: 0, k: 'c', ch: 'c' }, { t: 100, k: 'c', ch: 'x' }]);
+  });
+});

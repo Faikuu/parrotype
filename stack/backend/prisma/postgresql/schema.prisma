@@ -1,0 +1,251 @@
+// GENERATED from prisma/schema.template.prisma by scripts/prisma-schema.mjs. Do not edit.
+// Prisma schema for ParroType. This is the single source for every database engine.
+// scripts/prisma-schema.mjs renders it into prisma/<provider>/schema.prisma; edit this file, not the copies.
+// Migrations: prisma/<provider>/migrations, applied through `npm run prisma:migrate` / `npm run prisma:deploy`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String   @unique
+  /// name in lower case; usernames are unique regardless of case.
+  nameLower    String   @unique
+  email        String   @unique @db.VarChar(254)
+  passwordHash String
+  /// Bumped on logout. A session token carries the version it was issued with.
+  tokenVersion Int      @default(0)
+  /// Set by an admin ban. A banned user cannot log in and their sessions are rejected.
+  bannedAt     DateTime?
+  banReason    String?  @db.Text
+  createdAt    DateTime @default(now())
+  /// Set when the user follows the link in the verification email. Unverified users are kept off leaderboards.
+  emailVerifiedAt DateTime?
+  /// base32, AES-256-GCM encrypted at rest (src/auth). null = two-factor sign-in is off.
+  totpSecret      String?
+  /// Set when two-factor sign-in is switched on. A pending secret (set up but not confirmed) has this null.
+  totpEnabledAt   DateTime?
+  /// Failed second-factor checks (TOTP, recovery code) since the last success or lockout. Reaching 8 locks the second factor.
+  twoFactorFailures    Int       @default(0)
+  /// While in the future, two-factor checks are refused with 429 without reading the code.
+  twoFactorLockedUntil DateTime?
+  /// The TOTP step (unix seconds / 30) of the last accepted code. A code at or below it is refused (replay).
+  totpLastStep         Int?
+  /// Random nonce of the newest login ticket (16 bytes, hex). Only the ticket carrying it can be spent; spending clears it.
+  loginTicketNonce     String?
+  /// Permission groups this user belongs to. Effective permissions are read on every request; see src/permissions.
+  groups       UserGroup[]
+  results      Result[]
+  recoveryCodes   RecoveryCode[]
+  authTokens      AuthToken[]
+  notifications   Notification[]
+  following       Follow[]  @relation("follower")
+  followers       Follow[]  @relation("followee")
+  reportsMade     Report[]  @relation("reporter")
+  reportsReceived Report[]  @relation("target")
+}
+
+/// A one-time token for a password reset or an email verification. The raw token is only ever emailed.
+model AuthToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  /// "reset" | "verify"
+  purpose   String
+  /// sha256 hex of the random token
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, purpose])
+}
+
+/// A two-factor recovery code. Only its sha256 is stored; a code works once.
+model RecoveryCode {
+  id       Int       @id @default(autoincrement())
+  userId   Int
+  /// sha256 hex
+  codeHash String
+  usedAt   DateTime?
+  user     User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+
+model Notification {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  /// "follow" | "report_outcome" | "pb_beaten" | "announcement" | "event_start" (reserved)
+  kind      String
+  /// JSON, at most 1000 characters
+  data      String    @db.Text
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, readAt, createdAt])
+}
+
+/// A site banner. Shown while now is between startsAt and endsAt (or forever when endsAt is null).
+model Announcement {
+  id        Int       @id @default(autoincrement())
+  /// At most 280 characters. A text type, so a 280-character message fits on MySQL too.
+  message   String    @db.Text
+  /// "info" | "warning"
+  level     String    @default("info")
+  startsAt  DateTime
+  endsAt    DateTime?
+  /// No relation to User, so announcements outlive deleted admins (same as AdminAction).
+  createdBy Int?
+  createdAt DateTime  @default(now())
+  @@index([startsAt])
+}
+
+/// A timed typing event. The text is hidden from the public API until startsAt.
+model Event {
+  id          Int      @id @default(autoincrement())
+  /// /^[a-z0-9-]{3,40}$/
+  slug        String   @unique
+  /// At most 80 characters.
+  title       String
+  /// At most 500 characters.
+  description String   @default("") @db.Text
+  language    String
+  /// 20 to 1000 characters.
+  text        String   @db.Text
+  startsAt    DateTime
+  endsAt      DateTime
+  /// No relation to User, so events outlive deleted admins (same as AdminAction).
+  createdBy   Int?
+  createdAt   DateTime @default(now())
+  results     Result[]
+  @@index([startsAt, endsAt])
+}
+
+model Quote {
+  id       Int    @id @default(autoincrement())
+  language String // "en" | "pl" | "de" | "es"
+  text     String @db.Text
+  source   String @db.Text
+  length   Int // text length in chars
+  @@index([language])
+}
+
+model Result {
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mode           String // time|words|quote|zen|pangram|custom|daily|weak|event
+  mode2          String // "15" | "60" | "25" | "short" | "3" | "custom" | YYYY-MM-DD ...
+  language       String
+  wpm            Float
+  rawWpm         Float
+  accuracy       Float
+  consistency    Float
+  durationMs     Int
+  correctChars   Int
+  incorrectChars Int
+  extraChars     Int
+  missedChars    Int
+  punctuation    Boolean
+  numbers        Boolean
+  createdAt      DateTime @default(now())
+  /// Set when the result's keystroke replay reproduces its stats (2.5). Only verified results rank on leaderboards.
+  verified       Boolean  @default(false)
+  /// Set for mode "event" (mode2 is the event slug). Null otherwise.
+  eventId        Int?
+  event          Event?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  replay         ResultReplay?
+  @@index([userId, createdAt])
+  @@index([mode, mode2, language, wpm])
+  // The badge's best wpm for one user and filter: a lookup on this index, not a scan of the group.
+  @@index([userId, mode, mode2, language, wpm])
+  @@index([eventId, wpm])
+}
+
+/// The keystroke replay of a verified result. Stored only when the server could reproduce the stats.
+model ResultReplay {
+  resultId Int    @id
+  /// JSON: { v: 1, words: string[], events: EngineEvent[], code?: {...} }. Can be large, hence the MySQL MEDIUMTEXT.
+  data     String @db.Text
+  /// sha256 hex of the canonical replay. Unique, so one replay cannot be stored under two results.
+  hash     String? @unique
+  result   Result @relation(fields: [resultId], references: [id], onDelete: Cascade)
+}
+
+model Follow {
+  followerId Int
+  followeeId Int
+  createdAt  DateTime @default(now())
+  follower   User @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followee   User @relation("followee", fields: [followeeId], references: [id], onDelete: Cascade)
+  @@id([followerId, followeeId])
+  @@index([followeeId])
+}
+
+model Report {
+  id         Int       @id @default(autoincrement())
+  reporterId Int
+  targetId   Int
+  reason     String // "name" | "cheating" | "other"
+  details    String?   @db.Text // at most 500 characters
+  status     String    @default("open") // "open" | "resolved" | "dismissed"
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+  reporter   User @relation("reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  target     User @relation("target", fields: [targetId], references: [id], onDelete: Cascade)
+  @@index([status, createdAt])
+}
+
+/// Audit log of admin and CLI actions. No relation to User, so entries outlive deleted admins.
+model AdminAction {
+  id        Int      @id @default(autoincrement())
+  adminId   Int?     // null for CLI actions and for admins who were deleted later
+  /// Values: ban | unban | delete_result | resolve_report | dismiss_report | group_create | group_update | group_delete
+  /// | group_permissions | group_member_add | group_member_remove | user_groups | user_rename | user_revoke_sessions
+  /// | user_delete | quote_create | quote_update | quote_delete | race_close | announcement_create | announcement_update
+  /// | announcement_delete | event_create | event_update | event_delete | user_2fa_reset
+  /// (2.3 rows also hold grant_admin | revoke_admin, written by the old CLI.)
+  action    String
+  target    String   // e.g. "user:42", "result:9", "report:3", "group:2"
+  note      String?  @db.Text // short, compact JSON or plain text
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+}
+
+/// A named set of permissions. Users can be in any number of groups; the Administrators group is system.
+model PermissionGroup {
+  id          Int      @id @default(autoincrement())
+  /// 2–40 characters. Unique as written; duplicates that differ only by case are refused by the API.
+  name        String   @unique
+  /// At most 200 characters.
+  description String   @default("")
+  /// System groups can't be deleted or renamed. Administrators always resolves to every catalog permission.
+  system      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  permissions GroupPermission[]
+  members     UserGroup[]
+}
+
+model GroupPermission {
+  groupId    Int
+  /// A key of the catalog in src/permissions/catalog.ts. Unknown keys are rejected on write and ignored on read.
+  permission String
+  group      PermissionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  @@id([groupId, permission])
+}
+
+model UserGroup {
+  userId    Int
+  groupId   Int
+  createdAt DateTime        @default(now())
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group     PermissionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  @@id([userId, groupId])
+  @@index([groupId])
+}

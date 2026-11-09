@@ -1,39 +1,41 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { UserModule } from './modules/user/user.module';
-import { AuthModule } from './modules/auth/auth.module';
-import { ModuleModule } from './modules/model/model.module';
-import { PassportModule } from '@nestjs/passport';
-import { APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
-import { ZodValidationPipe } from 'nestjs-zod';
-import { CacheInterceptor, CacheModule } from '@nestjs/cache-manager';
-import { ConfigModule } from '@nestjs/config';
-import { StatisticsModule } from './statistics/statistics.module';
-
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AdminModule } from './admin/admin.module';
+import { AnnouncementsModule } from './announcements/announcements.module';
+import { AuthModule } from './auth/auth.module';
+import { DailyModule } from './daily/daily.module';
+import { EventsModule } from './events/events.module';
+import { HealthController } from './health/health.controller';
+import { LeaderboardModule } from './leaderboard/leaderboard.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { PermissionsModule } from './permissions/permissions.module';
+import { PrismaModule } from './prisma/prisma.module';
+import { RacesModule } from './races/races.module';
+import { QuotesModule } from './quotes/quotes.module';
+import { ResultsModule } from './results/results.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({isGlobal: true}),
-    PassportModule.register({ defaultStrategy: 'jwt' }),
-    CacheModule.register({
-      isGlobal: true,
+    ThrottlerModule.forRoot({
+      throttlers: [{ name: 'default', ttl: 60_000, limit: 100 }],
     }),
+    PrismaModule,
+    PermissionsModule,
     AuthModule,
-    UserModule,
-    ModuleModule,
-    StatisticsModule,
+    ResultsModule,
+    QuotesModule,
+    LeaderboardModule,
+    DailyModule,
+    UsersModule,
+    AdminModule,
+    RacesModule,
+    NotificationsModule,
+    AnnouncementsModule,
+    EventsModule,
   ],
-  controllers: [AppController],
-  providers: [AppService,
-    {
-      provide: APP_PIPE,
-      useClass: ZodValidationPipe,
-    },
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: CacheInterceptor,
-    },
-  ],
+  controllers: [HealthController],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

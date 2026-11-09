@@ -1,0 +1,142 @@
+import { NotFoundException } from '@nestjs/common';
+import type { PrismaService } from '../prisma/prisma.service';
+import type { FollowsService } from './follows.service';
+import { PROFILE_RECENT_SIZE, toPublicProfile, UsersService, type ProfileSource } from './users.service';
+import { badgeQuerySchema } from '../results/results.schemas';
+
+const source = (overrides: Partial<ProfileSource> = {}): ProfileSource => ({
+  name: 'Typist_1',
+  createdAt: new Date('2026-01-02T03:04:05Z'),
+  totalTests: 3,
+  totalTimeMs: 180_000,
+  bests: [{ mode: 'time', mode2: '60', language: 'en', wpm: 90, accuracy: 97, createdAt: '2026-02-01T00:00:00.000Z' }],
+  recent: [
+    { mode: 'time', mode2: '60', language: 'en', wpm: 88, accuracy: 96, createdAt: new Date('2026-03-01T00:00:00Z') },
+  ],
+  streak: { current: 2, longest: 4 },
+  achievements: [{ id: 'first_test', unlockedAt: '2026-01-05T10:00:00.000Z' }],
+  activity: [{ date: '2026-03-01', tests: 1 }],
+  followers: 3,
+  following: 2,
+  isFollowing: true,
+  ...overrides,
+});
+
+describe('toPublicProfile', () => {
+  it('maps the public fields and never includes an email', () => {
+    // Simulate a row that carries an email: the mapping must still drop it.
+    const withEmail = { ...source(), email: 'secret@example.com' } as ProfileSource;
+    const profile = toPublicProfile(withEmail);
+
+    expect(profile).toEqual({
+      name: 'Typist_1',
+      createdAt: '2026-01-02T03:04:05.000Z',
+      totalTests: 3,
+      totalTimeMs: 180_000,
+      bests: [{ mode: 'time', mode2: '60', language: 'en', wpm: 90, accuracy: 97, createdAt: '2026-02-01T00:00:00.000Z' }],
+      recent: [{ mode: 'time', mode2: '60', language: 'en', wpm: 88, accuracy: 96, createdAt: '2026-03-01T00:00:00.000Z' }],
+      streak: { current: 2, longest: 4 },
+      achievements: [{ id: 'first_test', unlockedAt: '2026-01-05T10:00:00.000Z' }],
+      activity: [{ date: '2026-03-01', tests: 1 }],
+      followers: 3,
+      following: 2,
+      isFollowing: true,
+    });
+    expect(Object.keys(profile)).not.toContain('email');
+    expect(JSON.stringify(profile)).not.toContain('secret@example.com');
+  });
+
+  it('passes the streak, achievements and activity through', () => {
+    const profile = toPublicProfile(source({ streak: { current: 0, longest: 9 }, achievements: [], activity: [] }));
+    expect(profile.streak).toEqual({ current: 0, longest: 9 });
+    expect(profile.achievements).toEqual([]);
+    expect(profile.activity).toEqual([]);
+  });
+
+  it('keeps only the fields of each recent result', () => {
+    const profile = toPublicProfile(
+      source({
+        recent: [
+          {
+            mode: 'words', mode2: '25', language: 'pl', wpm: 70, accuracy: 95, createdAt: new Date(0),
+            // Extra columns from the database must not leak through.
+            id: 9, userId: 1, rawWpm: 75,
+          } as unknown as ProfileSource['recent'][number],
+        ],
+      }),
+    );
+    expect(Object.keys(profile.recent[0]).sort()).toEqual(
+      ['accuracy', 'createdAt', 'language', 'mode', 'mode2', 'wpm'],
+    );
+  });
+});
+
+describe('UsersService.profile', () => {
+  function setup(user: { id: number; name: string; createdAt: Date } | null) {
+    const prisma = {
+      user: { findFirst: jest.fn().mockResolvedValue(user) },
+      result: {
+        aggregate: jest.fn().mockResolvedValue({ _count: { _all: 0 }, _sum: { durationMs: null } }),
+        findMany: jest.fn().mockResolvedValue([]),
+        groupBy: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const follows = {
+      socialCounts: jest.fn().mockResolvedValue({ followers: 5, following: 1, isFollowing: false }),
+    };
+    const service = new UsersService(prisma as unknown as PrismaService, follows as unknown as FollowsService);
+    return { service, prisma, follows };
+  }
+
+  it('looks the name up case-insensitively and hides suspended accounts', async () => {
+    const { service, prisma } = setup({ id: 4, name: 'Typist_1', createdAt: new Date(0) });
+    const profile = await service.profile('TYPIST_1');
+    expect(prisma.user.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { nameLower: 'typist_1', bannedAt: null } }),
+    );
+    expect(profile.name).toBe('Typist_1');
+  });
+
+  it('adds the follow counts, and passes the viewer to decide isFollowing', async () => {
+    const { service, follows } = setup({ id: 4, name: 'typist', createdAt: new Date(0) });
+    const profile = await service.profile('typist', 9);
+    expect(follows.socialCounts).toHaveBeenCalledWith(4, 9);
+    expect(profile).toMatchObject({ followers: 5, following: 1, isFollowing: false });
+  });
+
+  it('reports the badge wpm of one filter, and null for suspended or unknown users', async () => {
+    const query = badgeQuerySchema.parse({ mode: 'words', mode2: '25', language: 'pl' });
+    const { service, prisma } = setup({ id: 4, name: 'typist', createdAt: new Date(0) });
+    (prisma.result as unknown as { aggregate: jest.Mock }).aggregate.mockResolvedValue({ _max: { wpm: 88.4 } });
+    expect(await service.badgeWpm('typist', query)).toBe(88.4);
+    expect(prisma.result.aggregate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 4, mode: 'words', mode2: '25', language: 'pl' } }),
+    );
+
+    const none = setup(null);
+    expect(await none.service.badgeWpm('typist', query)).toBeNull();
+    expect(none.prisma.result.aggregate).not.toHaveBeenCalled();
+  });
+
+  it('restricts bests to the ranked modes and recent to the last 10', async () => {
+    const { service, prisma } = setup({ id: 4, name: 'typist', createdAt: new Date(0) });
+    await service.profile('typist');
+    expect(prisma.result.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 4, mode: { in: ['time', 'words', 'quote', 'pangram', 'daily'] } } }),
+    );
+    expect(prisma.result.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: PROFILE_RECENT_SIZE }));
+    expect(PROFILE_RECENT_SIZE).toBe(10);
+  });
+
+  it('gives a 404 for an invalid name without querying the database', async () => {
+    const { service, prisma } = setup(null);
+    await expect(service.profile('ab')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.profile('bad-name!')).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.user.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('gives a 404 with the spec message for an unknown user', async () => {
+    const { service } = setup(null);
+    await expect(service.profile('nobody')).rejects.toThrow('No user with that name');
+  });
+});

@@ -1,26 +1,76 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react-swc'
-import { VitePWA } from 'vite-plugin-pwa'
-import tsconfigPaths from 'vite-tsconfig-paths'
+/// <reference types="vitest/config" />
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+import { VitePWA } from 'vite-plugin-pwa';
+import { fileURLToPath, URL } from 'node:url';
 
-// https://vitejs.dev/config/
+// The shared typing engine (stack/engine), consumed as source through the aliases below.
+const engineSrc = fileURLToPath(new URL('../engine/src', import.meta.url));
+
+// VITE_API_PROXY points the dev server's /api proxy at another backend (the e2e runs use a second port).
+const apiProxy = process.env.VITE_API_PROXY ?? 'http://localhost:3000';
+
 export default defineConfig({
-  plugins: [react(),
+  plugins: [
+    react(),
+    tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate' ,
-      strategies: 'generateSW',
-      workbox: {
-        cleanupOutdatedCaches: true,
-        navigateFallbackDenylist: [/^\/api/]
+      registerType: 'autoUpdate',
+      injectRegister: 'auto',
+      includeAssets: ['icon.svg', 'apple-touch-icon.png', 'logo.jpeg'],
+      manifest: {
+        name: 'ParroType',
+        short_name: 'ParroType',
+        description: 'A minimal typing test with time, words, quote, zen, pangram and custom modes.',
+        theme_color: '#1d2119',
+        background_color: '#1d2119',
+        display: 'standalone',
+        start_url: '/',
+        scope: '/',
+        icons: [
+          { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'pwa-512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'pwa-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml' },
+        ],
       },
-      devOptions: {
-        enabled: true
-      }
-  }),
-  tsconfigPaths()],
+      workbox: {
+        // The app shell (JS, CSS, HTML, icons) and the self-hosted fonts.
+        globPatterns: ['**/*.{js,css,html,svg,png,jpeg,woff2}'],
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api/],
+        runtimeCaching: [
+          {
+            urlPattern: /^\/api\//,
+            handler: 'NetworkOnly',
+          },
+        ],
+      },
+    }),
+  ],
+  resolve: {
+    // Order matters: the engine aliases come before the generic '@'. The shared engine lives in
+    // stack/engine and is consumed as TypeScript source (the same files the backend builds).
+    alias: [
+      { find: /^@\/lib\/engine$/, replacement: `${engineSrc}/index.ts` },
+      { find: /^@\/lib\/engine\/(.*)$/, replacement: `${engineSrc}/engine/$1` },
+      { find: /^@\/lib\/text\/(.*)$/, replacement: `${engineSrc}/text/$1` },
+      // The backend imports the engine by its package name (a test checks a replay with the backend's verifier).
+      { find: /^@parrotype\/engine$/, replacement: `${engineSrc}/index.ts` },
+      { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
+    ],
+  },
   server: {
-    watch: {
-      usePolling: true
-    }
-  }
-})
+    port: 5173,
+    proxy: {
+      '/api': { target: apiProxy, changeOrigin: false, ws: true },
+    },
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test/setup.ts'],
+    css: false,
+  },
+});
