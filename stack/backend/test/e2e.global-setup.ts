@@ -26,10 +26,10 @@ function runPrisma(args: string[], input?: string): void {
  * than `prisma migrate reset`) keeps the reset to the tables this schema owns.
  */
 function dropAppTables(provider: string): void {
-  // Children (Result, Follow, Report) are listed with their parents so the drop order satisfies the foreign keys.
+  // Children (Result, Follow, Report, UserGroup, GroupPermission) are listed before their parents so the drop order satisfies the foreign keys.
   const sql = provider === 'postgresql'
-    ? 'DROP TABLE IF EXISTS "Follow", "Report", "Result", "AdminAction", "Quote", "User", "_prisma_migrations" CASCADE;'
-    : 'DROP TABLE IF EXISTS `Follow`, `Report`, `Result`, `AdminAction`, `Quote`, `User`, `_prisma_migrations`;';
+    ? 'DROP TABLE IF EXISTS "Follow", "Report", "Result", "UserGroup", "GroupPermission", "PermissionGroup", "AdminAction", "Quote", "User", "_prisma_migrations" CASCADE;'
+    : 'DROP TABLE IF EXISTS `Follow`, `Report`, `Result`, `UserGroup`, `GroupPermission`, `PermissionGroup`, `AdminAction`, `Quote`, `User`, `_prisma_migrations`;';
   runPrisma(['db', 'execute', '--stdin'], sql);
 }
 

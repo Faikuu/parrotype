@@ -12,10 +12,11 @@ const TEMPLATE = join(backendRoot, 'prisma', 'schema.template.prisma');
 
 // Long text is TEXT on mysql and postgresql; sqlite has no size limit, so it stays plain.
 // Emails are capped at 254 chars, so they get an explicit VARCHAR (MySQL would default to 191).
+// Group descriptions are at most 200 characters. MySQL would default a String to VARCHAR(191), so it is sized explicitly.
 const PLACEHOLDERS = {
-  sqlite: { longText: '', emailType: '' },
-  postgresql: { longText: '@db.Text', emailType: '@db.VarChar(254)' },
-  mysql: { longText: '@db.Text', emailType: '@db.VarChar(254)' },
+  sqlite: { longText: '', emailType: '', descriptionType: '' },
+  postgresql: { longText: '@db.Text', emailType: '@db.VarChar(254)', descriptionType: '' },
+  mysql: { longText: '@db.Text', emailType: '@db.VarChar(254)', descriptionType: '@db.VarChar(200)' },
 };
 
 export function schemaPathFor(provider) {

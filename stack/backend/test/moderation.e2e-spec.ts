@@ -7,6 +7,7 @@ import { configureApp } from '../src/app.setup';
 import { utcDate } from '../src/common/dates';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { applyE2eEnv } from './e2e.env';
+import { makeAdministrator, revokeAdministrator } from './e2e.helpers';
 
 applyE2eEnv();
 
@@ -88,7 +89,7 @@ describe('reports, admin moderation and suspensions (e2e)', () => {
     second = await register('mod_second');
     admin = await register('mod_admin');
     other = await register('mod_other');
-    await prisma.user.update({ where: { nameLower: 'mod_admin' }, data: { role: 'admin' } });
+    await makeAdministrator(prisma, 'mod_admin');
     targetId = (await prisma.user.findUniqueOrThrow({ where: { nameLower: 'mod_target' } })).id;
 
     await request(server).post('/api/results').set('Cookie', target).send(wordsResult(95)).expect(201);
@@ -96,7 +97,8 @@ describe('reports, admin moderation and suspensions (e2e)', () => {
     await request(server).post('/api/results').set('Cookie', other).send(wordsResult(60)).expect(201);
 
     const me = await request(server).get('/api/auth/me').set('Cookie', admin).expect(200);
-    expect(me.body.user.role).toBe('admin');
+    expect(me.body.user.permissions).toContain('audit.read');
+    expect(me.body.user).not.toHaveProperty('role');
   });
 
   describe('reports', () => {
@@ -132,15 +134,16 @@ describe('reports, admin moderation and suspensions (e2e)', () => {
     it('keeps the admin area closed to anonymous callers (401) and to non-admins (403)', async () => {
       await request(server).get('/api/admin/reports').expect(401);
       const denied = await request(server).get('/api/admin/reports').set('Cookie', reporter).expect(403);
-      expect(denied.body.message).toBe('Admins only');
+      expect(denied.body.message).toBe('Missing permission: reports.read');
       await request(server).get('/api/admin/actions').set('Cookie', reporter).expect(403);
       await request(server).delete('/api/admin/results/1').set('Cookie', reporter).expect(403);
-      await request(server).post('/api/admin/users/mod_target/ban').set('Cookie', reporter).send({ reason: 'x' }).expect(403);
+      await request(server).post(`/api/admin/users/${targetId}/ban`).set('Cookie', reporter).send({ reason: 'x' }).expect(403);
     });
 
     it('lists open reports for an admin, with the reporter, the target and its recent results', async () => {
       const open = await request(server).get('/api/admin/reports').set('Cookie', admin).expect(200);
-      const forTarget = open.body.filter((r: { target: { name: string } }) => r.target.name === 'mod_target');
+      expect(open.body).toMatchObject({ page: 1, pageSize: 25 });
+      const forTarget = open.body.items.filter((r: { target: { name: string } }) => r.target.name === 'mod_target');
       expect(forTarget).toHaveLength(2);
       const byReporter = forTarget.find((r: { reporter: { name: string } }) => r.reporter.name === 'mod_reporter');
       const bySecond = forTarget.find((r: { reporter: { name: string } }) => r.reporter.name === 'mod_second');
@@ -163,13 +166,13 @@ describe('reports, admin moderation and suspensions (e2e)', () => {
       await request(server).post('/api/admin/reports/abc/resolve').set('Cookie', admin).expect(400);
 
       const open = await request(server).get('/api/admin/reports?status=open').set('Cookie', admin).expect(200);
-      const ids = open.body.map((r: { id: number }) => r.id);
+      const ids = open.body.items.map((r: { id: number }) => r.id);
       expect(ids).not.toContain(reportByReporter);
       expect(ids).not.toContain(reportBySecond);
       const resolvedList = await request(server).get('/api/admin/reports?status=resolved').set('Cookie', admin).expect(200);
-      expect(resolvedList.body.map((r: { id: number }) => r.id)).toContain(reportByReporter);
+      expect(resolvedList.body.items.map((r: { id: number }) => r.id)).toContain(reportByReporter);
       const dismissedList = await request(server).get('/api/admin/reports?status=dismissed').set('Cookie', admin).expect(200);
-      expect(dismissedList.body.map((r: { id: number }) => r.id)).toContain(reportBySecond);
+      expect(dismissedList.body.items.map((r: { id: number }) => r.id)).toContain(reportBySecond);
     });
   });
 
@@ -186,10 +189,14 @@ describe('reports, admin moderation and suspensions (e2e)', () => {
 
   describe('suspension', () => {
     it('refuses a ban on an admin (400), an empty reason (400) and a repeat ban (409)', async () => {
-      const admins = await request(server).post('/api/admin/users/mod_admin/ban').set('Cookie', admin).send({ reason: 'x' }).expect(400);
-      expect(admins.body.message).toBe("Admins can't be banned");
-      await request(server).post('/api/admin/users/mod_target/ban').set('Cookie', admin).send({ reason: '   ' }).expect(400);
-      await request(server).post('/api/admin/users/nobody_here/ban').set('Cookie', admin).send({ reason: 'x' }).expect(404);
+      // mod_second is an Administrator for this test: an Administrator can't be suspended, whoever asks.
+      await makeAdministrator(prisma, 'mod_second');
+      const adminId = (await prisma.user.findUniqueOrThrow({ where: { nameLower: 'mod_second' }, select: { id: true } })).id;
+      const admins = await request(server).post(`/api/admin/users/${adminId}/ban`).set('Cookie', admin).send({ reason: 'x' }).expect(400);
+      expect(admins.body.message).toBe("Administrators can't be banned");
+      await request(server).post(`/api/admin/users/${(await prisma.user.findUniqueOrThrow({ where: { nameLower: 'mod_admin' }, select: { id: true } })).id}/ban`).set('Cookie', admin).send({ reason: 'x' }).expect(400);
+      await request(server).post(`/api/admin/users/${targetId}/ban`).set('Cookie', admin).send({ reason: '   ' }).expect(400);
+      await request(server).post('/api/admin/users/999999/ban').set('Cookie', admin).send({ reason: 'x' }).expect(404);
     });
 
     it('bans: the session ends, login is 403, and the account disappears from public views', async () => {
@@ -205,13 +212,13 @@ describe('reports, admin moderation and suspensions (e2e)', () => {
       expect(boardBefore.body.map((e: { name: string }) => e.name)).toContain('mod_target');
 
       const banned = await request(server)
-        .post('/api/admin/users/mod_target/ban')
+        .post(`/api/admin/users/${targetId}/ban`)
         .set('Cookie', admin)
         .send({ reason: 'spam accounts' })
         .expect(200);
-      expect(banned.body).toMatchObject({ name: 'mod_target', banReason: 'spam accounts' });
+      expect(banned.body).toMatchObject({ id: targetId, name: 'mod_target' });
       expect(typeof banned.body.bannedAt).toBe('string');
-      await request(server).post('/api/admin/users/mod_target/ban').set('Cookie', admin).send({ reason: 'again' }).expect(409);
+      await request(server).post(`/api/admin/users/${targetId}/ban`).set('Cookie', admin).send({ reason: 'again' }).expect(409);
 
       // The old cookie is dead: the session reader rejects a suspended account.
       await request(server).get('/api/auth/me').set('Cookie', target).expect(401);
@@ -244,9 +251,9 @@ describe('reports, admin moderation and suspensions (e2e)', () => {
     });
 
     it('unban restores the account, but the old session stays dead', async () => {
-      const unbanned = await request(server).post('/api/admin/users/mod_target/unban').set('Cookie', admin).expect(200);
-      expect(unbanned.body).toMatchObject({ name: 'mod_target', bannedAt: null, banReason: null });
-      await request(server).post('/api/admin/users/mod_target/unban').set('Cookie', admin).expect(409);
+      const unbanned = await request(server).post(`/api/admin/users/${targetId}/unban`).set('Cookie', admin).expect(200);
+      expect(unbanned.body).toMatchObject({ name: 'mod_target', bannedAt: null });
+      await request(server).post(`/api/admin/users/${targetId}/unban`).set('Cookie', admin).expect(409);
 
       await request(server).get('/api/auth/me').set('Cookie', target).expect(401);
       const login = await request(server)
@@ -279,11 +286,11 @@ describe('reports, admin moderation and suspensions (e2e)', () => {
       });
     });
 
-    it('reads the role from the database: a revoked admin loses access on the next request', async () => {
-      await prisma.user.update({ where: { nameLower: 'mod_second' }, data: { role: 'admin' } });
+    it('reads the groups from the database: a removed admin loses access on the next request', async () => {
+      await makeAdministrator(prisma, 'mod_second');
       await request(server).get('/api/admin/actions').set('Cookie', second).expect(200);
 
-      await prisma.user.update({ where: { nameLower: 'mod_second' }, data: { role: 'user' } });
+      await revokeAdministrator(prisma, 'mod_second');
       await request(server).get('/api/admin/actions').set('Cookie', second).expect(403);
     });
   });

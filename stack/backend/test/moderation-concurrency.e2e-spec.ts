@@ -6,6 +6,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { applyE2eEnv } from './e2e.env';
+import { makeAdministrator } from './e2e.helpers';
 
 applyE2eEnv();
 
@@ -41,7 +42,7 @@ describe('concurrent moderation writes (e2e)', () => {
     admin = cookieFrom(await reg('cc_admin'));
     await reg('cc_target');
     await reg('cc_reporter');
-    await prisma.user.update({ where: { nameLower: 'cc_admin' }, data: { role: 'admin' } });
+    await makeAdministrator(prisma, 'cc_admin');
     targetId = (await prisma.user.findUniqueOrThrow({ where: { nameLower: 'cc_target' } })).id;
     reporterId = (await prisma.user.findUniqueOrThrow({ where: { nameLower: 'cc_reporter' } })).id;
   });
@@ -72,7 +73,7 @@ describe('concurrent moderation writes (e2e)', () => {
   it('five simultaneous bans of one user: one 200, four 409, one ban row', async () => {
     const responses = await Promise.all(
       Array.from({ length: CONTENDERS }, () =>
-        request(server).post('/api/admin/users/cc_target/ban').set('Cookie', admin).send({ reason: 'race' }),
+        request(server).post(`/api/admin/users/${targetId}/ban`).set('Cookie', admin).send({ reason: 'race' }),
       ),
     );
 
@@ -84,7 +85,7 @@ describe('concurrent moderation writes (e2e)', () => {
   it('five simultaneous unbans of that user: one 200, four 409, one unban row', async () => {
     const responses = await Promise.all(
       Array.from({ length: CONTENDERS }, () =>
-        request(server).post('/api/admin/users/cc_target/unban').set('Cookie', admin),
+        request(server).post(`/api/admin/users/${targetId}/unban`).set('Cookie', admin),
       ),
     );
 

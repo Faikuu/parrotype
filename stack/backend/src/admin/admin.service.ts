@@ -1,17 +1,10 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { UserEvents } from '../common/user-events';
 import type { AuthUser } from '../auth/jwt-auth.guard';
-import { USERNAME_REGEX } from '../auth/auth.schemas';
+import { pageArgs, toPage, type Page, type PageQuery } from '../common/pagination';
 import type { ReportStatus } from './admin.schemas';
 
-/** Reports listed per request, and results shown per reported user. */
+/** Audit rows listed per request, and results shown per reported user. */
 export const ADMIN_LIST_SIZE = 100;
 export const TARGET_RESULTS_SIZE = 5;
 
@@ -49,14 +42,6 @@ export interface AdminAuditEntry {
   createdAt: string;
 }
 
-export interface AdminUserState {
-  id: number;
-  name: string;
-  bannedAt: string | null;
-  banReason: string | null;
-}
-
-const NOT_FOUND_USER = 'No user with that name';
 const decisionAction: Record<ReportDecision, string> = {
   resolve: 'resolve_report',
   dismiss: 'dismiss_report',
@@ -68,27 +53,28 @@ const decisionStatus: Record<ReportDecision, ReportStatus> = {
 
 @Injectable()
 export class AdminService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly userEvents: UserEvents,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async listReports(status: ReportStatus): Promise<AdminReport[]> {
-    const reports = await this.prisma.report.findMany({
-      where: { status },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: ADMIN_LIST_SIZE,
-      select: {
-        id: true,
-        reason: true,
-        details: true,
-        status: true,
-        createdAt: true,
-        resolvedAt: true,
-        reporter: { select: { id: true, name: true } },
-        target: { select: { id: true, name: true, bannedAt: true, banReason: true } },
-      },
-    });
+  async listReports(query: PageQuery & { status: ReportStatus }): Promise<Page<AdminReport>> {
+    const where = { status: query.status };
+    const [reports, total] = await Promise.all([
+      this.prisma.report.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        ...pageArgs(query),
+        select: {
+          id: true,
+          reason: true,
+          details: true,
+          status: true,
+          createdAt: true,
+          resolvedAt: true,
+          reporter: { select: { id: true, name: true } },
+          target: { select: { id: true, name: true, bannedAt: true, banReason: true } },
+        },
+      }),
+      this.prisma.report.count({ where }),
+    ]);
     // One small query per reported user, each capped, instead of reading every result of every target.
     const recent = await Promise.all(
       reports.map((r) =>
@@ -100,7 +86,7 @@ export class AdminService {
         }),
       ),
     );
-    return reports.map((r, i) => ({
+    const items = reports.map((r, i) => ({
       id: r.id,
       reason: r.reason,
       details: r.details,
@@ -124,6 +110,7 @@ export class AdminService {
         createdAt: res.createdAt.toISOString(),
       })),
     }));
+    return toPage(items, total, query);
   }
 
   /**
@@ -149,55 +136,6 @@ export class AdminService {
       });
       return { id: reportId, status };
     });
-  }
-
-  /**
-   * Suspends a user: bumps tokenVersion so their sessions end now. Admins cannot be banned. The write
-   * only matches a user who is not suspended and not an admin. On a miss, a re-read names the reason.
-   * Open race sockets are closed after the commit, through the UserEvents 'banned' event.
-   */
-  async ban(admin: AuthUser, name: string, reason: string): Promise<AdminUserState> {
-    const target = await this.findUserOrThrow(name);
-    const bannedAt = new Date();
-    await this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.user.updateMany({
-        where: { id: target.id, bannedAt: null, role: { not: 'admin' } },
-        data: { bannedAt, banReason: reason, tokenVersion: { increment: 1 } },
-      });
-      if (count === 0) await this.explainBanMiss(tx, target.id);
-      await tx.adminAction.create({
-        data: { adminId: admin.id, action: 'ban', target: `user:${target.id}`, note: reason },
-      });
-    });
-    this.userEvents.banned(target.id);
-    return { id: target.id, name: target.name, bannedAt: bannedAt.toISOString(), banReason: reason };
-  }
-
-  async unban(admin: AuthUser, name: string): Promise<AdminUserState> {
-    const target = await this.findUserOrThrow(name);
-    await this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.user.updateMany({
-        where: { id: target.id, bannedAt: { not: null } },
-        data: { bannedAt: null, banReason: null },
-      });
-      if (count === 0) {
-        const current = await tx.user.findUnique({ where: { id: target.id }, select: { id: true } });
-        if (!current) throw new NotFoundException(NOT_FOUND_USER);
-        throw new ConflictException('User is not suspended');
-      }
-      await tx.adminAction.create({
-        data: { adminId: admin.id, action: 'unban', target: `user:${target.id}` },
-      });
-    });
-    return { id: target.id, name: target.name, bannedAt: null, banReason: null };
-  }
-
-  /** Throws the error that explains a ban write which matched nothing. */
-  private async explainBanMiss(tx: Prisma.TransactionClient, userId: number): Promise<never> {
-    const current = await tx.user.findUnique({ where: { id: userId }, select: { role: true } });
-    if (!current) throw new NotFoundException(NOT_FOUND_USER);
-    if (current.role === 'admin') throw new BadRequestException("Admins can't be banned");
-    throw new ConflictException('User is already suspended');
   }
 
   async deleteResult(admin: AuthUser, resultId: number): Promise<{ ok: true }> {
@@ -241,21 +179,5 @@ export class AdminService {
       note: r.note,
       createdAt: r.createdAt.toISOString(),
     }));
-  }
-
-  /** Admin actions look users up even when suspended, so a suspended user can still be unbanned. */
-  private async findUserOrThrow(name: string): Promise<{
-    id: number;
-    name: string;
-    role: string;
-    bannedAt: Date | null;
-  }> {
-    if (!USERNAME_REGEX.test(name)) throw new NotFoundException(NOT_FOUND_USER);
-    const user = await this.prisma.user.findUnique({
-      where: { nameLower: name.toLowerCase() },
-      select: { id: true, name: true, role: true, bannedAt: true },
-    });
-    if (!user) throw new NotFoundException(NOT_FOUND_USER);
-    return user;
   }
 }

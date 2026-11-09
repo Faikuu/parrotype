@@ -9,6 +9,7 @@ import { configureApp } from '../src/app.setup';
 import { PrismaService } from '../src/prisma/prisma.service';
 import type { ServerMessage } from '../src/races/races.protocol';
 import { applyE2eEnv } from './e2e.env';
+import { makeAdministrator } from './e2e.helpers';
 
 applyE2eEnv();
 process.env.RACE_COUNTDOWN_MS = '300';
@@ -47,6 +48,7 @@ describe('a suspension closes the account\'s race sockets (e2e)', () => {
   let prisma: PrismaService;
   let admin: string;
   let player: string;
+  let playerId: number;
   let roomId: string;
   const clients: Client[] = [];
 
@@ -86,8 +88,9 @@ describe('a suspension closes the account\'s race sockets (e2e)', () => {
       return String(Array.isArray(header) ? header[0] : header).split(';')[0];
     };
     player = await reg('sus_player');
+    playerId = (await prisma.user.findUniqueOrThrow({ where: { nameLower: 'sus_player' }, select: { id: true } })).id;
     admin = await reg('sus_admin');
-    await prisma.user.update({ where: { nameLower: 'sus_admin' }, data: { role: 'admin' } });
+    await makeAdministrator(prisma, 'sus_admin');
     const created = await request(app.getHttpServer()).post('/api/races').send({ language: 'es' }).expect(201);
     roomId = created.body.id as string;
   });
@@ -109,7 +112,7 @@ describe('a suspension closes the account\'s race sockets (e2e)', () => {
     await until(() => lastRoom(observer)?.players.length === 2, 'two seats in the lobby');
 
     await request(app.getHttpServer())
-      .post('/api/admin/users/sus_player/ban')
+      .post(`/api/admin/users/${playerId}/ban`)
       .set('Cookie', admin)
       .send({ reason: 'spam' })
       .expect(200);
@@ -124,7 +127,7 @@ describe('a suspension closes the account\'s race sockets (e2e)', () => {
   });
 
   it('a socket opened before a ban that landed without an event is closed when it tries to join', async () => {
-    await request(app.getHttpServer()).post('/api/admin/users/sus_player/unban').set('Cookie', admin).expect(200);
+    await request(app.getHttpServer()).post(`/api/admin/users/${playerId}/unban`).set('Cookie', admin).expect(200);
     // The ban bumped tokenVersion, so the old cookie is dead: sign in again for a fresh session.
     const login = await request(app.getHttpServer())
       .post('/api/auth/login')

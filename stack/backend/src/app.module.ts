@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { DailyModule } from './daily/daily.module';
 import { HealthController } from './health/health.controller';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
+import { PermissionsModule } from './permissions/permissions.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RacesModule } from './races/races.module';
 import { QuotesModule } from './quotes/quotes.module';
@@ -18,6 +19,7 @@ import { UsersModule } from './users/users.module';
       throttlers: [{ name: 'default', ttl: 60_000, limit: 100 }],
     }),
     PrismaModule,
+    PermissionsModule,
     AuthModule,
     ResultsModule,
     QuotesModule,

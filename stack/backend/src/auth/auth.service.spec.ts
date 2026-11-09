@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Unauthorize
 import type { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import type { PermissionsService } from '../permissions/permissions.service';
 import { AuthService } from './auth.service';
 
 // Wrap compare so a test can assert it ran, without changing its behaviour.
@@ -17,7 +18,6 @@ type UserRow = {
   email: string;
   passwordHash: string;
   tokenVersion: number;
-  role: string;
   bannedAt: Date | null;
   createdAt: Date;
 };
@@ -31,11 +31,13 @@ function setup() {
     },
   };
   const jwt = { signAsync: jest.fn().mockResolvedValue('signed.token.value') };
+  const permissions = { effective: jest.fn().mockResolvedValue(new Set()) };
   const service = new AuthService(
     prisma as unknown as PrismaService,
     jwt as unknown as JwtService,
+    permissions as unknown as PermissionsService,
   );
-  return { service, prisma, jwt };
+  return { service, prisma, jwt, permissions };
 }
 
 describe('AuthService', () => {
@@ -49,7 +51,6 @@ describe('AuthService', () => {
         email: data.email,
         passwordHash: data.passwordHash,
         tokenVersion: 0,
-        role: 'user',
         bannedAt: null,
         createdAt: new Date('2026-01-02T03:04:05Z'),
       }));
@@ -68,7 +69,7 @@ describe('AuthService', () => {
         id: 7,
         name: 'typist_1',
         email: 'typist@example.com',
-        role: 'user',
+        permissions: [],
         createdAt: '2026-01-02T03:04:05.000Z',
       });
       expect(result.user).not.toHaveProperty('passwordHash');
@@ -86,7 +87,6 @@ describe('AuthService', () => {
         email: data.email,
         passwordHash: data.passwordHash,
         tokenVersion: 0,
-        role: 'user',
         bannedAt: null,
         createdAt: new Date(0),
       }));
@@ -133,7 +133,6 @@ describe('AuthService', () => {
         email: 'alice@example.com',
         passwordHash,
         tokenVersion: 0,
-        role: 'user',
         bannedAt: null,
         createdAt: new Date(0),
       });
@@ -141,7 +140,8 @@ describe('AuthService', () => {
       const result = await service.login({ email: 'alice@example.com', password: 'secret-password' });
       expect(result.user.id).toBe(3);
       expect(result.user).not.toHaveProperty('passwordHash');
-      expect(result.user.role).toBe('user');
+      expect(result.user.permissions).toEqual([]);
+      expect(result.user).not.toHaveProperty('role');
     });
 
     it('refuses a suspended account with 403, but only after the password matched', async () => {
@@ -154,7 +154,6 @@ describe('AuthService', () => {
         email: 'alice@example.com',
         passwordHash,
         tokenVersion: 0,
-        role: 'user',
         bannedAt: new Date(0),
         createdAt: new Date(0),
       });
@@ -178,7 +177,6 @@ describe('AuthService', () => {
         email: 'alice@example.com',
         passwordHash,
         tokenVersion: 0,
-        role: 'user',
         bannedAt: null,
         createdAt: new Date(0),
       });
@@ -230,7 +228,7 @@ describe('AuthService.changePassword', () => {
     const { service, prisma } = setup();
     const passwordHash = await bcrypt.hash('old-password', 4);
     prisma.user.findUnique.mockResolvedValue({
-      id: 3, name: 'alice', nameLower: 'alice', email: 'a@example.com', passwordHash, tokenVersion: 0, role: 'user', bannedAt: null, createdAt: new Date(0),
+      id: 3, name: 'alice', nameLower: 'alice', email: 'a@example.com', passwordHash, tokenVersion: 0, bannedAt: null, createdAt: new Date(0),
     });
 
     await expect(

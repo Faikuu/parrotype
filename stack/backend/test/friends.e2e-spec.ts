@@ -86,9 +86,10 @@ describe('friends, the following scope, badges and code results (e2e)', () => {
     await submit(carol, wordsResult(80));
   });
 
-  it('shows the role on the session user (user, not admin, by default)', async () => {
+  it('shows the permissions on the session user (none, by default)', async () => {
     const me = await request(server).get('/api/auth/me').set('Cookie', alice).expect(200);
-    expect(me.body.user).toMatchObject({ name: 'fr_alice', role: 'user' });
+    expect(me.body.user).toMatchObject({ name: 'fr_alice', permissions: [] });
+    expect(me.body.user).not.toHaveProperty('role');
   });
 
   describe('follow and unfollow', () => {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Runs scripts/admin.ts with ts-node, after the same .env loading as scripts/prisma.mjs.
-// Usage: npm run admin -- grant <name> | revoke <name> | list
+// Usage: npm run admin -- grant <name> | revoke <name> | list | groups
 // It never generates the Prisma client. It refuses to run when the generated client was made for another engine.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';

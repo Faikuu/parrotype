@@ -58,7 +58,7 @@ PostgreSQL and MariaDB are not started by this project. Run them yourself, or us
   The run also regenerates the Prisma client for the engine it runs against, so run `npm run prisma:generate` afterwards to get your own provider back.
 - `npm run lint`
 - `npm run prisma:schema` renders the per-provider schemas from the template.
-- `npm run admin -- grant|revoke <name>` and `npm run admin -- list` manage admins (see Admin CLI below).
+- `npm run admin -- grant|revoke <name>`, `list` and `groups` manage the Administrators group and show the groups (see Admin CLI below).
 
 ## Daily board
 Each user is ranked on the daily board by their first result for the UTC date and language. Retries are saved but do not change the rank. The other modes rank each user by their best result.
@@ -84,18 +84,29 @@ Headers: `Content-Type: image/svg+xml; charset=utf-8`, `Cache-Control: public, m
 
 ## Moderation
 - Any signed-in user can report another user: `POST /api/users/:name/report` with `{ "reason": "name" | "cheating" | "other", "details"?: string (at most 500 characters) }`. It is throttled to 5 a minute. You can't report yourself (400). While you have an open report against someone, another one is a 409 "You have already reported this user". The check runs in the service, not in the database, since no partial unique index works on all three engines, so a race can rarely add a second open report.
-- Admins use `/api/admin/*`, guarded by `AdminGuard`. It checks the session, then reads `role` from the database on every request, so the role in a token is never trusted and a revoked admin loses access at once. No session is 401; a signed-in non-admin is 403.
+- Admins use `/api/admin/*`, guarded by `PermissionsGuard` (`src/permissions`). Each route names the permission it needs (`@RequirePermissions`); the guard reads the caller's groups from the database on every request, so a removed permission ends at once. No session is 401; a signed-in account without the permission is 403 "Missing permission: <key>". Permissions come from the groups: the system group **Administrators** has every permission, and **Moderators** is a starting custom group. The catalog is `src/permissions/catalog.ts`; `GET /api/admin/permissions` returns it with the caller's own permissions (`mine`).
 
-| Method | Path | Notes |
-|---|---|---|
-| `GET` | `/api/admin/reports?status=open\|resolved\|dismissed` | Default `open`, newest 100. Each report has the reporter, the target (with `bannedAt`), and the target's 5 most recent results. |
-| `POST` | `/api/admin/reports/:id/resolve` · `/dismiss` | Only an open report can be decided (409 otherwise). |
-| `POST` | `/api/admin/users/:name/ban` | Body `{ "reason" }` (1 to 200 characters). Bumps `tokenVersion`, so the user's sessions end at once. Admins can't be banned (400); a repeat is a 409. |
-| `POST` | `/api/admin/users/:name/unban` | 409 if the user is not suspended. |
-| `DELETE` | `/api/admin/results/:id` | Deletes one result. |
-| `GET` | `/api/admin/actions` | The newest 100 audit entries, with the admin's name where the admin still exists. |
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| `GET` | `/api/admin/permissions` | admin.access | `{ catalog, mine }` |
+| `GET` | `/api/admin/reports?status=open\|resolved\|dismissed&page&pageSize` | reports.read | Paginated `{ items, total, page, pageSize }`. Each report has the reporter, the target (with `bannedAt`), and the target's 5 most recent results. |
+| `POST` | `/api/admin/reports/:id/resolve` · `/dismiss` | reports.resolve | Only an open report can be decided (409 otherwise). |
+| `GET` | `/api/admin/groups` | groups.read | Paginated. Each group: `{ id, name, description, system, permissions, memberCount, updatedAt }`. |
+| `POST` / `PATCH` / `DELETE` | `/api/admin/groups[/:id]` | groups.manage | Name 2 to 40 characters, unique in any case (409). The Administrators group can't be renamed or deleted (400). The actor must hold every permission a group grants (403). |
+| `PUT` | `/api/admin/groups/:id/permissions` | groups.manage | Replaces the set. Implied `*.read` keys are added and listed in `impliedAdded`. Administrators is fixed (400). |
+| `GET` | `/api/admin/groups/:id` | groups.read | The group and its first 100 members. |
+| `PUT` · `DELETE` | `/api/admin/groups/:id/members/:userId` | users.groups | Adding is idempotent; the target can't be suspended (400). Removing the last Administrator is refused (400). |
+| `GET` | `/api/admin/users?q&banned&group&sort&order&page&pageSize` | users.read | Paginated. `sort` is `created`, `name` or `results`. |
+| `GET` | `/api/admin/users/:id` | users.read | The detail: groups, effective permissions, stats, recent results, reports received and made. |
+| `PATCH` | `/api/admin/users/:id` | users.edit | `{ name }`. Bumps `tokenVersion`, so the user's sessions end. |
+| `POST` | `/api/admin/users/:id/revoke-sessions` | users.edit | Allowed on yourself. |
+| `POST` | `/api/admin/users/:id/ban` · `/unban` | users.ban | `{ reason }` for ban (1 to 200 characters). Bumps `tokenVersion`. You can't suspend yourself (400); an Administrator can't be suspended (400); a repeat is 409. The 2.3 name routes remain at `/api/admin/users/by-name/:name/ban` and `/unban`. |
+| `PUT` | `/api/admin/users/:id/groups` | users.groups | `{ groupIds }` replaces the memberships. The actor must hold every group added or removed (403). |
+| `DELETE` | `/api/admin/users/:id` | users.delete | `{ confirm }` must equal the username. Not yourself (400). |
+| `DELETE` | `/api/admin/results/:id` | results.delete | Deletes one result. |
+| `GET` | `/api/admin/actions` | audit.read | The newest 100 audit entries, with the admin's name where the admin still exists. |
 
-Every admin action writes an `AdminAction` row in the same transaction as the change.
+Every admin write checks the caller against the target (a target may hold only permissions the caller holds) and writes its `AdminAction` row in the same transaction as the change.
 
 What a suspended account gets:
 - Login: 403 "This account has been suspended". This is checked after the password, so a stranger still sees the generic 401.
@@ -103,15 +114,16 @@ What a suspended account gets:
 - Profile and badge: 404. It is left out of the leaderboards, the daily board and the following board. It can't be followed or reported (404).
 
 ## Admin CLI
-There is no HTTP path to become an admin. Admins are granted and revoked from the shell, on the database that `DATABASE_PROVIDER` and `DATABASE_URL` point to:
+There is no HTTP path to become an admin. Administrators are granted and revoked from the shell, on the database that `DATABASE_PROVIDER` and `DATABASE_URL` point to. Granting means adding the user to the system group **Administrators**:
 
 ```sh
 npm run admin -- grant <name>     # also accepts any letter case for the name
-npm run admin -- revoke <name>
-npm run admin -- list             # id, name, created time, "suspended" when banned
+npm run admin -- revoke <name>    # refused for the last Administrator
+npm run admin -- list             # the Administrators: id, name, created time, "suspended" when banned
+npm run admin -- groups           # every group: id, name, system or custom, member and permission counts
 ```
 
-`scripts/admin.mjs` loads `.env` the same way `scripts/prisma.mjs` does and runs `scripts/admin.ts` through ts-node. It does not generate the Prisma client. If the generated client was made for another engine, it stops and tells you to run `npm run prisma:generate`. Each grant or revoke writes an `AdminAction` with a null `adminId` and the note `cli`. A grant does not check for suspension, so a suspended user can be made admin, but they can't use it until unbanned.
+`scripts/admin.mjs` loads `.env` the same way `scripts/prisma.mjs` does and runs `scripts/admin.ts` through ts-node. It does not generate the Prisma client. If the generated client was made for another engine, it stops and tells you to run `npm run prisma:generate`. Each grant or revoke writes an `AdminAction` with a null `adminId` and a note naming the group and `cli`. A grant does not check for suspension, so a suspended user can be made admin, but they can't use it until unbanned.
 
 ## Health
 `GET /api/health` returns `{ "ok": true, "db": "<provider>" }`.

@@ -21,10 +21,6 @@ export type ResultMode = (typeof RESULT_MODES)[number];
 /** Code results: the snippet's language, the mode2 of a code result. Saved, never ranked. */
 export const CODE_LANGUAGES = ['js', 'py', 'rs', 'go'] as const;
 
-/** Roles stored on User.role. Only admins can reach the admin API. */
-export const ROLES = ['user', 'admin'] as const;
-export type Role = (typeof ROLES)[number];
-
 /** Only these modes count toward leaderboards and public bests. */
 export const RANKED_MODES = ['time', 'words', 'quote', 'pangram', 'daily'] as const;
 

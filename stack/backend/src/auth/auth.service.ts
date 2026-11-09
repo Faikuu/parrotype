@@ -11,6 +11,8 @@ import * as bcrypt from 'bcrypt';
 import type { CookieOptions } from 'express';
 import { getEnv } from '../config/env';
 import { PrismaService } from '../prisma/prisma.service';
+import type { Permission } from '../permissions/catalog';
+import { PermissionsService } from '../permissions/permissions.service';
 import type { ChangePasswordInput, LoginInput, RegisterInput } from './auth.schemas';
 
 export const SESSION_COOKIE = 'pt_session';
@@ -33,16 +35,20 @@ export interface PublicUser {
   id: number;
   name: string;
   email: string;
-  role: string;
+  /** The effective permissions, sorted. Empty for ordinary users. */
+  permissions: Permission[];
   createdAt: string;
 }
 
-export function toPublicUser(user: Pick<User, 'id' | 'name' | 'email' | 'role' | 'createdAt'>): PublicUser {
+export function toPublicUser(
+  user: Pick<User, 'id' | 'name' | 'email' | 'createdAt'>,
+  permissions: readonly Permission[],
+): PublicUser {
   return {
     id: user.id,
     name: user.name,
     email: user.email,
-    role: user.role,
+    permissions: [...permissions].sort(),
     createdAt: user.createdAt.toISOString(),
   };
 }
@@ -63,6 +69,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly permissions: PermissionsService,
   ) {}
 
   async register(input: RegisterInput): Promise<{ user: PublicUser; token: string }> {
@@ -86,7 +93,8 @@ export class AuthService {
       }
       throw err;
     }
-    return { user: toPublicUser(user), token: await this.signSession(user) };
+    // A new account has no groups yet.
+    return { user: toPublicUser(user, []), token: await this.signSession(user) };
   }
 
   async login(input: LoginInput): Promise<{ user: PublicUser; token: string }> {
@@ -95,13 +103,15 @@ export class AuthService {
     if (!user || !matches) throw new UnauthorizedException(INVALID_CREDENTIALS);
     // Checked after the password, so only someone who knows it learns the account is suspended.
     if (user.bannedAt) throw new ForbiddenException(SUSPENDED);
-    return { user: toPublicUser(user), token: await this.signSession(user) };
+    const permissions = [...(await this.permissions.effective(user.id))];
+    return { user: toPublicUser(user, permissions), token: await this.signSession(user) };
   }
 
   async getPublicUser(userId: number): Promise<PublicUser> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
-    return toPublicUser(user);
+    const permissions = [...(await this.permissions.effective(user.id))];
+    return toPublicUser(user, permissions);
   }
 
   /**

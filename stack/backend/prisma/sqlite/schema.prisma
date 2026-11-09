@@ -21,12 +21,12 @@ model User {
   passwordHash String
   /// Bumped on logout. A session token carries the version it was issued with.
   tokenVersion Int      @default(0)
-  /// "user" | "admin". Only granted through scripts/admin.ts; read from the database on every request.
-  role         String   @default("user")
   /// Set by an admin ban. A banned user cannot log in and their sessions are rejected.
   bannedAt     DateTime?
   banReason    String?
   createdAt    DateTime @default(now())
+  /// Permission groups this user belongs to. Effective permissions are read on every request; see src/permissions.
+  groups       UserGroup[]
   results      Result[]
   following       Follow[]  @relation("follower")
   followers       Follow[]  @relation("followee")
@@ -96,9 +96,46 @@ model Report {
 model AdminAction {
   id        Int      @id @default(autoincrement())
   adminId   Int?     // null for CLI actions and for admins who were deleted later
-  action    String   // "ban" | "unban" | "delete_result" | "resolve_report" | "dismiss_report" | "grant_admin" | "revoke_admin"
-  target    String   // e.g. "user:42", "result:9", "report:3"
-  note      String?
+  /// Values: ban | unban | delete_result | resolve_report | dismiss_report | group_create | group_update | group_delete
+  /// | group_permissions | group_member_add | group_member_remove | user_groups | user_rename | user_revoke_sessions
+  /// | user_delete | quote_create | quote_update | quote_delete | race_close
+  /// (2.3 rows also hold grant_admin | revoke_admin, written by the old CLI.)
+  action    String
+  target    String   // e.g. "user:42", "result:9", "report:3", "group:2"
+  note      String?   // short, compact JSON or plain text
   createdAt DateTime @default(now())
   @@index([createdAt])
+}
+
+/// A named set of permissions. Users can be in any number of groups; the Administrators group is system.
+model PermissionGroup {
+  id          Int      @id @default(autoincrement())
+  /// 2–40 characters. Unique as written; duplicates that differ only by case are refused by the API.
+  name        String   @unique
+  /// At most 200 characters.
+  description String   @default("")
+  /// System groups can't be deleted or renamed. Administrators always resolves to every catalog permission.
+  system      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  permissions GroupPermission[]
+  members     UserGroup[]
+}
+
+model GroupPermission {
+  groupId    Int
+  /// A key of the catalog in src/permissions/catalog.ts. Unknown keys are rejected on write and ignored on read.
+  permission String
+  group      PermissionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  @@id([groupId, permission])
+}
+
+model UserGroup {
+  userId    Int
+  groupId   Int
+  createdAt DateTime        @default(now())
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group     PermissionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  @@id([userId, groupId])
+  @@index([groupId])
 }
