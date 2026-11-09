@@ -53,6 +53,14 @@ export class AdminUsersController {
     return this.users.revokeSessions(me, id);
   }
 
+  /** Turns off the user's two-factor sign-in and deletes their recovery codes. Their sessions end. */
+  @Post(':id/2fa/reset')
+  @HttpCode(200)
+  @RequirePermissions('users.security')
+  reset2fa(@CurrentUser() me: AuthUser, @Param('id', ParseIntPipe) id: number): Promise<{ ok: true }> {
+    return this.users.reset2fa(me, id);
+  }
+
   @Post(':id/ban')
   @HttpCode(200)
   @RequirePermissions('users.ban')

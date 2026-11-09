@@ -7,7 +7,7 @@ From the repo root: `npm run setup` (installs, creates `stack/backend/.env`, gen
 
 Or by hand, from `stack/backend`:
 ```sh
-cp .env.sample .env        # then set JWT_SECRET: the sample value is refused at startup (see below)
+cp .env.sample .env        # then set JWT_SECRET and TOTP_ENCRYPTION_KEY: the sample values are refused at startup (see below)
 npm run prisma:deploy      # apply migrations (dev: npm run prisma:migrate)
 npm run seed               # upsert public-domain quotes
 npm run start:dev          # http://localhost:3000/api/health
@@ -133,6 +133,15 @@ Session = JWT (HS256, 7 days) in the httpOnly cookie `pt_session`. Set `COOKIE_S
 
 `JWT_SECRET` must be at least 32 characters with at least 10 distinct characters. The API refuses to start if it is the `.env.sample` placeholder or contains `change-me`. Generate one with `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`, or run `npm run setup` from the repo root, which writes a random one into `.env`.
 
+Account flows (2.5):
+- **Email.** `MAIL_TRANSPORT=console` (the default) logs every email and keeps the last 50 in memory, so the links are only in the log: fine for development, not for production. `MAIL_TRANSPORT=smtp` sends through `SMTP_URL` (`smtp://` or `smtps://`, required then). `MAIL_FROM` is the sender and `APP_URL` the public address of the web app, used for the links. A failed send is logged; registration still succeeds.
+- **Verification.** Registration emails a link valid for 24 hours. `POST /api/auth/email/verify { token }`; `POST /api/auth/email/resend` (signed in, three an hour). Unverified accounts are kept off the leaderboards. `GET /api/auth/me` and the other user objects carry `emailVerified`.
+- **Password reset.** `POST /api/auth/password/forgot { email }` always answers `{ ok: true }`. The link is valid for 30 minutes, and a request is limited to 5 per client address per 15 minutes and 3 per email per hour. `POST /api/auth/password/reset { token, newPassword }` ends every session and does not sign the user in.
+- **Two-factor sign-in (TOTP, RFC 6238, SHA-1, 6 digits, 30 s).** The secret is encrypted with AES-256-GCM under a key derived from `TOTP_ENCRYPTION_KEY` (at least 32 characters, different from `JWT_SECRET`, refused if it is the sample). Setup and enable: `POST /api/auth/2fa/setup` returns `{ secret, otpauthUrl }`; `POST /api/auth/2fa/enable { code }` returns the ten recovery codes (`xxxx-xxxx`, shown once). Login with two-factor on answers `{ twoFactorRequired: true, ticket }` with no cookie; `POST /api/auth/2fa/verify { ticket, code }` (a TOTP or a recovery code) sets the session. The ticket lasts 5 minutes and five attempts a minute. A TOTP step is accepted once; a recovery code works once. `POST /api/auth/2fa/disable { password, code }` and `POST /api/auth/2fa/recovery-codes { password, code }` need the password and a code.
+- **Admin.** `POST /api/admin/users/:id/2fa/reset` (permission `users.security`) turns two-factor off for a user, deletes their recovery codes, ends their sessions and writes an audit row `user_2fa_reset`.
+
+Existing installs from before 2.5: add `TOTP_ENCRYPTION_KEY` to `.env` before starting the API (the API refuses to start without it). `npm run setup` on a fresh checkout writes one for you.
+
 ## Races (WebSocket)
 
 - `POST /api/races` with `{ "language": "en" }` creates a room and returns `{ "id" }` (throttled to 10 per minute per IP). A client IP may hold at most 20 open rooms; beyond that the answer is 429 "You have too many open races".
@@ -152,9 +161,12 @@ Session = JWT (HS256, 7 days) in the httpOnly cookie `pt_session`. Set `COOKIE_S
 ```sh
 # in the repo root, create .env (Compose reads it; keep it out of git):
 #   JWT_SECRET=<at least 32 random characters>
+#   TOTP_ENCRYPTION_KEY=<at least 32 random characters, different from JWT_SECRET>
 #   POSTGRES_PASSWORD=<letters and digits only; it goes into the database URL>
 docker compose up -d --build
 ```
+
+For the account emails, set `MAIL_TRANSPORT=smtp` and `SMTP_URL` in the same `.env` (see Auth above). Without them, reset and verification links go only to the API log.
 
 Open http://localhost:8080. Only the web container is published. The API image runs `prisma migrate deploy` on start, then the server, as the `node` user. The database schema is created on first start.
 

@@ -7,7 +7,7 @@ import { configureApp } from '../src/app.setup';
 import { utcDate } from '../src/common/dates';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { applyE2eEnv } from './e2e.env';
-import { makeAdministrator, revokeAdministrator } from './e2e.helpers';
+import { makeAdministrator, revokeAdministrator, verifyEmail } from './e2e.helpers';
 
 applyE2eEnv();
 
@@ -80,6 +80,7 @@ describe('reports, admin moderation and suspensions (e2e)', () => {
       .post('/api/auth/register')
       .send({ name, email: `${name}@example.com`, password: PASSWORD })
       .expect(201);
+    await verifyEmail(prisma, name.toLowerCase());
     return cookieFrom(res);
   }
 

@@ -11,6 +11,9 @@ export function configureApp(app: INestApplication): void {
   app.setGlobalPrefix('api');
   app.use(helmet());
   app.use(cookieParser());
+  // POST /api/results carries a replay (up to 256 KB). Registered first: its parser reads the body, so the 50 KB
+  // parser below skips that request. Every other route keeps 50 KB.
+  app.use('/api/results', express.json({ limit: '256kb' }));
   app.use(express.json({ limit: '50kb' }));
   app.enableCors({ origin: env.corsOrigins, credentials: true });
   // WebSocket gateways (races). Applied here so the e2e tests get the same setup as main.ts.

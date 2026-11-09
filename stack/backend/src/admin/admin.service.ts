@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AuthUser } from '../auth/jwt-auth.guard';
@@ -7,6 +7,7 @@ import { pageArgs, toPage, type Page, type PageQuery } from '../common/paginatio
 import { countByDay, daysAgo, startOfUtcDay, windowStart, type DayCount } from './stats';
 import { suspiciousWhere } from './suspicious';
 import { RoomService, type RoomSummary } from '../races/room.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import type { ActionsQuery, ReportStatus, ResultsQuery } from './admin.schemas';
 
 /** Results shown per reported user. */
@@ -96,9 +97,12 @@ const decisionStatus: Record<ReportDecision, ReportStatus> = {
 
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly rooms: RoomService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -229,7 +233,7 @@ export class AdminService {
   async decideReport(admin: AuthUser, reportId: number, decision: ReportDecision): Promise<{ id: number; status: string }> {
     const status = decisionStatus[decision];
     const resolvedAt = new Date();
-    return this.prisma.writeTx(async (tx) => {
+    const decided = await this.prisma.writeTx(async (tx) => {
       const { count } = await tx.report.updateMany({
         where: { id: reportId, status: 'open' },
         data: { status, resolvedAt },
@@ -242,8 +246,18 @@ export class AdminService {
       await tx.adminAction.create({
         data: { adminId: admin.id, action: decisionAction[decision], target: `report:${reportId}` },
       });
-      return { id: reportId, status };
+      return tx.report.findUniqueOrThrow({
+        where: { id: reportId },
+        select: { reporterId: true, target: { select: { name: true } } },
+      });
     });
+    // The reporter hears that the report was reviewed, after the decision has committed. Best effort.
+    try {
+      await this.notifications.notifyReportOutcome(decided.reporterId, decided.target.name);
+    } catch (err) {
+      this.logger.warn(`report outcome notification failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return { id: reportId, status };
   }
 
   async deleteResult(admin: AuthUser, resultId: number): Promise<{ ok: true }> {

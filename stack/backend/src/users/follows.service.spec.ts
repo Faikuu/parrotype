@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { PrismaService } from '../prisma/prisma.service';
+import type { NotificationsService } from '../notifications/notifications.service';
 import { FollowsService, MAX_FOLLOWS } from './follows.service';
 
 type Mock = jest.Mock;
@@ -29,7 +30,8 @@ function setup(opts: {
   const withTx = Object.assign(prisma, {
     writeTx: jest.fn((...args: unknown[]) => (args[0] as (tx: typeof prisma) => Promise<unknown>)(prisma)),
   });
-  return { service: new FollowsService(withTx as unknown as PrismaService), prisma: withTx };
+  const notifications = { notifyFollow: jest.fn().mockResolvedValue(true) };
+  return { service: new FollowsService(withTx as unknown as PrismaService, notifications as unknown as NotificationsService), prisma: withTx, notifications };
 }
 
 const p2034 = () =>
@@ -50,6 +52,27 @@ describe('FollowsService.follow', () => {
     expect(await service.follow(1, 'bob')).toEqual({ following: true });
     expect(prisma.follow.count).not.toHaveBeenCalled();
     expect(prisma.follow.create).not.toHaveBeenCalled();
+  });
+
+  it('notifies the followee of a new follow, with the follower\'s name', async () => {
+    const { service, prisma, notifications } = setup();
+    (prisma.user.findUnique as Mock).mockResolvedValueOnce({ name: 'alice' });
+    await service.follow(1, 'bob');
+    expect(notifications.notifyFollow).toHaveBeenCalledWith(2, 'alice');
+  });
+
+  it('does not notify again for a follow that already exists', async () => {
+    const { service, notifications } = setup({ existing: true });
+    await service.follow(1, 'bob');
+    expect(notifications.notifyFollow).not.toHaveBeenCalled();
+  });
+
+  it('still follows when the notification fails', async () => {
+    const { service, prisma, notifications } = setup();
+    (prisma.user.findUnique as Mock).mockResolvedValueOnce({ name: 'alice' });
+    notifications.notifyFollow.mockRejectedValueOnce(new Error('db down'));
+    expect(await service.follow(1, 'bob')).toEqual({ following: true });
+    expect(prisma.follow.create).toHaveBeenCalled();
   });
 
   it('refuses to follow yourself with 400', async () => {

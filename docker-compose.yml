@@ -3,7 +3,10 @@
 # Put these two values in a .env file next to this file (Compose reads it for the ${...} values below).
 # Do not commit that file, and do not write the values into this one:
 #   JWT_SECRET=<at least 32 random characters, e.g. openssl rand -base64 48>
+#   TOTP_ENCRYPTION_KEY=<at least 32 random characters, different from JWT_SECRET; encrypts the two-factor secrets>
 #   POSTGRES_PASSWORD=<database password; use letters and digits only, it goes into a URL>
+# Optional, for the account emails: MAIL_TRANSPORT=smtp and SMTP_URL=smtp://user:password@host:587 (without them the
+# emails are only logged, so password-reset links are not delivered). APP_URL is the public address of the web app.
 #
 # Start:  docker compose up -d --build
 # Open:   http://localhost:8080
@@ -39,6 +42,11 @@ services:
       DATABASE_PROVIDER: postgresql
       DATABASE_URL: postgresql://parrotype:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the .env file next to docker-compose.yml}@db:5432/parrotype
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in the .env file next to docker-compose.yml}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?set TOTP_ENCRYPTION_KEY in the .env file next to docker-compose.yml}
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      MAIL_TRANSPORT: ${MAIL_TRANSPORT:-console}
+      SMTP_URL: ${SMTP_URL:-}
+      MAIL_FROM: "${MAIL_FROM:-ParroType <no-reply@localhost>}"
       CORS_ORIGINS: http://localhost:8080
       # Cookies are Secure only when this is true. Keep false for plain http://localhost, where the browser would drop
       # the session cookie. Set it to true once the site is served over HTTPS.

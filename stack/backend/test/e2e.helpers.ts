@@ -33,3 +33,11 @@ export async function revokeAdministrator(prisma: PrismaService, nameLower: stri
     where: { user: { nameLower }, group: { name: 'Administrators' } },
   });
 }
+
+/**
+ * Marks the account's email as verified, as the link in the verification mail does. Leaderboards list only
+ * verified emails, so a test that expects an account on a board verifies it first.
+ */
+export async function verifyEmail(prisma: PrismaService, nameLower: string): Promise<void> {
+  await prisma.user.update({ where: { nameLower }, data: { emailVerifiedAt: new Date() } });
+}

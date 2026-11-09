@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Logger, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Logger, Param, ParseIntPipe, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -33,6 +33,17 @@ function waitForDrain(res: Response): Promise<void> {
     res.once('drain', done);
     res.once('close', done);
   });
+}
+
+/** Public replay of a verified result. Kept apart from ResultsController, which requires a session on every route. */
+@Controller('results')
+export class ResultReplayController {
+  constructor(private readonly results: ResultsService) {}
+
+  @Get(':id/replay')
+  replay(@Param('id', ParseIntPipe) id: number) {
+    return this.results.replayOf(id);
+  }
 }
 
 @Controller('results')

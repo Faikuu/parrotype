@@ -14,6 +14,9 @@ export interface LeaderboardEntry {
   rawWpm: number;
   accuracy: number;
   createdAt: string;
+  /** Whether the result's replay was checked. The replay is at GET /api/results/:resultId/replay. */
+  verified: boolean;
+  resultId: number;
 }
 
 export interface LeaderboardRow {
@@ -24,18 +27,23 @@ export interface LeaderboardRow {
   rawWpm: number;
   accuracy: number;
   createdAt: Date;
+  verified: boolean;
 }
 
-/** The filter of one board. Banned users never appear: the filter is on the user relation. */
+/** The filter of one board. Banned users and users with an unverified email never appear: see userVisible. */
 type Where = Prisma.ResultWhereInput;
 
-/** What the board is for: a ranked mode, a date, and optionally the viewer's friends. */
+/** What the board is for: a ranked mode, a date, and optionally the viewer's friends and verified results only. */
 export interface LeaderboardInput {
   mode: LeaderboardQuery['mode'];
   mode2: string;
   language: LeaderboardQuery['language'];
   scope?: LeaderboardQuery['scope'];
+  verified?: boolean;
 }
+
+/** The users who may appear on a board: not banned, and with a verified email. */
+const userVisible = { bannedAt: null, emailVerifiedAt: { not: null } } as const;
 
 /** Each user's best row (highest wpm, earliest on a tie), sorted, top `limit`, with ranks. */
 export function rankLeaderboard(rows: LeaderboardRow[], limit = LEADERBOARD_SIZE): LeaderboardEntry[] {
@@ -47,14 +55,20 @@ export function rankLeaderboard(rows: LeaderboardRow[], limit = LEADERBOARD_SIZE
   return [...best.values()]
     .sort((a, b) => (isBetter(a, b) ? -1 : isBetter(b, a) ? 1 : 0))
     .slice(0, limit)
-    .map((r, i) => ({
-      rank: i + 1,
-      name: r.name,
-      wpm: r.wpm,
-      rawWpm: r.rawWpm,
-      accuracy: r.accuracy,
-      createdAt: r.createdAt.toISOString(),
-    }));
+    .map((r, i) => entryOf(r, i + 1));
+}
+
+function entryOf(r: LeaderboardRow, rank: number): LeaderboardEntry {
+  return {
+    rank,
+    name: r.name,
+    wpm: r.wpm,
+    rawWpm: r.rawWpm,
+    accuracy: r.accuracy,
+    createdAt: r.createdAt.toISOString(),
+    verified: r.verified,
+    resultId: r.id,
+  };
 }
 
 /** Each user's first row (earliest createdAt, then lowest id). Used for the daily board. */
@@ -92,7 +106,19 @@ export class LeaderboardService {
   async top(query: LeaderboardInput, viewerId?: number): Promise<LeaderboardEntry[]> {
     const where = await this.boardWhere(query, viewerId);
     if (query.mode === 'daily') return this.dailyTop(where);
+    return this.rank(where);
+  }
 
+  /**
+   * The board of one event: each user's best verified result for it, under the same best-per-user rule. For
+   * the public events endpoint (src/events). Banned users and unverified emails are left out.
+   */
+  async eventLeaderboard(eventId: number): Promise<LeaderboardEntry[]> {
+    return this.rank({ eventId, verified: true, user: { ...userVisible } });
+  }
+
+  /** Each user's best row of the filter, ranked, top LEADERBOARD_SIZE (with the tie query). */
+  private async rank(where: Where): Promise<LeaderboardEntry[]> {
     let best = await this.bestPerUser(where);
     if (best.length === LEADERBOARD_SIZE) {
       // Users tied with the last place must all be considered, or the earlier-date tie-break
@@ -109,7 +135,7 @@ export class LeaderboardService {
     const [rows, users] = await Promise.all([
       this.prisma.result.findMany({
         where: { ...where, userId: { in: ids }, wpm: { gte: lowest } },
-        select: { id: true, userId: true, wpm: true, rawWpm: true, accuracy: true, createdAt: true },
+        select: { id: true, userId: true, wpm: true, rawWpm: true, accuracy: true, createdAt: true, verified: true },
       }),
       this.prisma.user.findMany({
         where: { id: { in: ids } },
@@ -126,8 +152,9 @@ export class LeaderboardService {
       mode: query.mode,
       mode2: query.mode2,
       language: query.language,
-      user: { bannedAt: null },
+      user: { ...userVisible },
     };
+    if (query.verified) where.verified = true;
     if (query.scope === 'following') {
       if (viewerId === undefined) throw new Error('scope=following needs a viewer');
       const follows = await this.prisma.follow.findMany({
@@ -154,6 +181,7 @@ export class LeaderboardService {
         rawWpm: true,
         accuracy: true,
         createdAt: true,
+        verified: true,
         user: { select: { name: true } },
       },
     });
@@ -165,6 +193,7 @@ export class LeaderboardService {
       rawWpm: r.rawWpm,
       accuracy: r.accuracy,
       createdAt: r.createdAt,
+      verified: r.verified,
     }));
     return rankLeaderboard(firstPerUser(candidates));
   }

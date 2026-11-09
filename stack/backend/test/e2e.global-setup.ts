@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { applyE2eEnv, E2E_DB_FILE } from './e2e.env';
+import { applyE2eEnv, E2E_DB_FILE, sqliteFileOf } from './e2e.env';
 import { assertE2eResetAllowed } from './e2e-guard';
 
 const backend = join(__dirname, '..');
@@ -50,8 +50,9 @@ export default function globalSetup(): void {
   runPrisma(['generate']);
 
   if (process.env.DATABASE_PROVIDER === 'sqlite') {
-    for (const f of [E2E_DB_FILE, `${E2E_DB_FILE}-journal`]) {
-      if (existsSync(f)) rmSync(f);
+    const file = sqliteFileOf(process.env.DATABASE_URL) ?? '';
+    for (const f of [file, `${file}-journal`]) {
+      if (file && existsSync(f)) rmSync(f);
     }
     runPrisma(['migrate', 'deploy']);
     return;

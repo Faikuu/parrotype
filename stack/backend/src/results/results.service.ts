@@ -1,9 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Result } from '@prisma/client';
+import { isRankedMode } from '../common/domain';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildInsights, type InsightRow, type Insights } from './insights';
 import { EXPORT_BATCH_SIZE, exportChunks, type ExportFormat } from './export';
-import type { ResultInput } from './results.schemas';
+import type { Replay, ResultInput } from './results.schemas';
+import { ResultEvents, type ResultSavedEvent } from './result-events';
+import {
+  dailyTextMatches,
+  eventTextWords,
+  matchReplay,
+  sameWords,
+} from './replay-verify';
+
+/** An event result is accepted this long after the event's end. */
+export const EVENT_GRACE_MS = 60_000;
 
 /** Insights read at most this many of the user's most recent results. */
 export const INSIGHTS_ROW_CAP = 20_000;
@@ -21,7 +32,14 @@ export interface ResultDto {
   charStats: { correct: number; incorrect: number; extra: number; missed: number };
   punctuation: boolean;
   numbers: boolean;
+  verified: boolean;
   createdAt: string;
+}
+
+/** A verified result's summary and its replay (GET /api/results/:id/replay). */
+export interface ReplayDto {
+  result: Omit<ResultDto, 'punctuation' | 'numbers' | 'charStats' | 'verified'> & { name: string };
+  replay: Replay;
 }
 
 export interface Summary {
@@ -61,6 +79,7 @@ export function toResultDto(r: Result): ResultDto {
     },
     punctuation: r.punctuation,
     numbers: r.numbers,
+    verified: r.verified,
     createdAt: r.createdAt.toISOString(),
   };
 }
@@ -145,9 +164,20 @@ export async function loadInsightRows(prisma: PrismaService, userId: number): Pr
 
 @Injectable()
 export class ResultsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ResultsService.name);
 
-  async create(userId: number, input: ResultInput): Promise<ResultDto> {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly events: ResultEvents,
+  ) {}
+
+  /**
+   * Saves a result. With a replay, the text is checked and the replay must reproduce the stats; then the result
+   * is verified and the replay is stored. Without one, the result is saved unverified.
+   */
+  async create(userId: number, input: ResultInput, now: Date = new Date()): Promise<ResultDto> {
+    const check = await this.checkReplay(input, now);
+    const isNewBest = await this.isNewBest(userId, input, check.verified);
     const row = await this.prisma.result.create({
       data: {
         userId,
@@ -165,9 +195,127 @@ export class ResultsService {
         missedChars: input.charStats.missed,
         punctuation: input.punctuation,
         numbers: input.numbers,
+        verified: check.verified,
+        eventId: check.eventId,
+        ...(check.verified && input.replay
+          ? { replay: { create: { data: JSON.stringify(input.replay) } } }
+          : {}),
       },
     });
+    this.emitSaved({
+      resultId: row.id,
+      userId,
+      mode: input.mode,
+      mode2: input.mode2,
+      language: input.language,
+      wpm: input.wpm,
+      verified: check.verified,
+      isNewBest,
+    });
     return toResultDto(row);
+  }
+
+  /**
+   * The text and the keystrokes. Throws 400 (or 404 for an unknown event) when the replay does not hold.
+   * Returns whether the result is verified and, for an event, the event's id.
+   */
+  private async checkReplay(input: ResultInput, now: Date): Promise<{ verified: boolean; eventId: number | null }> {
+    if (input.mode === 'event') {
+      // The schema requires a replay for an event result.
+      const replay = input.replay as Replay;
+      const event = await this.prisma.event.findUnique({
+        where: { slug: input.mode2 },
+        select: { id: true, language: true, text: true, startsAt: true, endsAt: true },
+      });
+      if (!event) throw new NotFoundException('Event not found');
+      if (now < event.startsAt || now.getTime() > event.endsAt.getTime() + EVENT_GRACE_MS) {
+        throw new BadRequestException('This event is not running');
+      }
+      if (event.language !== input.language) throw new BadRequestException('This event is in another language');
+      if (!sameWords(replay.words, eventTextWords(event.text))) {
+        throw new BadRequestException("The text doesn't match this event");
+      }
+      this.requireMatch(input, replay);
+      return { verified: true, eventId: event.id };
+    }
+
+    if (!input.replay) return { verified: false, eventId: null };
+    const replay = input.replay;
+    if (input.mode === 'daily' && !dailyTextMatches(replay.words, input.mode2, input.language)) {
+      throw new BadRequestException("The text doesn't match today's daily challenge");
+    }
+    if (input.mode === 'quote') {
+      const quote = await this.prisma.quote.findFirst({
+        where: { language: input.language, text: replay.words.join(' ') },
+        select: { id: true },
+      });
+      if (!quote) throw new BadRequestException("The text doesn't match a known quote");
+    }
+    this.requireMatch(input, replay);
+    return { verified: true, eventId: null };
+  }
+
+  private requireMatch(input: ResultInput, replay: Replay): void {
+    if (!matchReplay(input, replay).matched) {
+      throw new BadRequestException("The result doesn't match its keystrokes");
+    }
+  }
+
+  /** True when a verified result beats the user's best verified result for the same ranked filter. */
+  private async isNewBest(userId: number, input: ResultInput, verified: boolean): Promise<boolean> {
+    if (!verified || !isRankedMode(input.mode)) return false;
+    const best = await this.prisma.result.aggregate({
+      where: { userId, mode: input.mode, mode2: input.mode2, language: input.language, verified: true },
+      _max: { wpm: true },
+    });
+    return best._max.wpm === null || input.wpm > best._max.wpm;
+  }
+
+  /** Emits 'saved'. A listener's failure is logged, so it cannot fail the save that already happened. */
+  private emitSaved(payload: ResultSavedEvent): void {
+    try {
+      this.events.emit('saved', payload);
+    } catch (err) {
+      this.logger.error(`'saved' listener failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /** A verified result's summary and replay. Only for results of users who are not banned. */
+  async replayOf(id: number): Promise<ReplayDto> {
+    const row = await this.prisma.result.findFirst({
+      where: { id, verified: true, user: { bannedAt: null } },
+      select: {
+        id: true,
+        mode: true,
+        mode2: true,
+        language: true,
+        wpm: true,
+        rawWpm: true,
+        accuracy: true,
+        consistency: true,
+        durationMs: true,
+        createdAt: true,
+        user: { select: { name: true } },
+        replay: { select: { data: true } },
+      },
+    });
+    if (!row?.replay) throw new NotFoundException('Replay not found');
+    return {
+      result: {
+        id: row.id,
+        name: row.user.name,
+        mode: row.mode,
+        mode2: row.mode2,
+        language: row.language,
+        wpm: row.wpm,
+        rawWpm: row.rawWpm,
+        accuracy: row.accuracy,
+        consistency: row.consistency,
+        durationMs: row.durationMs,
+        createdAt: row.createdAt.toISOString(),
+      },
+      replay: JSON.parse(row.replay.data) as Replay,
+    };
   }
 
   async listMine(userId: number, limit: number): Promise<ResultDto[]> {

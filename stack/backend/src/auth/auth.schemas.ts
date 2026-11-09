@@ -38,9 +38,12 @@ const passwordBytes = (min: number, max: number) =>
       return n >= min && n <= max;
     }, `newPassword must be ${min}-${max} bytes`);
 
+/** The rule for a new password: 8 to 72 bytes. Used by change, reset and the rest of the account flows. */
+export const passwordSchema = passwordBytes(8, PASSWORD_MAX_BYTES);
+
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'currentPassword is required').max(200),
-  newPassword: passwordBytes(8, PASSWORD_MAX_BYTES),
+  newPassword: passwordSchema,
 });
 
 export const deleteAccountSchema = z.object({

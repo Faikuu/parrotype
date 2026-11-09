@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { AuthUser } from '../auth/jwt-auth.guard';
 import type { RoomService } from '../races/room.service';
+import type { NotificationsService } from '../notifications/notifications.service';
 import { AdminService, TARGET_RESULTS_SIZE } from './admin.service';
 
 const me: AuthUser = { id: 1, name: 'root' };
@@ -34,6 +35,7 @@ function setup(overrides: {
       updateMany: jest.fn().mockResolvedValue({ count: matches }),
       findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(0),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({ reporterId: 2, target: { name: 'bob' } }),
     },
     result: {
       findUnique: jest.fn().mockResolvedValue(overrides.result ?? null),
@@ -50,10 +52,12 @@ function setup(overrides: {
     writeTx: jest.fn((cb: (tx: typeof db) => Promise<unknown>) => cb(db)),
   });
   const rooms = { roomCount: 0, playerCount: 0, closeRoom: jest.fn(() => false), list: jest.fn(() => []) };
+  const notifications = { notifyReportOutcome: jest.fn().mockResolvedValue(undefined) };
   return {
-    service: new AdminService(prisma as unknown as PrismaService, rooms as unknown as RoomService),
+    service: new AdminService(prisma as unknown as PrismaService, rooms as unknown as RoomService, notifications as unknown as NotificationsService),
     prisma,
     rooms,
+    notifications,
   };
 }
 
@@ -69,6 +73,24 @@ describe('AdminService report decisions', () => {
     expect(prisma.adminAction.create).toHaveBeenCalledWith({
       data: { adminId: 1, action: 'resolve_report', target: 'report:3' },
     });
+  });
+
+  it('tells the reporter after the decision, without the decision in the message', async () => {
+    const { service, notifications } = setup({ report: { id: 3, status: 'open' } });
+    await service.decideReport(me, 3, 'dismiss');
+    expect(notifications.notifyReportOutcome).toHaveBeenCalledWith(2, 'bob');
+  });
+
+  it('still decides the report when the notification fails', async () => {
+    const { service, notifications } = setup({ report: { id: 3, status: 'open' } });
+    notifications.notifyReportOutcome.mockRejectedValueOnce(new Error('db down'));
+    expect(await service.decideReport(me, 3, 'resolve')).toEqual({ id: 3, status: 'resolved' });
+  });
+
+  it('does not notify when the report was already decided', async () => {
+    const { service, notifications } = setup({ report: { id: 3, status: 'resolved' }, matches: 0 });
+    await expect(service.decideReport(me, 3, 'dismiss')).rejects.toBeInstanceOf(ConflictException);
+    expect(notifications.notifyReportOutcome).not.toHaveBeenCalled();
   });
 
   it('dismisses an open report with dismiss_report', async () => {

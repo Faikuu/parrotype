@@ -4,7 +4,9 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
+import { PrismaService } from '../src/prisma/prisma.service';
 import { applyE2eEnv } from './e2e.env';
+import { verifyEmail } from './e2e.helpers';
 
 // Config is read lazily (getEnv), so setting it here, before the app is built, is enough.
 applyE2eEnv();
@@ -66,6 +68,7 @@ describe('friends, the following scope, badges and code results (e2e)', () => {
       .post('/api/auth/register')
       .send({ name, email: `${name}@example.com`, password: PASSWORD })
       .expect(201);
+    await verifyEmail(app.get(PrismaService), name.toLowerCase());
     return cookieFrom(res);
   }
 

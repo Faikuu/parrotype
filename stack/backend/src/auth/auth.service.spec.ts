@@ -71,6 +71,8 @@ describe('AuthService', () => {
         email: 'typist@example.com',
         permissions: [],
         createdAt: '2026-01-02T03:04:05.000Z',
+        emailVerified: false,
+        twoFactorEnabled: false,
       });
       expect(result.user).not.toHaveProperty('passwordHash');
       expect(result.token).toBe('signed.token.value');
@@ -138,6 +140,7 @@ describe('AuthService', () => {
       });
 
       const result = await service.login({ email: 'alice@example.com', password: 'secret-password' });
+      if (result.kind !== 'session') throw new Error('expected a session, not a two-factor ticket');
       expect(result.user.id).toBe(3);
       expect(result.user).not.toHaveProperty('passwordHash');
       expect(result.user.permissions).toEqual([]);

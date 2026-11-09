@@ -278,6 +278,31 @@ export class AdminUsersService {
   }
 
   /**
+   * Clears a user's two-factor sign-in (the secret and any pending setup) and deletes their recovery codes.
+   * Bumps tokenVersion so their sessions end, as a reset of a lost second factor should. Audited in the same transaction.
+   */
+  async reset2fa(actor: AuthUser, id: number): Promise<{ ok: true }> {
+    await this.findUser(id);
+    await this.permissions.assertCanActOn(actor.id, id);
+    await this.prisma.writeTx(async (tx) => {
+      const current = await tx.user.findUnique({ where: { id }, select: { totpSecret: true, totpEnabledAt: true } });
+      if (!current) throw new NotFoundException(NOT_FOUND_USER_ID);
+      if (!current.totpSecret && !current.totpEnabledAt) {
+        throw new ConflictException('Two-factor sign-in is not set up for this user');
+      }
+      await tx.user.update({
+        where: { id },
+        data: { totpSecret: null, totpEnabledAt: null, tokenVersion: { increment: 1 } },
+      });
+      await tx.recoveryCode.deleteMany({ where: { userId: id } });
+      await tx.adminAction.create({
+        data: { adminId: actor.id, action: 'user_2fa_reset', target: `user:${id}` },
+      });
+    });
+    return { ok: true };
+  }
+
+  /**
    * Suspends a user: bumps tokenVersion so their sessions end now, and emits the 'banned' event so open
    * race sockets close. Administrators can't be suspended. The write matches only a user who is not
    * suspended and not an Administrator; on a miss, a re-read names the reason.

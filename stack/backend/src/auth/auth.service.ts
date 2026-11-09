@@ -14,6 +14,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { Permission } from '../permissions/catalog';
 import { PermissionsService } from '../permissions/permissions.service';
 import type { ChangePasswordInput, LoginInput, RegisterInput } from './auth.schemas';
+import { signTicket } from './ticket';
 
 export const SESSION_COOKIE = 'pt_session';
 export const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -38,10 +39,14 @@ export interface PublicUser {
   /** The effective permissions, sorted. Empty for ordinary users. */
   permissions: Permission[];
   createdAt: string;
+  /** True once the user has followed the link in the verification email. */
+  emailVerified: boolean;
+  /** True when two-factor sign-in is switched on (a pending, unconfirmed secret does not count). */
+  twoFactorEnabled: boolean;
 }
 
 export function toPublicUser(
-  user: Pick<User, 'id' | 'name' | 'email' | 'createdAt'>,
+  user: Pick<User, 'id' | 'name' | 'email' | 'createdAt' | 'emailVerifiedAt' | 'totpEnabledAt'>,
   permissions: readonly Permission[],
 ): PublicUser {
   return {
@@ -50,8 +55,18 @@ export function toPublicUser(
     email: user.email,
     permissions: [...permissions].sort(),
     createdAt: user.createdAt.toISOString(),
+    emailVerified: user.emailVerifiedAt !== null && user.emailVerifiedAt !== undefined,
+    twoFactorEnabled: user.totpEnabledAt !== null && user.totpEnabledAt !== undefined,
   };
 }
+
+/**
+ * The result of the password step of a login. With two-factor sign-in on there is no session yet:
+ * the caller gets a ticket to exchange with the second factor (see TwoFactorService.verifyLogin).
+ */
+export type LoginResult =
+  | { kind: 'session'; user: PublicUser; token: string }
+  | { kind: 'twoFactor'; ticket: string };
 
 /** The one place the session cookie name and options live. Used by login, register and logout. */
 export function sessionCookieOptions(): CookieOptions {
@@ -94,17 +109,25 @@ export class AuthService {
       throw err;
     }
     // A new account has no groups yet.
-    return { user: toPublicUser(user, []), token: await this.signSession(user) };
+    return { user: toPublicUser(user, []), token: await this.issueSession(user) };
   }
 
-  async login(input: LoginInput): Promise<{ user: PublicUser; token: string }> {
+  async login(input: LoginInput): Promise<LoginResult> {
     const user = await this.prisma.user.findUnique({ where: { email: input.email } });
     const matches = await bcrypt.compare(input.password, user?.passwordHash ?? DUMMY_HASH);
     if (!user || !matches) throw new UnauthorizedException(INVALID_CREDENTIALS);
     // Checked after the password, so only someone who knows it learns the account is suspended.
     if (user.bannedAt) throw new ForbiddenException(SUSPENDED);
+    if (user.totpEnabledAt) {
+      return { kind: 'twoFactor', ticket: await signTicket(this.jwt, user) };
+    }
+    return { kind: 'session', ...(await this.completeLogin(user)) };
+  }
+
+  /** A session for a user who has passed every sign-in step: the public user and a session token. */
+  async completeLogin(user: User): Promise<{ user: PublicUser; token: string }> {
     const permissions = [...(await this.permissions.effective(user.id))];
-    return { user: toPublicUser(user, permissions), token: await this.signSession(user) };
+    return { user: toPublicUser(user, permissions), token: await this.issueSession(user) };
   }
 
   async getPublicUser(userId: number): Promise<PublicUser> {
@@ -131,7 +154,7 @@ export class AuthService {
       where: { id: userId },
       data: { passwordHash, tokenVersion: { increment: 1 } },
     });
-    return this.signSession(updated);
+    return this.issueSession(updated);
   }
 
   /** Verifies the password, then deletes the user. Their results go with them (ON DELETE CASCADE). */
@@ -160,8 +183,11 @@ export class AuthService {
     });
   }
 
-  /** The `v` claim must match User.tokenVersion at verify time, which is what makes logout effective. */
-  private signSession(user: Pick<User, 'id' | 'name' | 'tokenVersion'>): Promise<string> {
+  /**
+   * A session token for the user's current tokenVersion. The `v` claim must match User.tokenVersion at
+   * verify time, which is what makes logout effective. Public for the 2FA and reset flows.
+   */
+  issueSession(user: Pick<User, 'id' | 'name' | 'tokenVersion'>): Promise<string> {
     return this.jwt.signAsync({ sub: user.id, name: user.name, v: user.tokenVersion });
   }
 }

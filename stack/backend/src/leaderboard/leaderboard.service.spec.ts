@@ -7,6 +7,7 @@ function row(partial: Partial<LeaderboardRow> & { id: number; userId: number; wp
     rawWpm: partial.wpm + 2,
     accuracy: 95,
     createdAt: new Date('2026-01-01T00:00:00Z'),
+    verified: true,
     ...partial,
   };
 }
@@ -72,8 +73,8 @@ describe('LeaderboardService.top', () => {
       { userId: 2, _max: { wpm: 90 } },
     ]);
     const rows = [
-      { id: 2, userId: 1, wpm: 95, rawWpm: 97, accuracy: 96, createdAt: new Date('2026-02-01T00:00:00Z') },
-      { id: 4, userId: 2, wpm: 90, rawWpm: 92, accuracy: 95, createdAt: new Date('2026-01-01T00:00:00Z') },
+      { id: 2, userId: 1, wpm: 95, rawWpm: 97, accuracy: 96, createdAt: new Date('2026-02-01T00:00:00Z'), verified: true },
+      { id: 4, userId: 2, wpm: 90, rawWpm: 92, accuracy: 95, createdAt: new Date('2026-01-01T00:00:00Z'), verified: false },
     ];
     const { service, prisma } = setup(groupBy, rows, [
       { id: 1, name: 'alice' },
@@ -87,8 +88,8 @@ describe('LeaderboardService.top', () => {
     expect(prisma.result.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.user.findMany).toHaveBeenCalledTimes(1);
     expect(entries).toEqual([
-      { rank: 1, name: 'alice', wpm: 95, rawWpm: 97, accuracy: 96, createdAt: '2026-02-01T00:00:00.000Z' },
-      { rank: 2, name: 'bob', wpm: 90, rawWpm: 92, accuracy: 95, createdAt: '2026-01-01T00:00:00.000Z' },
+      { rank: 1, name: 'alice', wpm: 95, rawWpm: 97, accuracy: 96, createdAt: '2026-02-01T00:00:00.000Z', verified: true, resultId: 2 },
+      { rank: 2, name: 'bob', wpm: 90, rawWpm: 92, accuracy: 95, createdAt: '2026-01-01T00:00:00.000Z', verified: false, resultId: 4 },
     ]);
   });
 
@@ -140,17 +141,17 @@ describe('LeaderboardService.top, daily board', () => {
   it("shows each user's first result for the day, so a faster retry does not change the rank", async () => {
     // alice's retry (id 3, 99 wpm) is listed first to show that the order of the rows does not matter.
     const { service, groupBy } = setup([
-      { id: 3, userId: 1, wpm: 99, rawWpm: 100, accuracy: 99, createdAt: at('2026-11-08T10:00:00Z'), user: { name: 'alice' } },
-      { id: 1, userId: 1, wpm: 70, rawWpm: 72, accuracy: 95, createdAt: at('2026-11-08T09:00:00Z'), user: { name: 'alice' } },
-      { id: 2, userId: 2, wpm: 85, rawWpm: 87, accuracy: 96, createdAt: at('2026-11-08T11:00:00Z'), user: { name: 'bob' } },
+      { id: 3, userId: 1, wpm: 99, rawWpm: 100, accuracy: 99, createdAt: at('2026-11-08T10:00:00Z'), verified: true, user: { name: 'alice' } },
+      { id: 1, userId: 1, wpm: 70, rawWpm: 72, accuracy: 95, createdAt: at('2026-11-08T09:00:00Z'), verified: true, user: { name: 'alice' } },
+      { id: 2, userId: 2, wpm: 85, rawWpm: 87, accuracy: 96, createdAt: at('2026-11-08T11:00:00Z'), verified: true, user: { name: 'bob' } },
     ]);
 
     const entries = await service.top(daily);
 
     expect(groupBy).not.toHaveBeenCalled();
     expect(entries).toEqual([
-      { rank: 1, name: 'bob', wpm: 85, rawWpm: 87, accuracy: 96, createdAt: '2026-11-08T11:00:00.000Z' },
-      { rank: 2, name: 'alice', wpm: 70, rawWpm: 72, accuracy: 95, createdAt: '2026-11-08T09:00:00.000Z' },
+      { rank: 1, name: 'bob', wpm: 85, rawWpm: 87, accuracy: 96, createdAt: '2026-11-08T11:00:00.000Z', verified: true, resultId: 2 },
+      { rank: 2, name: 'alice', wpm: 70, rawWpm: 72, accuracy: 95, createdAt: '2026-11-08T09:00:00.000Z', verified: true, resultId: 1 },
     ]);
   });
 
@@ -197,3 +198,43 @@ describe('LeaderboardService.top, tie query', () => {
     expect(rowQuery.where).not.toHaveProperty('OR');
   });
 });
+
+describe('LeaderboardService visibility and verified filter', () => {
+  const query = { mode: 'time' as const, mode2: '60', language: 'en' as const };
+
+  function build() {
+    const groupBy = jest.fn().mockResolvedValue([]);
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = { result: { groupBy, findMany }, user: { findMany: jest.fn().mockResolvedValue([]) } };
+    return { service: new LeaderboardService(prisma as unknown as PrismaService), groupBy };
+  }
+
+  it('leaves out users whose email is not verified, and banned users', async () => {
+    const { service, groupBy } = build();
+    await service.top(query);
+    expect(groupBy.mock.calls[0][0].where).toMatchObject({
+      user: { bannedAt: null, emailVerifiedAt: { not: null } },
+    });
+  });
+
+  it('keeps only verified results with verified=true, and does not filter on it otherwise', async () => {
+    const { service, groupBy } = build();
+    await service.top({ ...query, verified: true });
+    expect(groupBy.mock.calls[0][0].where).toHaveProperty('verified', true);
+
+    const plain = build();
+    await plain.service.top(query);
+    expect(plain.groupBy.mock.calls[0][0].where).not.toHaveProperty('verified');
+  });
+
+  it('builds the event board from verified results of one event, with the same visibility rules', async () => {
+    const { service, groupBy } = build();
+    await service.eventLeaderboard(7);
+    expect(groupBy.mock.calls[0][0].where).toEqual({
+      eventId: 7,
+      verified: true,
+      user: { bannedAt: null, emailVerifiedAt: { not: null } },
+    });
+  });
+});
+

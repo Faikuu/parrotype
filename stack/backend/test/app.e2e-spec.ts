@@ -6,6 +6,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { applyE2eEnv } from './e2e.env';
+import { verifyEmail } from './e2e.helpers';
 
 // Config is read lazily (getEnv), so setting it here, before the app is built, is enough.
 applyE2eEnv();
@@ -39,6 +40,8 @@ describe('ParroType API (e2e)', () => {
     expect(reg.body.user).toMatchObject({ name: 'e2e_typist', email: 'e2e@example.com' });
     expect(reg.body.user).not.toHaveProperty('passwordHash');
     const cookie = cookieFrom(reg);
+    // Leaderboards list verified emails only.
+    await verifyEmail(app.get(PrismaService), 'e2e_typist');
     expect(cookie).toMatch(/^pt_session=/);
 
     const me = await request(server).get('/api/auth/me').set('Cookie', cookie).expect(200);

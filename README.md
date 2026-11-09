@@ -95,7 +95,7 @@ The schema is written once in `prisma/schema.template.prisma` and rendered per p
 
 ### Docker
 
-`docker-compose.yml` runs PostgreSQL, the API and the web app (nginx). Put `JWT_SECRET` and `POSTGRES_PASSWORD` in a `.env` file next to it, then:
+`docker-compose.yml` runs PostgreSQL, the API and the web app (nginx). Put `JWT_SECRET`, `TOTP_ENCRYPTION_KEY` and `POSTGRES_PASSWORD` in a `.env` file next to it (optionally `MAIL_TRANSPORT=smtp` with `SMTP_URL` for the account emails), then:
 
 ```bash
 docker compose up -d --build

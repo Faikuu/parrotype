@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { findVisibleUser } from './visible-user';
 
@@ -22,7 +23,12 @@ export interface SocialCounts {
 /** Follow and unfollow. Both are idempotent. Suspended accounts cannot be followed (404). */
 @Injectable()
 export class FollowsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(FollowsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async follow(followerId: number, name: string): Promise<FollowState> {
     const target = await findVisibleUser(this.prisma, name);
@@ -35,13 +41,26 @@ export class FollowsService {
     });
     if (existing) return { following: true };
 
+    let created = false;
     try {
       await this.createWithinLimit(followerId, target.id);
+      created = true;
     } catch (err) {
       // A concurrent follow of the same person already created the row: the result is the same.
       if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
     }
+    if (created) await this.notifyFollowee(followerId, target.id);
     return { following: true };
+  }
+
+  /** The followee's notice. A failure is logged: the follow itself has already been saved. */
+  private async notifyFollowee(followerId: number, followeeId: number): Promise<void> {
+    try {
+      const follower = await this.prisma.user.findUnique({ where: { id: followerId }, select: { name: true } });
+      if (follower) await this.notifications.notifyFollow(followeeId, follower.name);
+    } catch (err) {
+      this.logger.warn(`follow notification failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   /**

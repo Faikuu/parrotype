@@ -32,9 +32,11 @@ export async function readSessionClaims(req: Request, jwt: JwtService): Promise<
   const token: unknown = req.cookies?.[SESSION_COOKIE];
   if (typeof token !== 'string' || token.length === 0) return null;
   try {
-    const payload = await jwt.verifyAsync<{ sub?: unknown; v?: unknown }>(token, {
+    const payload = await jwt.verifyAsync<{ sub?: unknown; v?: unknown; purpose?: unknown }>(token, {
       algorithms: ['HS256'],
     });
+    // A 2FA ticket is signed with its own key, so it fails above; this is the second check that it is never a session.
+    if (payload.purpose !== undefined) return null;
     if (typeof payload.sub !== 'number' || !Number.isInteger(payload.sub)) return null;
     return { sub: payload.sub, version: payload.v };
   } catch {
