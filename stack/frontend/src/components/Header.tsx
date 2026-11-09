@@ -16,7 +16,7 @@ function NavIcon({ to, end, label, icon: Icon }: { to: string; end?: boolean; la
       title={label}
       className={({ isActive }) =>
         cn(
-          'rounded-full p-1.5 transition-colors hover:text-text sm:p-2',
+          'rounded-full p-1 transition-colors hover:text-text sm:p-2',
           isActive ? 'text-main' : 'text-sub',
         )
       }
@@ -37,9 +37,9 @@ export function Header() {
         <span className="text-caret">
           <ParrotHead size={22} />
         </span>
-        <span className="font-sans text-[1.6rem] font-semibold leading-none">parrotype</span>
+        <span className="font-sans text-[1.35rem] font-semibold leading-none sm:text-[1.6rem]">parrotype</span>
       </Link>
-      <nav aria-label={t('nav:main')} className="flex items-center gap-0.5 sm:gap-1">
+      <nav aria-label={t('nav:main')} className="flex shrink-0 items-center gap-0.5 sm:gap-1">
         <NavIcon to="/" end label={t('nav:test')} icon={Keyboard} />
         <NavIcon to="/leaderboard" label={t('nav:leaderboard')} icon={Crown} />
         <NavIcon to="/race" label={t('race:navLabel')} icon={Flag} />

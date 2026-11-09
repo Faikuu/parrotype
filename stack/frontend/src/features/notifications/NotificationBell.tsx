@@ -84,7 +84,7 @@ function BellWithPanel() {
         aria-controls={panelId}
         title={t('notifications:bell.label')}
         onClick={() => setOpen((v) => !v)}
-        className="relative rounded-full p-1.5 text-sub transition-colors hover:text-text sm:p-2"
+        className="relative rounded-full p-1 text-sub transition-colors hover:text-text sm:p-2"
       >
         <Bell size={20} aria-hidden="true" />
         {count > 0 && (
